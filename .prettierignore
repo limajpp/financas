@@ -1,0 +1,7 @@
+package-lock.json
+.next/
+node_modules/
+coverage/
+playwright-report/
+test-results/
+docs/specs/v1-design.md
