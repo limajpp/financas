@@ -9,11 +9,18 @@ export default defineConfig({
       {
         // Domain rules are pure functions: no DOM.
         extends: true,
-        test: { name: "domain", include: ["src/**/*.test.ts"], environment: "node" },
+        test: { name: "domain", include: ["src/domain/**/*.test.ts"], environment: "node" },
       },
       {
+        // Everything else (components, hooks, browser-side libs) gets a DOM.
         extends: true,
-        test: { name: "ui", include: ["src/**/*.test.tsx"], environment: "jsdom" },
+        test: {
+          name: "ui",
+          include: ["src/**/*.test.{ts,tsx}"],
+          exclude: ["src/domain/**"],
+          environment: "jsdom",
+          setupFiles: ["./vitest.setup.ts"],
+        },
       },
     ],
   },

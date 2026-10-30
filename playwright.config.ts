@@ -18,7 +18,7 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     // The app's main target is Safari on the iPhone.
-    { name: "iphone", use: { ...devices["iPhone 15"] } },
+    { name: "webkit", use: { ...devices["iPhone 15"] } },
   ],
   webServer: {
     // CI tests the production build; locally the dev server is enough.
