@@ -128,12 +128,15 @@ Pré-requisitos: Node 24+ (`nvm use`) e Docker.
 ```bash
 git clone git@github.com:limajpp/financas.git
 cd financas
-npm install                   # também ativa o hook de commit (.githooks)
+npm install                   # também ativa o hook de commit (.githooks) e gera o Prisma Client
+cp .env.example .env          # valores do Postgres local
+npm run db:up                 # Postgres no Docker (porta 5433), com os bancos financas e financas_test
+npm run db:migrate            # aplica as migrations no banco de dev
 npx playwright install        # navegadores dos testes e2e
 npm run dev                   # http://localhost:3000
 ```
 
-> Banco (Docker + Prisma) e variáveis de ambiente entram na task 2; até lá, `.env.example` só lista o que vem por aí.
+O Postgres roda num container só, com dois bancos: `financas` (dev) e `financas_test` (testes de integração). A porta do host é a 5433; para usar outra, defina `POSTGRES_PORT` e ajuste as URLs no `.env`. Para começar do zero: `docker compose down -v && npm run db:up && npm run db:migrate`.
 
 | Comando                   | O que faz                                                                         |
 | ------------------------- | --------------------------------------------------------------------------------- |
@@ -141,11 +144,16 @@ npm run dev                   # http://localhost:3000
 | `npm run build`           | build de produção                                                                 |
 | `npm run lint`            | ESLint (zero avisos) + checagem de tipos (`tsc`)                                  |
 | `npm run format`          | formata com Prettier (`format:check` só confere)                                  |
-| `npm test`                | testes unitários (Vitest; `test:watch` em modo watch)                             |
+| `npm test`                | testes Vitest: unitários e de integração (precisa do `db:up`; `test:watch`)       |
+| `npm run db:up`           | sobe o Postgres local e espera ele ficar saudável                                 |
+| `npm run db:migrate`      | cria/aplica migrations no banco de dev (`prisma migrate dev`)                     |
+| `npm run db:studio`       | abre o Prisma Studio                                                              |
 | `npm run test:e2e`        | testes de ponta a ponta (Playwright: Chromium desktop + WebKit com perfil iPhone) |
 | `npm run test:e2e:docker` | os mesmos e2e dentro da imagem oficial do Playwright                              |
 
 O WebKit do Playwright só tem suporte oficial em Ubuntu/Debian. Em outras distros (Fedora, Arch…), use `npm run test:e2e:docker`, ou `npx playwright test --project=chromium` para rodar só o Chromium. O script monta o repo com `:z` (SELinux): na primeira vez o Docker re-rotula os arquivos, o que demora um pouco. A versão da imagem acompanha a do `@playwright/test`, que fica fixada (sem `^`); atualize as duas juntas.
+
+Os testes de integração (`*.int.test.ts`) rodam contra o banco de `TEST_DATABASE_URL`, que precisa terminar em `_test`: antes de cada teste, `resetDatabase()` apaga todas as linhas. As migrations pendentes são aplicadas nele no começo de cada execução.
 
 O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a mesma versão.
 
@@ -153,7 +161,7 @@ O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a me
 
 Todo PR para a `develop` ou a `main` roda no GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)):
 
-- **Lint, test and build:** lint, tipos, formatação, testes unitários e build.
+- **Lint, test and build:** lint, tipos, formatação, testes (unitários e de integração, contra um Postgres de serviço) e build.
 - **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção.
 - **Commit messages and PR title** ([`commits.yml`](.github/workflows/commits.yml)): valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente. Roda de novo quando o título é editado.
 
