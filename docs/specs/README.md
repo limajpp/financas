@@ -24,7 +24,7 @@ issue ──► spec da task ──► aprovação ──► testes (vermelho) �
 4. **TDD.** Cada critério de aceite vira pelo menos um teste antes da implementação: Vitest para domínio e server, Playwright para fluxos.
 5. **Verificação.** `npm run lint`, `npm test` e `npm run build` verdes. Nas tasks de UI, o fluxo é conferido no navegador (e no iPhone quando fizer sentido).
 6. **Revisor.** Um subagente com contexto limpo recebe a spec e o diff. Procura bugs, desvios da spec e testes fracos. O que for aceito é corrigido; o que for descartado vai para o PR com o motivo.
-7. **PR para a `develop`.** `Closes #N`, critérios marcados, resultado da revisão. O João faz o squash merge e a branch é apagada.
+7. **PR para a `develop`.** `Closes #N`, critérios marcados, resultado da revisão. Com o revisor aprovando e o CI verde, o Claude faz o squash merge e a branch é apagada.
 
 Quando um conjunto de tasks estiver pronto, um PR `develop → main` gera a release (e o deploy de produção).
 

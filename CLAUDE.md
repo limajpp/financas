@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O Claude escreve o código; o João revisa e faz o merge.
+App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O Claude escreve o código e faz o merge quando o revisor aprova e o CI fica verde; o João acompanha pelos PRs.
 
 **Fonte da verdade:** `docs/specs/v1-design.md`. O processo está em `docs/specs/README.md`.
 
@@ -44,4 +44,4 @@ O Next 16 traz a documentação da versão instalada em `node_modules/next/dist/
 2. `git switch develop && git pull`, depois `git switch -c task/NN-slug`. TDD: testes dos critérios de aceite primeiro.
 3. `npm run lint && npm run format:check && npm test && npm run build` e `npm run test:e2e:docker` verdes (o WebKit não roda direto no Fedora desta máquina). UI: conferir no navegador.
 4. Subagente revisor (Opus, effort high) com a spec + `git diff develop...HEAD`. Corrigir o que proceder; registrar o que foi descartado e por quê.
-5. PR **para a `develop`** com `Closes #N`, critérios marcados e resumo da revisão. **Não fazer merge**: o João faz. Depois do merge, apagar a branch local e atualizar a `develop`.
+5. PR **para a `develop`** com `Closes #N`, critérios marcados e resumo da revisão. **Se o revisor aprovou (sem bloqueios pendentes) e o CI está verde, eu faço o squash merge.** Depois do merge, apagar a branch local e atualizar a `develop`.
