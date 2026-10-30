@@ -137,10 +137,10 @@ O app captura o contexto **no momento do gasto** (celular, rápido) e transforma
 **Ciclo de cada task:**
 1. Pegar a próxima issue (em ordem, salvo se o João escolher outra).
 2. **Spec da task:** escrever `docs/specs/tasks/NN-slug.md` (comportamento, critérios de aceite, casos de borda, decisões). O João lê no chat e aprova ou ajusta.
-3. Criar a branch `task/NN-slug`, escrever os testes a partir dos critérios de aceite (TDD) e só então a implementação.
+3. Criar a branch `task/NN-slug` a partir da `develop`, escrever os testes a partir dos critérios de aceite (TDD) e só então a implementação.
 4. Verificar: lint, testes e build verdes. Nas tasks de UI, abrir o app e conferir o fluxo.
 5. **Revisor:** um subagente com contexto limpo recebe a spec da task e o diff. Ele procura bugs, desvios da spec e testes fracos. Eu corrijo o que fizer sentido e reporto o que descartei e por quê.
-6. Abrir o PR (`Closes #NN`) com resumo, critérios marcados e o resultado do review. **O João faz o merge** (ou autoriza no chat). Depois disso, a próxima task.
+6. Abrir o PR para a `develop` (`Closes #NN`) com resumo, critérios marcados e o resultado do review. **O João faz o merge** (ou autoriza no chat). Depois disso, a próxima task.
 
 ## Backlog v1 (vira issues)
 

@@ -126,6 +126,7 @@ Pré-requisitos: Node 24+, Docker.
 ```bash
 git clone git@github.com:limajpp/financas.git
 cd financas
+git config core.hooksPath .githooks   # hook de commit (o npm install também faz isso)
 npm install
 cp .env.example .env          # preencha as variáveis
 docker compose up -d          # Postgres local
@@ -150,7 +151,9 @@ O desenvolvimento é **orientado a spec** e feito task por task, em parceria com
 3. Os critérios de aceite viram **testes primeiro** (TDD), depois a implementação.
 4. Lint, testes e build precisam passar; telas são conferidas no navegador.
 5. Um **agente revisor** independente lê a spec e o diff procurando bugs, desvios e testes fracos.
-6. Um **PR** fecha a issue, e o merge é feito por um humano.
+6. Um **PR para a `develop`** fecha a issue; o merge é feito por um humano. A `main` só recebe releases vindas da `develop`.
+
+Commits seguem `<gitmoji> <type>(<scope>)?: <description>`, em inglês (ex.: `✨ feat(cards): add invoice cycle module`), validados por um hook `commit-msg` versionado em `.githooks/`.
 
 O processo completo está em [`docs/specs/README.md`](docs/specs/README.md).
 

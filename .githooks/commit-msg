@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# Validates commit messages: "<gitmoji> <type>(<scope>)?: <description>" in English.
+# Usage: commit-msg <file-with-message>  (also used by CI to check PR titles)
+set -euo pipefail
+
+file="$1"
+# Ignore comments and trailers (Co-Authored-By, Signed-off-by, ...)
+msg="$(grep -v '^#' "$file" | grep -viE '^[A-Za-z-]+-by: ' || true)"
+subject="$(printf '%s\n' "$msg" | head -n1)"
+
+# Let git-generated messages through
+if [[ "$subject" =~ ^(Merge|Revert\ \"|fixup!|squash!|amend!) ]]; then
+  exit 0
+fi
+
+fail() {
+  echo "✖ commit-msg: $1" >&2
+  echo "" >&2
+  echo "  Expected: <gitmoji> <type>(<scope>)?: <description in English>" >&2
+  echo "  Example:  ✨ feat(cards): add invoice cycle module" >&2
+  echo "  Types:    feat fix docs style refactor perf test build ci chore revert" >&2
+  echo "  Gitmojis: https://gitmoji.dev" >&2
+  exit 1
+}
+
+types='feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert'
+# Gitmoji as unicode emoji (optionally with variation selector) or :shortcode:
+pattern="^(\p{Extended_Pictographic}|\p{Regional_Indicator}|[\x{2600}-\x{27BF}])\x{FE0F}? ($types)(\([a-z0-9-]+\))?!?: \S.*$|^:[a-z0-9_+-]+: ($types)(\([a-z0-9-]+\))?!?: \S.*$"
+
+if ! printf '%s' "$subject" | grep -qP "$pattern"; then
+  fail "subject must start with a gitmoji followed by a conventional prefix"
+fi
+
+if (( ${#subject} > 100 )); then
+  fail "subject is longer than 100 characters"
+fi
+
+# Language check (heuristic): drop the gitmoji, then reject accented letters
+# and common Portuguese words anywhere in the message.
+text="$(printf '%s\n' "$msg" | sed -E '1s/^[^ ]+ //')"
+
+if printf '%s' "$text" | grep -qP '[À-ÖØ-öø-ÿ]'; then
+  fail "message must be in English (found accented characters)"
+fi
+
+# Words that are also English (do, no, a, remove...) are intentionally left out.
+pt_words='de|da|das|dos|para|pra|com|sem|nao|uma|um|que|pelo|pela|ao|aos|na|nas|nos|também|tambem|então|quando|isso|esta|este|nova|novo|adiciona|adicionar|cria|criar|corrige|corrigir|atualiza|atualizar|implementa|implementar|ajusta|ajustar|melhora|melhorar|tela|telas|conta|contas|cartao|cartoes|fatura|faturas|lancamento|lancamentos|gasto|gastos|saldo|regra|regras|teste|testes'
+if printf '%s' "$text" | grep -qiP "\b($pt_words)\b"; then
+  fail "message must be in English (found Portuguese words)"
+fi
+
+exit 0

@@ -25,12 +25,19 @@ App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O 
 
 - **Nenhum dado financeiro real no repo**: nem em seeds, fixtures, testes, screenshots ou issues. Use nomes e valores inventados.
 - Nada de segredos: `.env*` está no `.gitignore`; documente variáveis em `.env.example`.
-- Commits pequenos, mensagem em pt-BR no imperativo (`adiciona módulo do ciclo da fatura`).
+- **Commits em inglês, com gitmoji + prefixo convencional**: `<gitmoji> <type>(<scope>)?: <description>`, ex.: `✨ feat(cards): add invoice cycle module`. Tipos: `feat fix docs style refactor perf test build ci chore revert`. O hook `.githooks/commit-msg` barra o que fugir disso (ativado com `git config core.hooksPath .githooks`, que o `npm install` faz via `prepare`). Títulos de PR seguem o mesmo formato, porque viram o commit do squash.
+- Commits pequenos. Docs e UI continuam em pt-BR; só as mensagens de commit e os títulos de PR são em inglês.
+
+## Branches
+
+- `main`: só recebe releases vindas da `develop` (PR `develop → main`, quando o João decidir). Push na `main` = deploy de produção.
+- `develop`: branch padrão e de integração. Toda task sai dela e volta para ela por PR (squash merge).
+- `task/NN-slug`: uma por issue, criada a partir da `develop` atualizada. É apagada depois do merge (o repo apaga a branch remota sozinho; a local eu apago com `git branch -d`).
 
 ## Fluxo de cada task
 
 1. Issue da milestone v1 → spec em `docs/specs/tasks/NN-slug.md` → **aprovação do João no chat antes de codar**.
-2. Branch `task/NN-slug`. TDD: testes dos critérios de aceite primeiro.
+2. `git switch develop && git pull`, depois `git switch -c task/NN-slug`. TDD: testes dos critérios de aceite primeiro.
 3. `npm run lint && npm test && npm run build` verdes. UI: conferir no navegador.
 4. Subagente revisor (Opus, effort high) com a spec + `git diff main...HEAD`. Corrigir o que proceder; registrar o que foi descartado e por quê.
-5. PR com `Closes #N`, critérios marcados e resumo da revisão. **Não fazer merge**: o João faz.
+5. PR **para a `develop`** com `Closes #N`, critérios marcados e resumo da revisão. **Não fazer merge**: o João faz. Depois do merge, apagar a branch local e atualizar a `develop`.
