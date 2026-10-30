@@ -1,0 +1,53 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Fields match Better Auth's core user model, so task 3 only adds the session tables.
+model User {
+  id            String        @id @default(uuid(7))
+  name          String
+  email         String        @unique
+  emailVerified Boolean       @default(false)
+  image         String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  memberships   SpaceMember[]
+}
+
+enum SpaceType {
+  PERSONAL
+  SHARED
+}
+
+// Every piece of data belongs to a space. v1 only has the personal one.
+model Space {
+  id        String        @id @default(uuid(7))
+  type      SpaceType
+  name      String
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  members   SpaceMember[]
+}
+
+enum SpaceRole {
+  OWNER
+  MEMBER
+}
+
+model SpaceMember {
+  id        String    @id @default(uuid(7))
+  spaceId   String
+  userId    String
+  role      SpaceRole
+  createdAt DateTime  @default(now())
+  space     Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@index([userId])
+}
