@@ -1,0 +1,22 @@
+# Postgres local para dev e testes. A produção usa a Neon (task 4).
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: financas
+      POSTGRES_DB: financas
+      # Local only: no password, and the port is bound to 127.0.0.1 so nothing outside this machine reaches it.
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+      - ./docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro,z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U financas -d financas"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+volumes:
+  postgres-data:

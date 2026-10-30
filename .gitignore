@@ -40,3 +40,6 @@ extratos/
 !.vscode/extensions.json
 npm-debug.log*
 yarn-error.log*
+
+# prisma client (generated on postinstall)
+/src/generated/
