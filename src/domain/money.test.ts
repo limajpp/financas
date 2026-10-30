@@ -22,6 +22,10 @@ describe("formatBRL", () => {
     expect(formatBRL(-500)).toBe(`-R$${nbsp}5,00`);
   });
 
+  it("never shows a sign for negative zero", () => {
+    expect(formatBRL(-0)).toBe(`R$${nbsp}0,00`);
+  });
+
   it("rejects fractional cents", () => {
     expect(() => formatBRL(10.5)).toThrow(RangeError);
   });
