@@ -1,0 +1,42 @@
+# dependências
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js / build
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# PWA (gerado pelo Serwist)
+public/sw.js
+public/sw.js.map
+public/swe-worker-*.js
+
+# testes
+coverage/
+playwright-report/
+test-results/
+blob-report/
+
+# ambiente e segredos
+.env*
+!.env.example
+.vercel
+
+# dados financeiros reais nunca entram no repo
+*.ofx
+*.qfx
+extratos/
+
+# sistema / editor
+.DS_Store
+*.pem
+.idea/
+.vscode/*
+!.vscode/extensions.json
+npm-debug.log*
+yarn-error.log*
