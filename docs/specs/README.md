@@ -4,11 +4,11 @@ Este projeto é desenvolvido orientado a spec: nada vira código sem antes estar
 
 ## Níveis
 
-| Documento | O que define | Quem aprova |
-|---|---|---|
-| [`v1-design.md`](v1-design.md) | O produto: problema, metas, regras de domínio, telas, indicadores, backlog | João |
-| `tasks/NN-slug.md` | Uma task do backlog: comportamento, critérios de aceite, casos de borda, decisões | João, no chat, antes do código |
-| Issue no GitHub | O item do backlog (resumo + critérios) e o link para a spec da task | — |
+| Documento                      | O que define                                                                      | Quem aprova                    |
+| ------------------------------ | --------------------------------------------------------------------------------- | ------------------------------ |
+| [`v1-design.md`](v1-design.md) | O produto: problema, metas, regras de domínio, telas, indicadores, backlog        | João                           |
+| `tasks/NN-slug.md`             | Uma task do backlog: comportamento, critérios de aceite, casos de borda, decisões | João, no chat, antes do código |
+| Issue no GitHub                | O item do backlog (resumo + critérios) e o link para a spec da task               | —                              |
 
 Se uma task revelar que o design está errado ou incompleto, o design é atualizado **no mesmo PR**, e a mudança é apontada na descrição.
 
@@ -40,21 +40,27 @@ Mensagens e títulos de PR em **inglês**, no formato `<gitmoji> <type>(<scope>)
 Issue: #N · Design: [seção](../v1-design.md#ancora)
 
 ## Objetivo
+
 Uma ou duas frases: o que muda para o usuário (ou para o código) quando isso estiver pronto.
 
 ## Comportamento
+
 O que acontece, passo a passo ou por regra.
 
 ## Critérios de aceite
+
 - [ ] CA1 — verificável por teste
 - [ ] CA2 — ...
 
 ## Casos de borda
+
 - ...
 
 ## Decisões
+
 - Decisão — motivo.
 
 ## Fora do escopo
+
 - ...
 ```
