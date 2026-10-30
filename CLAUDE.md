@@ -4,6 +4,10 @@ App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O 
 
 **Fonte da verdade:** `docs/specs/v1-design.md`. O processo está em `docs/specs/README.md`.
 
+@AGENTS.md
+
+O Next 16 traz a documentação da versão instalada em `node_modules/next/dist/docs/`. Consulte-a antes de usar uma API do Next (ex.: `cacheComponents` vem ligado por padrão).
+
 ## Stack
 
 - Next.js 16 (App Router) + TypeScript strict. Mutations em Server Actions; `/api/sync` (Route Handler) para a fila offline.
@@ -38,6 +42,6 @@ App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O 
 
 1. Issue da milestone v1 → spec em `docs/specs/tasks/NN-slug.md` → **aprovação do João no chat antes de codar**.
 2. `git switch develop && git pull`, depois `git switch -c task/NN-slug`. TDD: testes dos critérios de aceite primeiro.
-3. `npm run lint && npm test && npm run build` verdes. UI: conferir no navegador.
-4. Subagente revisor (Opus, effort high) com a spec + `git diff main...HEAD`. Corrigir o que proceder; registrar o que foi descartado e por quê.
+3. `npm run lint && npm run format:check && npm test && npm run build` e `npm run test:e2e:docker` verdes (o WebKit não roda direto no Fedora desta máquina). UI: conferir no navegador.
+4. Subagente revisor (Opus, effort high) com a spec + `git diff develop...HEAD`. Corrigir o que proceder; registrar o que foi descartado e por quê.
 5. PR **para a `develop`** com `Closes #N`, critérios marcados e resumo da revisão. **Não fazer merge**: o João faz. Depois do merge, apagar a branch local e atualizar a `develop`.

@@ -3,6 +3,9 @@
 # Usage: commit-msg <file-with-message>  (also used by CI to check PR titles)
 set -euo pipefail
 
+# grep -P needs a UTF-8 locale to match emoji code points.
+export LC_ALL=C.UTF-8
+
 file="$1"
 # Ignore comments and trailers (Co-Authored-By, Signed-off-by, ...)
 msg="$(grep -v '^#' "$file" | grep -viE '^[A-Za-z-]+-by: ' || true)"

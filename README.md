@@ -28,6 +28,7 @@ Este projeto ataca as duas pontas:
 ## Funcionalidades da v1
 
 **Registro**
+
 - Tela única: teclado numérico aberto, categorias mais usadas em um toque, conta e forma de pagamento lembradas do último uso.
 - Despesa, receita, transferência entre contas e pagamento de fatura (os dois últimos não contam como gasto).
 - Compras parceladas (cada parcela conta no seu mês e cai na sua fatura) e assinaturas recorrentes.
@@ -36,11 +37,13 @@ Este projeto ataca as duas pontas:
 - Lembrete diário por push às 21h: "registrou tudo hoje?".
 
 **Contas e cartões**
+
 - Qualquer conta aceita qualquer forma de pagamento (Pix, débito, crédito, boleto, TED, dinheiro).
 - Saldo por conta (saldo inicial + lançamentos) e **conferência de saldo** com o banco, que mostra a diferença e ajuda a achar o que ficou sem registro.
 - Cartões com dia de fechamento e vencimento; cada compra cai na fatura certa automaticamente.
 
 **Visões**
+
 - **Dashboard:** sobra do mês, taxa de poupança, projeção do mês e comprometido futuro; 2–3 insights em linguagem simples; categorias vs média; evolução de 6 meses.
 - **Faturas** por cartão e vencimento, com as parcelas futuras.
 - **Assinaturas:** total por mês e por ano, alerta de mudança de valor.
@@ -48,6 +51,7 @@ Este projeto ataca as duas pontas:
 - **Lançamentos:** lista por dia no celular, tabela com filtros e categorização em massa na web.
 
 **Insights por regras (sem IA na v1)**
+
 - Categoria acima da média dos últimos 3 meses.
 - Gastos pequenos recorrentes ("23 cafés este mês, R$ 210").
 - Assinaturas anualizadas e mudança de valor.
@@ -55,27 +59,27 @@ Este projeto ataca as duas pontas:
 
 ## Roadmap
 
-| Fase | Escopo | Status |
-|---|---|---|
-| **v1** | Fundação, cadastros, registro rápido, PWA offline + lembrete, visões, dashboard | 🚧 em andamento ([milestone](../../milestone/1)) |
-| **Fase 2** | Espaço compartilhado do casal: "um paga e divide" (estilo Splitwise), saldo entre os dois, métricas individual × casal | planejada |
-| **Fase 3+** | Limites por categoria sugeridos pela média, metas, reserva de emergência, importação OFX/Open Finance, insights com IA | ideias |
+| Fase        | Escopo                                                                                                                 | Status                                           |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **v1**      | Fundação, cadastros, registro rápido, PWA offline + lembrete, visões, dashboard                                        | 🚧 em andamento ([milestone](../../milestone/1)) |
+| **Fase 2**  | Espaço compartilhado do casal: "um paga e divide" (estilo Splitwise), saldo entre os dois, métricas individual × casal | planejada                                        |
+| **Fase 3+** | Limites por categoria sugeridos pela média, metas, reserva de emergência, importação OFX/Open Finance, insights com IA | ideias                                           |
 
 O backlog completo está nas [issues](../../issues) (label `futuro` = depois da v1).
 
 ## Stack e por quê
 
-| Camada | Escolha | Por quê |
-|---|---|---|
-| Framework | **Next.js 16** (App Router) + TypeScript | Um app só para web e PWA; Server Actions evitam manter API e front separados; deploy grátis na Vercel |
-| Banco | **Postgres** (Neon em produção, Docker local) | Relacional combina com dinheiro (somas, agrupamentos, integridade); Neon tem plano free e integra com a Vercel |
-| ORM | **Prisma 7** + driver adapter da Neon | Schema tipado e migrations versionadas |
-| Auth | **Better Auth** (e-mail/senha) | Sessões no próprio banco; o plugin de organizations serve de base para o espaço compartilhado da fase 2 |
-| UI | **Tailwind + shadcn/ui**, gráficos com **Recharts** | Componentes acessíveis que ficam no repo, sem lock-in |
-| PWA | **Serwist** + **Dexie** (IndexedDB) | Service worker para abrir instantâneo; fila offline com `clientId` para o sync ser idempotente |
-| Lembrete | **Web Push** (VAPID) + **Vercel Cron** | Funciona no iPhone (iOS 16.4+) com o app instalado na tela inicial |
-| Qualidade | **Zod**, **Vitest**, **Playwright** | Regras de dinheiro testadas como funções puras; fluxos críticos testados ponta a ponta |
-| CI/CD | **GitHub Actions** → Vercel | Todo PR roda lint, testes, build e e2e e ganha um preview; a `main` só vai para produção (com migrations) se o CI passar |
+| Camada    | Escolha                                             | Por quê                                                                                                                  |
+| --------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Framework | **Next.js 16** (App Router) + TypeScript            | Um app só para web e PWA; Server Actions evitam manter API e front separados; deploy grátis na Vercel                    |
+| Banco     | **Postgres** (Neon em produção, Docker local)       | Relacional combina com dinheiro (somas, agrupamentos, integridade); Neon tem plano free e integra com a Vercel           |
+| ORM       | **Prisma 7** + driver adapter da Neon               | Schema tipado e migrations versionadas                                                                                   |
+| Auth      | **Better Auth** (e-mail/senha)                      | Sessões no próprio banco; o plugin de organizations serve de base para o espaço compartilhado da fase 2                  |
+| UI        | **Tailwind + shadcn/ui**, gráficos com **Recharts** | Componentes acessíveis que ficam no repo, sem lock-in                                                                    |
+| PWA       | **Serwist** + **Dexie** (IndexedDB)                 | Service worker para abrir instantâneo; fila offline com `clientId` para o sync ser idempotente                           |
+| Lembrete  | **Web Push** (VAPID) + **Vercel Cron**              | Funciona no iPhone (iOS 16.4+) com o app instalado na tela inicial                                                       |
+| Qualidade | **Zod**, **Vitest**, **Playwright**                 | Regras de dinheiro testadas como funções puras; fluxos críticos testados ponta a ponta                                   |
+| CI/CD     | **GitHub Actions** → Vercel                         | Todo PR roda lint, testes, build e e2e e ganha um preview; a `main` só vai para produção (com migrations) se o CI passar |
 
 Por que **PWA** e não app nativo: um único código, sem App Store, instalação pela tela inicial, e o iOS já suporta push e offline para PWAs.
 
@@ -112,35 +116,46 @@ Por que **PWA** e não app nativo: um único código, sem App Store, instalaçã
 - Dinheiro sempre em **centavos inteiros**; datas no fuso `America/Sao_Paulo`.
 - Compra no crédito conta no **mês da compra** nos indicadores; a tela de faturas mostra quando ela é paga.
 - Compra **no dia do fechamento ou depois** vai para a fatura seguinte. A fatura pode ser trocada à mão.
-- Parcela *i* conta no mês da compra + (i−1). Centavos que sobram da divisão vão para a 1ª parcela.
+- Parcela _i_ conta no mês da compra + (i−1). Centavos que sobram da divisão vão para a 1ª parcela.
 - Transferência e pagamento de fatura **não** são gasto.
 
 Os detalhes completos estão em [`docs/specs/v1-design.md`](docs/specs/v1-design.md).
 
 ## Como rodar localmente
 
-> Os comandos abaixo passam a valer conforme as tasks da etapa 1 forem concluídas.
-
-Pré-requisitos: Node 24+, Docker.
+Pré-requisitos: Node 24+ (`nvm use`) e Docker.
 
 ```bash
 git clone git@github.com:limajpp/financas.git
 cd financas
-git config core.hooksPath .githooks   # hook de commit (o npm install também faz isso)
-npm install
-cp .env.example .env          # preencha as variáveis
-docker compose up -d          # Postgres local
-npx prisma migrate dev        # cria o schema
+npm install                   # também ativa o hook de commit (.githooks)
+npx playwright install        # navegadores dos testes e2e
 npm run dev                   # http://localhost:3000
 ```
 
-| Comando | O que faz |
-|---|---|
-| `npm run dev` | servidor de desenvolvimento |
-| `npm test` | testes unitários (Vitest) |
-| `npm run test:e2e` | testes de ponta a ponta (Playwright) |
-| `npm run lint` | lint + checagem de tipos |
-| `npm run build` | build de produção |
+> Banco (Docker + Prisma) e variáveis de ambiente entram na task 2; até lá, `.env.example` só lista o que vem por aí.
+
+| Comando                   | O que faz                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `npm run dev`             | servidor de desenvolvimento                                                       |
+| `npm run build`           | build de produção                                                                 |
+| `npm run lint`            | ESLint (zero avisos) + checagem de tipos (`tsc`)                                  |
+| `npm run format`          | formata com Prettier (`format:check` só confere)                                  |
+| `npm test`                | testes unitários (Vitest; `test:watch` em modo watch)                             |
+| `npm run test:e2e`        | testes de ponta a ponta (Playwright: Chromium desktop + WebKit com perfil iPhone) |
+| `npm run test:e2e:docker` | os mesmos e2e dentro da imagem oficial do Playwright                              |
+
+O WebKit do Playwright só tem suporte oficial em Ubuntu/Debian. Em outras distros (Fedora, Arch…), use `npm run test:e2e:docker`, ou `npx playwright test --project=chromium` para rodar só o Chromium. O script monta o repo com `:z` (SELinux): na primeira vez o Docker re-rotula os arquivos, o que demora um pouco. A versão da imagem acompanha a do `@playwright/test`, que fica fixada (sem `^`); atualize as duas juntas.
+
+O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a mesma versão.
+
+### CI
+
+Todo PR para a `develop` ou a `main` roda no GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)):
+
+- **Lint, test and build:** lint, tipos, formatação, testes unitários e build.
+- **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção.
+- **Commit messages and PR title** ([`commits.yml`](.github/workflows/commits.yml)): valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente. Roda de novo quando o título é editado.
 
 ## Como este projeto é desenvolvido
 
