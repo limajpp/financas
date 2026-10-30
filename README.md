@@ -145,7 +145,9 @@ npm run dev                   # http://localhost:3000
 | `npm run test:e2e`        | testes de ponta a ponta (Playwright: Chromium desktop + WebKit com perfil iPhone) |
 | `npm run test:e2e:docker` | os mesmos e2e dentro da imagem oficial do Playwright                              |
 
-O WebKit do Playwright só tem suporte oficial em Ubuntu/Debian. Em outras distros (Fedora, Arch…), use `npm run test:e2e:docker`, ou `npx playwright test --project=chromium` para rodar só o Chromium.
+O WebKit do Playwright só tem suporte oficial em Ubuntu/Debian. Em outras distros (Fedora, Arch…), use `npm run test:e2e:docker`, ou `npx playwright test --project=chromium` para rodar só o Chromium. O script monta o repo com `:z` (SELinux): na primeira vez o Docker re-rotula os arquivos, o que demora um pouco. A versão da imagem acompanha a do `@playwright/test`, que fica fixada (sem `^`); atualize as duas juntas.
+
+O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a mesma versão.
 
 ### CI
 
@@ -153,7 +155,7 @@ Todo PR para a `develop` ou a `main` roda no GitHub Actions ([`ci.yml`](.github/
 
 - **Lint, test and build:** lint, tipos, formatação, testes unitários e build.
 - **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção.
-- **Commit messages and PR title:** valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente.
+- **Commit messages and PR title** ([`commits.yml`](.github/workflows/commits.yml)): valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente. Roda de novo quando o título é editado.
 
 ## Como este projeto é desenvolvido
 

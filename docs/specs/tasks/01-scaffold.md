@@ -18,7 +18,7 @@ Ter o projeto rodando com testes e CI, para que todas as tasks seguintes sigam o
 - Scripts: `dev`, `build`, `start`, `lint` (ESLint + `tsc --noEmit`), `format`, `test`, `test:watch`, `test:e2e` e `prepare` (ativa `core.hooksPath .githooks` no `npm install`).
 - `.nvmrc` com Node 24 e `engines` no `package.json`; `.env.example` comentado (vazio por enquanto).
 - **CI** `.github/workflows/ci.yml`: em PR para `develop`/`main` e em push nessas branches. Job `check` (install com cache → lint → test → build), job `e2e` (instala os navegadores do Playwright → `test:e2e`; sobe o relatório como artefato se falhar). Cancela execuções antigas do mesmo branch (`concurrency`).
-- Job `commits` (só em PR): roda `.githooks/commit-msg` no **título do PR** (que vira o commit do squash) e em cada commit do PR.
+- Workflow `commits.yml` (só em PR, inclusive quando o título é editado): roda `.githooks/commit-msg` no **título do PR** (que vira o commit do squash) e em cada commit do PR.
 
 ## Critérios de aceite
 
