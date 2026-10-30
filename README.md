@@ -74,7 +74,8 @@ O backlog completo está nas [issues](../../issues) (label `futuro` = depois da 
 | UI | **Tailwind + shadcn/ui**, gráficos com **Recharts** | Componentes acessíveis que ficam no repo, sem lock-in |
 | PWA | **Serwist** + **Dexie** (IndexedDB) | Service worker para abrir instantâneo; fila offline com `clientId` para o sync ser idempotente |
 | Lembrete | **Web Push** (VAPID) + **Vercel Cron** | Funciona no iPhone (iOS 16.4+) com o app instalado na tela inicial |
-| Qualidade | **Zod**, **Vitest**, **Playwright**, GitHub Actions | Regras de dinheiro testadas como funções puras; fluxos críticos testados ponta a ponta |
+| Qualidade | **Zod**, **Vitest**, **Playwright** | Regras de dinheiro testadas como funções puras; fluxos críticos testados ponta a ponta |
+| CI/CD | **GitHub Actions** → Vercel | Todo PR roda lint, testes, build e e2e e ganha um preview; a `main` só vai para produção (com migrations) se o CI passar |
 
 Por que **PWA** e não app nativo: um único código, sem App Store, instalação pela tela inicial, e o iOS já suporta push e offline para PWAs.
 

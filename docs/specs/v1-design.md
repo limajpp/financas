@@ -148,7 +148,7 @@ O app captura o contexto **no momento do gasto** (celular, rápido) e transforma
 1. Scaffold: Next.js 16 + TS + Tailwind + shadcn/ui + Vitest + Playwright + lint/format + CI no GitHub Actions (lint, test, build).
 2. Banco: Postgres local via Docker Compose (dev/testes) + Prisma 7 + schema inicial (`User`, `Space`, `SpaceMember`) + migrations.
 3. Auth: Better Auth (e-mail/senha), cadastro cria o espaço pessoal, rotas protegidas, layout base (navegação inferior no mobile, sidebar no desktop).
-4. Deploy: Vercel + Neon via Marketplace, variáveis de ambiente, migrations no deploy, URL de preview funcionando.
+4. Deploy e CD: GitHub Actions faz migrations + deploy na Vercel (produção na `main`, preview nos PRs), Neon via Marketplace, variáveis de ambiente.
 
 **Etapa 2 – Cadastros**
 5. Categorias: modelo de dois níveis, seed padrão, `isFixed`, gestão nas configurações.

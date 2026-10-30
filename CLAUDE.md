@@ -10,7 +10,7 @@ App de finanças pessoais: web (análise) + PWA no iPhone (registro rápido). O 
 - Postgres: Docker Compose local (dev/testes), Neon em produção. **Prisma 7, sempre instalado com `@7`** (`prisma@7`, `@prisma/client@7`, adapters `@7`): a tag `latest` aponta para o Prisma 8 RC.
 - Better Auth (e-mail/senha). Tailwind + shadcn/ui. Recharts (seguir a skill `dataviz`).
 - Serwist (service worker), Dexie (fila offline), `web-push` + Vercel Cron.
-- Zod, Vitest, Playwright. CI no GitHub Actions. Deploy na Vercel.
+- Zod, Vitest, Playwright. CI/CD no GitHub Actions: `ci.yml` (lint, testes, build, e2e) em todo PR; `deploy.yml` (migrations + Vercel) depois do CI.
 
 ## Convenções
 
