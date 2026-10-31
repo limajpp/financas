@@ -1,17 +1,14 @@
 name: Deploy
 
 # Runs after CI finishes; deploys only when it passed. GitHub Actions is the only way to Vercel
-# (vercel.json turns off Git deployments).
+# (vercel.json turns off Git deployments). The repo is public, and so are these logs: database URLs
+# and passwords only travel through masked environment variables, never through ${{ }} in a script.
 on:
   workflow_run:
     workflows: [CI]
     types: [completed]
   pull_request:
     types: [closed]
-
-concurrency:
-  group: deploy-${{ github.event.workflow_run.head_branch || github.event.pull_request.number }}
-  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -20,31 +17,32 @@ env:
   VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
   VERCEL_CLI: vercel@65.9.0
+  NEON_API: https://console.neon.tech/api/v2/projects/${{ vars.NEON_PROJECT_ID }}
 
 jobs:
   preview:
     name: Preview
-    # Only PRs from this repo: a fork's code must never run with these secrets.
+    # Only PRs from this repo (pull_requests is empty for forks): a fork's code must never run with
+    # these secrets.
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.event.workflow_run.pull_requests[0].number
+    # Same group as the cleanup job, so a merge right after CI can't delete the branch mid-preview.
+    concurrency:
+      group: preview-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: write
+    env:
+      PR: ${{ github.event.workflow_run.pull_requests[0].number }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
-      - name: Find the PR
-        id: pr
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.event.workflow_run.head_branch }}
-        run: |
-          number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')
-          test -n "$number" || { echo "PR aberto não encontrado para a branch $BRANCH"; exit 1; }
-          echo "number=$number" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
@@ -54,55 +52,87 @@ jobs:
           cache: npm
       - run: npm install -g npm@12.1.0 ${{ env.VERCEL_CLI }}
       - run: npm ci
-      # Schema-only: previews never get a copy of production data.
+      # Schema-only: previews never get a copy of production data. Only non-secret outputs are used
+      # from this action (its db_url outputs carry the password unmasked).
       - name: Neon branch for this PR
         id: neon
         uses: neondatabase/create-branch-action@v6
         with:
           project_id: ${{ vars.NEON_PROJECT_ID }}
           api_key: ${{ secrets.NEON_API_KEY }}
-          branch_name: preview/pr-${{ steps.pr.outputs.number }}
+          branch_name: preview/pr-${{ env.PR }}
           branch_type: schema-only
           database: neondb
           role: neondb_owner
-      - name: Mask database URLs
+      - name: Database URLs
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          BRANCH_ID: ${{ steps.neon.outputs.branch_id }}
+          HOST: ${{ steps.neon.outputs.db_host }}
+          HOST_POOLED: ${{ steps.neon.outputs.db_host_pooled }}
         run: |
-          echo "::add-mask::${{ steps.neon.outputs.db_url }}"
-          echo "::add-mask::${{ steps.neon.outputs.db_url_pooled }}"
-      # A schema-only branch copies the tables but not _prisma_migrations, so start it empty once.
-      - name: Empty the new branch
-        if: steps.neon.outputs.created == 'true'
-        env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
-        run: echo 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' | npx prisma db execute --stdin
-      - name: Migrate
-        env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
-        run: npx prisma migrate deploy
-      - run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          set -euo pipefail
+          password=$(curl -fsS -H "Authorization: Bearer $NEON_API_KEY" \
+            "$NEON_API/branches/$BRANCH_ID/roles/neondb_owner/reveal_password" | jq -r .password)
+          echo "::add-mask::$password"
+          direct="postgresql://neondb_owner:$password@$HOST/neondb?sslmode=require"
+          pooled="postgresql://neondb_owner:$password@$HOST_POOLED/neondb?sslmode=require"
+          echo "::add-mask::$direct"
+          echo "::add-mask::$pooled"
+          # Both names point at the PR's branch: prisma.config.ts prefers DATABASE_URL_UNPOOLED.
+          {
+            echo "DATABASE_URL_UNPOOLED=$direct"
+            echo "PREVIEW_DATABASE_URL=$pooled"
+          } >> "$GITHUB_ENV"
+      # A schema-only branch copies the tables but with no rows, _prisma_migrations included, so
+      # `migrate deploy` would fail on it. Start it empty while it has no migration history (also
+      # covers a re-run after a half-done first run).
+      - name: Empty a branch with no migration history
+        run: |
+          set -euo pipefail
+          applied=$(psql "$DATABASE_URL_UNPOOLED" -tAc "SELECT CASE
+            WHEN to_regclass('public._prisma_migrations') IS NULL THEN 0
+            ELSE (xpath('/row/c/text()', query_to_xml('SELECT count(*) AS c FROM public._prisma_migrations', false, true, '')))[1]::text::int
+          END")
+          if [ "$applied" = 0 ]; then
+            echo 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' | npx prisma db execute --stdin
+          fi
+      - run: npx prisma migrate deploy
+      - run: vercel pull --yes --environment=preview
       # The real BETTER_AUTH_SECRET is a sensitive Vercel variable: `vercel pull` doesn't bring it, and
       # the build only needs one to load the auth module. Server code reads the real one at runtime.
       - name: Build
-        env:
-          DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
-        run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build --token=${{ secrets.VERCEL_TOKEN }}
-      # The preview's database is set per deployment: the project has no Preview DATABASE_URL.
+        run: |
+          export DATABASE_URL="$PREVIEW_DATABASE_URL"
+          BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build
+      # The project has no Preview DATABASE_URL: it is set on this deployment only. `--env NAME`
+      # without a value reads it from the environment, so it never shows in the script.
       - name: Deploy
         id: deploy
         run: |
-          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} \
-            --env DATABASE_URL="${{ steps.neon.outputs.db_url_pooled }}")
-          echo "url=$url" >> "$GITHUB_OUTPUT"
+          export DATABASE_URL="$PREVIEW_DATABASE_URL"
+          echo "url=$(vercel deploy --prebuilt --env DATABASE_URL)" >> "$GITHUB_OUTPUT"
       - name: Comment the URL on the PR
         env:
           GH_TOKEN: ${{ github.token }}
           URL: ${{ steps.deploy.outputs.url }}
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          body=$(printf '<!-- preview-url -->\n🔎 **Preview:** %s\n\nCommit `%s`, banco Neon `preview/pr-%s` (só schema, sem dados da produção).' \
-            "$URL" "${SHA::7}" "${{ steps.pr.outputs.number }}")
-          gh pr comment "${{ steps.pr.outputs.number }}" --repo "$GITHUB_REPOSITORY" \
-            --body "$body" --edit-last --create-if-none
+          body=$(printf '🔎 **Preview:** %s\n\nCommit `%s`, banco Neon `preview/pr-%s` (só schema, sem dados da produção).' \
+            "$URL" "${SHA::7}" "$PR")
+          gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body "$body" --edit-last --create-if-none
+      # If the PR was merged or closed while this ran, the cleanup job may have found nothing to delete.
+      - name: Delete the branch if the PR is already closed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          BRANCH_ID: ${{ steps.neon.outputs.branch_id }}
+        run: |
+          state=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json state --jq .state)
+          if [ "$state" != OPEN ]; then
+            curl -fsS -X DELETE -H "Authorization: Bearer $NEON_API_KEY" "$NEON_API/branches/$BRANCH_ID" >/dev/null
+            echo "PR $state: branch preview/pr-$PR apagada."
+          fi
 
   production:
     name: Production
@@ -111,50 +141,92 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main'
+    concurrency:
+      group: production
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: production
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - uses: actions/checkout@v7
+      # A re-run of CI on an old main commit must not put old code back in production.
+      - name: Only the tip of main
+        id: tip
+        run: |
+          tip=$(git ls-remote "https://github.com/$GITHUB_REPOSITORY" refs/heads/main | cut -f1)
+          if [ "$tip" != "$SHA" ]; then
+            echo "::notice::$SHA não é mais a ponta da main ($tip): sem deploy."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.tip.outputs.skip != 'true'
+        uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
-      - uses: actions/setup-node@v7
+          ref: ${{ env.SHA }}
+      - if: steps.tip.outputs.skip != 'true'
+        uses: actions/setup-node@v7
         with:
           node-version-file: .nvmrc
           cache: npm
-      - run: npm install -g npm@12.1.0 ${{ env.VERCEL_CLI }}
-      - run: npm ci
-      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-      # Migrations first: if they fail, production keeps running the previous deployment.
-      - name: Migrate
+      - if: steps.tip.outputs.skip != 'true'
+        run: npm install -g npm@12.1.0 ${{ env.VERCEL_CLI }}
+      - if: steps.tip.outputs.skip != 'true'
+        run: npm ci
+      - if: steps.tip.outputs.skip != 'true'
+        run: vercel pull --yes --environment=production
+      # Build before migrating: a failed build must not leave old code on a new schema.
+      - if: steps.tip.outputs.skip != 'true'
+        name: Build
+        run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build --prod
+      # Migrations before the deploy: if they fail, production keeps the previous deployment. They must
+      # stay backward compatible (expand/contract): old code runs on the new schema for a few seconds.
+      - if: steps.tip.outputs.skip != 'true'
+        name: Migrate
         run: |
-          set -a; . .vercel/.env.production.local; set +a
-          npx prisma migrate deploy
-      # Throwaway secret for the build only (see the preview job).
-      - run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
-      # Against the production domain: deployment URLs are behind Vercel's login (deployment protection).
-      - name: Smoke test
+          set -euo pipefail
+          url=$(node -p 'require("dotenv").parse(require("fs").readFileSync(".vercel/.env.production.local")).DATABASE_URL_UNPOOLED ?? ""')
+          echo "::add-mask::$url"
+          test -n "$url" || { echo "DATABASE_URL_UNPOOLED vazia no vercel pull (variável sensível?)"; exit 1; }
+          DATABASE_URL_UNPOOLED="$url" npx prisma migrate deploy
+      - if: steps.tip.outputs.skip != 'true'
+        run: vercel deploy --prebuilt --prod
+      # Against the production domain the app uses (VERCEL_PROJECT_PRODUCTION_URL is the shortest
+      # production alias): deployment URLs are behind Vercel's login. No automatic rollback: a
+      # failure here is a signal to run `vercel rollback`.
+      - if: steps.tip.outputs.skip != 'true'
+        name: Smoke test
         run: |
-          set -eu
-          domain=$(vercel api "/v9/projects/$VERCEL_PROJECT_ID" --raw --token=${{ secrets.VERCEL_TOKEN }} \
-            | jq -r '.targets.production.alias[0]')
-          URL="https://$domain"
-          location=$(curl -s -o /dev/null -w '%{redirect_url}' "$URL/")
-          echo "/ → $location"
+          set -euo pipefail
+          domain=$(vercel api "/v9/projects/$VERCEL_PROJECT_ID?teamId=$VERCEL_ORG_ID" --raw \
+            | jq -r '.targets.production.alias | min_by(length)')
+          url="https://$domain"
+          location=$(curl -s -o /dev/null -w '%{redirect_url}' "$url/")
+          echo "$url/ → $location"
           case "$location" in */entrar*) ;; *) echo "esperava redirecionar para /entrar"; exit 1 ;; esac
-          status=$(curl -s -o /dev/null -w '%{http_code}' "$URL/entrar")
-          echo "/entrar → $status"
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$url/entrar")
+          echo "$url/entrar → $status"
           test "$status" = 200
 
   cleanup:
     name: Delete the PR's Neon branch
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    concurrency:
+      group: preview-${{ github.event.pull_request.head.ref }}
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: neondatabase/delete-branch-action@v3
-        with:
-          project_id: ${{ vars.NEON_PROJECT_ID }}
-          api_key: ${{ secrets.NEON_API_KEY }}
-          branch: preview/pr-${{ github.event.pull_request.number }}
+      # Tolerates a missing branch (CI failed, or the preview never ran).
+      - env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NAME: preview/pr-${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          id=$(curl -fsS -G -H "Authorization: Bearer $NEON_API_KEY" --data-urlencode "search=$NAME" \
+            "$NEON_API/branches" | jq -r --arg name "$NAME" '.branches[] | select(.name == $name) | .id')
+          if [ -z "$id" ]; then
+            echo "Nenhuma branch $NAME na Neon."
+            exit 0
+          fi
+          curl -fsS -X DELETE -H "Authorization: Bearer $NEON_API_KEY" "$NEON_API/branches/$id" >/dev/null
+          echo "Branch $NAME apagada."

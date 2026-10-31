@@ -21,7 +21,8 @@ export default function setup() {
 
   try {
     execFileSync("npx", ["prisma", "migrate", "deploy"], {
-      env: { ...process.env, DATABASE_URL: url },
+      // prisma.config.ts prefers DATABASE_URL_UNPOOLED: pin it too, or a stray one would get migrated.
+      env: { ...process.env, DATABASE_URL: url, DATABASE_URL_UNPOOLED: url },
       stdio: "pipe",
     });
   } catch (error) {

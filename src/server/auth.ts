@@ -7,6 +7,7 @@ import { nextCookies } from "better-auth/next-js";
 
 import { db } from "@/lib/db";
 import { signUpSchema } from "@/lib/validation/auth";
+import { authUrls } from "@/server/auth-urls";
 import { isSignUpAllowed } from "@/server/signup-allowlist";
 import { ensurePersonalSpace } from "@/server/spaces";
 
@@ -18,25 +19,9 @@ function validName(name: unknown) {
   return parsed.data;
 }
 
-const https = (host: string | undefined) => (host ? `https://${host}` : undefined);
-
-// On Vercel the URL comes from its system variables: the production domain, or this preview's URL.
-// BETTER_AUTH_URL (local dev, CI) wins when set.
-const baseURL =
-  process.env.BETTER_AUTH_URL ??
-  https(
-    process.env.VERCEL_ENV === "production"
-      ? process.env.VERCEL_PROJECT_PRODUCTION_URL
-      : process.env.VERCEL_URL,
-  );
-
 // Secret comes from BETTER_AUTH_SECRET.
 export const auth = betterAuth({
-  baseURL,
-  // A deployment is also reachable by its unique and branch URLs.
-  trustedOrigins: [https(process.env.VERCEL_URL), https(process.env.VERCEL_BRANCH_URL)].filter(
-    (origin): origin is string => origin !== undefined,
-  ),
+  ...authUrls(process.env),
   database: prismaAdapter(db, { provider: "postgresql", transaction: true }),
   emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128 },
   // Better Auth's "account" holds login credentials; ours is the bank account (task 6).
