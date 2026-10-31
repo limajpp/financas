@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { CategoryType } from "@/domain/categories";
+import { type CategoryType, isArchivedEffective, isFixedEffective } from "@/domain/categories";
 import { cn } from "@/lib/utils";
 
 import { CategoryDialog, type DialogState } from "./category-dialog";
@@ -135,8 +135,10 @@ function CategoryRow({
   onAddChild?: () => void;
   onToggleArchived: () => void;
 }) {
-  const archived = category.archived;
-  const fixed = category.isFixed || (parent?.isFixed ?? false);
+  const toNode = (c: CategoryView) => ({ archivedAt: c.archived ? new Date(0) : null });
+  // A child of an archived parent counts as archived too.
+  const archived = isArchivedEffective(toNode(category), parent && toNode(parent));
+  const fixed = isFixedEffective(category, parent);
   return (
     <div className={cn("flex min-h-12 items-center gap-3 px-3 py-2", archived && "opacity-60")}>
       <CategoryIcon icon={category.icon} color={category.color} />

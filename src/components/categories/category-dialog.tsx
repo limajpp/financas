@@ -45,11 +45,15 @@ export function CategoryDialog({
   state: DialogState | null;
   onClose: () => void;
 }) {
+  // Keeps the last form on screen while the sheet animates out, instead of flashing empty.
+  const [shown, setShown] = useState(state);
+  if (state && state !== shown) setShown(state);
+
   return (
     <Dialog open={state !== null} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="top-auto bottom-0 max-h-[90dvh] max-w-full translate-y-0 overflow-y-auto rounded-b-none sm:top-1/2 sm:bottom-auto sm:max-w-md sm:-translate-y-1/2 sm:rounded-b-xl">
         {/* key: a fresh form (and fresh defaults) each time the dialog opens for something else. */}
-        {state && <CategoryForm key={formKey(state)} state={state} onDone={onClose} />}
+        {shown && <CategoryForm key={formKey(shown)} state={shown} onDone={onClose} />}
       </DialogContent>
     </Dialog>
   );
@@ -190,8 +194,9 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
           <div className="grid gap-1">
             <Label htmlFor={ids.fixed}>Gasto fixo</Label>
             <p className="text-sm text-muted-foreground">
-              Conta como fixo no indicador de fixos × variáveis
-              {parent ? "." : ", junto com as subcategorias."}
+              {parent?.isFixed
+                ? `Já é fixa porque ${parent.name} é fixa.`
+                : `Conta como fixo no indicador de fixos × variáveis${parent ? "." : ", junto com as subcategorias."}`}
             </p>
           </div>
           <Switch id={ids.fixed} checked={isFixed} onCheckedChange={setIsFixed} />

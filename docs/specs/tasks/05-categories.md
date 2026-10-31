@@ -33,7 +33,7 @@ Todo espaço já nasce com uma lista padrão brasileira de categorias e subcateg
 - **Arquivada (efetiva)** = a própria categoria ou a mãe arquivada.
   - Uma arquivada some das escolhas (`selectableCategories`), mas continua existindo, então os lançamentos antigos mantêm a categoria.
   - Desarquivar uma subcategoria cuja mãe está arquivada é recusado: primeiro se desarquiva a mãe.
-- **Ícone e cor** vêm de listas fechadas: `CATEGORY_ICONS`, cerca de 40 ícones do `lucide-react` guardados pelo nome, e `CATEGORY_COLORS`, com 10 cores. O Zod valida contra essas listas.
+- **Ícone e cor** vêm de listas fechadas: `CATEGORY_ICONS`, 52 ícones do `lucide-react` guardados pelo nome, e `CATEGORY_COLORS`, com 11 cores. O Zod valida contra essas listas.
 - **Ordem:** alfabética em pt-BR (`Intl.Collator('pt-BR')`), com as subcategorias embaixo da mãe. Não há reordenação manual na v1.
 - **Sem apagar na v1:** só arquivar, porque os lançamentos (task 7) vão apontar para a categoria.
 
@@ -61,7 +61,7 @@ Os nomes são genéricos, nada pessoal. As marcadas com **(fixa)** entram com `i
 
 **Receitas:** Salário, Freelance, Rendimentos, Reembolsos, Presentes recebidos e Outras receitas, todas sem subcategorias.
 
-Cada categoria de primeiro nível tem ícone e cor próprios, e as subcategorias herdam os dois da mãe na criação. Depois dá para mudar qualquer um.
+Cada categoria de primeiro nível tem ícone e cor próprios. Na lista padrão, as subcategorias herdam a cor da mãe e, quando existe um ícone mais específico (Mercado → carrinho), usam o próprio; senão, herdam o da mãe. Uma subcategoria nova criada pela tela começa com o ícone e a cor da mãe. Depois dá para mudar qualquer um.
 
 ### Criação da lista padrão
 
@@ -116,6 +116,11 @@ Cada categoria de primeiro nível tem ícone e cor próprios, e as subcategorias
 - **Marca `categoriesSeededAt` no espaço**, em vez de "criar a lista se não houver categorias": se o João arquivar tudo, nada volta sozinho.
 - **Ícones e cores em listas fechadas:** a UI fica coerente com o tema e o dark mode (task 26), e o banco nunca guarda uma classe CSS arbitrária.
 - **Mãe e tipo fixos depois da criação:** mover uma subcategoria ou trocar o tipo mexeria nos indicadores do histórico. Se fizer falta, entra com a edição em massa da task 14.
+
+### Revisão
+
+- Corrigido: o teste de corrida da lista padrão agora parte de um espaço sem a marca; a tela usa `isFixedEffective`/`isArchivedEffective` (filhas de uma mãe arquivada aparecem como arquivadas); o diálogo avisa quando a subcategoria já é fixa pela mãe e não pisca vazio ao fechar; `archived` validado com Zod; transação da lista padrão com timeout de 20 s (início a frio da Neon).
+- Descartado por ora: navegação por setas nos seletores de ícone e cor (cada opção é um botão com Tab; fica para o polimento de acessibilidade da task 26).
 
 ## Fora do escopo
 

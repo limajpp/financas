@@ -54,13 +54,22 @@ describe("lista padrão", () => {
   });
 
   it("chamar de novo, inclusive em paralelo, não duplica", async () => {
-    const space = await spaceFor("ana@example.com");
+    // A space without the mark, so every call below really competes to seed it.
+    const user = await db.user.create({ data: { name: "Ana Teste", email: "ana@example.com" } });
+    const space = await db.space.create({
+      data: {
+        type: "PERSONAL",
+        name: "Pessoal",
+        personalOwnerId: user.id,
+        members: { create: { userId: user.id, role: "OWNER" } },
+      },
+    });
 
     await Promise.all([
-      ensureDefaultCategories(space.id),
-      ensureDefaultCategories(space.id),
-      ensurePersonalSpace(space.personalOwnerId!),
+      ...Array.from({ length: 5 }, () => ensureDefaultCategories(space.id)),
+      ensurePersonalSpace(user.id),
     ]);
+    await ensureDefaultCategories(space.id);
 
     expect(await db.category.count()).toBe(DEFAULT_COUNT);
   });

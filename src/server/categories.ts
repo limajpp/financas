@@ -5,6 +5,7 @@ import {
   type CategoryError,
   type CategoryType,
   fixedFlagFor,
+  isArchivedEffective,
   selectableTree,
   validateNewCategory,
   validateRename,
@@ -39,38 +40,42 @@ function spaceCategories(spaceId: string) {
  * which caller seeds; a concurrent caller waits on the row lock and then finds the mark set.
  */
 export async function ensureDefaultCategories(spaceId: string) {
-  await db.$transaction(async (tx) => {
-    const claimed = await tx.space.updateMany({
-      where: { id: spaceId, categoriesSeededAt: null },
-      data: { categoriesSeededAt: new Date() },
-    });
-    if (claimed.count === 0) return;
+  await db.$transaction(
+    async (tx) => {
+      const claimed = await tx.space.updateMany({
+        where: { id: spaceId, categoriesSeededAt: null },
+        data: { categoriesSeededAt: new Date() },
+      });
+      if (claimed.count === 0) return;
 
-    for (const parent of DEFAULT_CATEGORIES) {
-      await tx.category.create({
-        data: {
-          spaceId,
-          name: parent.name,
-          type: parent.type,
-          icon: parent.icon,
-          color: parent.color,
-          isFixed: fixedFlagFor(parent.type, parent.isFixed ?? false),
-          children: {
-            createMany: {
-              data: (parent.children ?? []).map((child) => ({
-                spaceId,
-                name: child.name,
-                type: parent.type,
-                icon: child.icon ?? parent.icon,
-                color: parent.color,
-                isFixed: fixedFlagFor(parent.type, child.isFixed ?? false),
-              })),
+      for (const parent of DEFAULT_CATEGORIES) {
+        await tx.category.create({
+          data: {
+            spaceId,
+            name: parent.name,
+            type: parent.type,
+            icon: parent.icon,
+            color: parent.color,
+            isFixed: fixedFlagFor(parent.type, parent.isFixed ?? false),
+            children: {
+              createMany: {
+                data: (parent.children ?? []).map((child) => ({
+                  spaceId,
+                  name: child.name,
+                  type: parent.type,
+                  icon: child.icon ?? parent.icon,
+                  color: parent.color,
+                  isFixed: fixedFlagFor(parent.type, child.isFixed ?? false),
+                })),
+              },
             },
           },
-        },
-      });
-    }
-  });
+        });
+      }
+      // ~19 sequential inserts: leave room for a cold Neon start (Prisma's default is 5 s).
+    },
+    { timeout: 20_000 },
+  );
 }
 
 /** The space's categories as a tree. Without `includeArchived`, archived ones (and children of archived parents) are left out. */
@@ -78,10 +83,10 @@ export async function listCategories(spaceId: string, { includeArchived = false 
   const tree = buildCategoryTree(await spaceCategories(spaceId));
   if (includeArchived) return tree;
   return tree
-    .filter((parent) => parent.archivedAt === null)
+    .filter((parent) => !isArchivedEffective(parent))
     .map((parent) => ({
       ...parent,
-      children: parent.children.filter((child) => child.archivedAt === null),
+      children: parent.children.filter((child) => !isArchivedEffective(child, parent)),
     }));
 }
 

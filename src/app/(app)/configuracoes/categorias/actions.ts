@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import type { z } from "zod";
+import { z } from "zod";
 
 import { CATEGORY_ERROR_MESSAGES } from "@/domain/categories";
 import {
@@ -66,9 +66,9 @@ export async function setCategoryArchivedAction(
   archived: unknown,
 ): Promise<CategoryActionResult> {
   const parsedId = categoryIdSchema.safeParse(id);
-  if (!parsedId.success || typeof archived !== "boolean") {
-    return { ok: false, error: CATEGORY_ERROR_MESSAGES.NOT_FOUND };
-  }
+  if (!parsedId.success) return { ok: false, error: CATEGORY_ERROR_MESSAGES.NOT_FOUND };
+  const parsedArchived = z.boolean().safeParse(archived);
+  if (!parsedArchived.success) return { ok: false, error: "Dados inválidos." };
   const space = await getCurrentSpace();
-  return done(await setCategoryArchived(space.id, parsedId.data, archived));
+  return done(await setCategoryArchived(space.id, parsedId.data, parsedArchived.data));
 }
