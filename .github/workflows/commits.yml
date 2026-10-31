@@ -1,0 +1,53 @@
+name: Commits
+
+# Separate from ci.yml so that editing the PR title re-runs only this check.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches: [develop, main]
+
+permissions:
+  contents: read
+
+jobs:
+  commits:
+    name: Commit messages and PR title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      LC_ALL: C.UTF-8
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check PR title (becomes the squash commit)
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The hook lets git-generated messages through; a PR title never is one.
+          case "$TITLE" in
+            Merge*|Revert\ *|fixup!*|squash!*|amend!*)
+              echo "::error::PR title must follow '<gitmoji> <type>(<scope>)?: <description>'"
+              exit 1 ;;
+          esac
+          # GitHub appends " (#N)" to the squash subject; keep it under the hook's 100 chars.
+          if (( ${#TITLE} > 92 )); then
+            echo "::error::PR title is longer than 92 characters"
+            exit 1
+          fi
+          printf '%s\n' "$TITLE" > "$RUNNER_TEMP/title"
+          .githooks/commit-msg "$RUNNER_TEMP/title"
+      - name: Check every commit in the PR
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          status=0
+          for sha in $(git rev-list --no-merges "$BASE..$HEAD"); do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/msg"
+            if ! .githooks/commit-msg "$RUNNER_TEMP/msg"; then
+              echo "::error::Commit $sha has an invalid message"
+              status=1
+            fi
+          done
+          exit $status
