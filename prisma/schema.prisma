@@ -96,6 +96,7 @@ model Space {
   members            SpaceMember[]
   categories         Category[]
   accounts           Account[]
+  cards              Card[]
 }
 
 enum SpaceRole {
@@ -159,5 +160,41 @@ model Account {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  cards Card[]
+
   @@index([spaceId])
+}
+
+/// A credit card. The invoice a purchase falls on comes from the cycle valid on the purchase date
+/// (src/domain/invoice-cycle.ts).
+model Card {
+  id         String      @id @default(uuid(7))
+  spaceId    String
+  space      Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  /// The account that pays the invoice.
+  accountId  String
+  account    Account     @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  name       String
+  limitCents Int?
+  archivedAt DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  cycles     CardCycle[]
+
+  @@index([spaceId])
+  @@index([accountId])
+}
+
+/// A version of a card's closing/due days, valid for purchases from `validFrom` on.
+/// Days are 1–31 (CHECK in the migration); a day the month lacks means its last day.
+model CardCycle {
+  id         String   @id @default(uuid(7))
+  cardId     String
+  card       Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  closingDay Int
+  dueDay     Int
+  validFrom  DateTime @db.Date
+  createdAt  DateTime @default(now())
+
+  @@unique([cardId, validFrom])
 }
