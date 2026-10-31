@@ -3,6 +3,7 @@ import "server-only";
 import { type CardError, cycleChange, sortCards, validateCard } from "@/domain/cards";
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { CYCLE_EPOCH, cycleOn, invoiceFor } from "@/domain/invoice-cycle";
+import { recomputeInvoices } from "@/domain/transactions";
 import { db } from "@/lib/db";
 import type { CardInput } from "@/lib/validation/cards";
 
@@ -94,6 +95,8 @@ export async function createCard(spaceId: string, input: CardInput): Promise<Car
 /**
  * Changes name, account, limit and days. New days apply to purchases from today on: they go in a
  * new cycle version (replacing one that already starts today); older purchases keep theirs.
+ * Purchases already registered from the version's start on get their invoice recomputed, except
+ * the ones whose invoice was chosen by hand.
  */
 export async function updateCard(
   spaceId: string,
@@ -112,7 +115,7 @@ export async function updateCard(
   if (!checked.ok) return checked;
 
   const today = todayInSaoPaulo();
-  const { closingDay, dueDay, createdToday } = toCard(current, today);
+  const { closingDay, dueDay, createdToday, cycles } = toCard(current, today);
   const change = cycleChange({ closingDay, dueDay }, input, today, { createdToday });
 
   await db.$transaction(async (tx) => {
@@ -127,6 +130,32 @@ export async function updateCard(
         create: { cardId: id, closingDay: change.closingDay, dueDay: change.dueDay, validFrom },
         update: { closingDay: change.closingDay, dueDay: change.dueDay },
       });
+
+      const purchases = await tx.transaction.findMany({
+        where: {
+          cardId: id,
+          type: "EXPENSE",
+          method: "CREDIT",
+          invoiceOverridden: false,
+          date: { gte: validFrom },
+        },
+        select: { id: true, date: true, invoiceDueDate: true },
+      });
+      const versions = [...cycles.filter((c) => c.validFrom !== change.validFrom), change];
+      const updates = recomputeInvoices(
+        versions,
+        purchases.map((p) => ({
+          id: p.id,
+          date: dbToCalendarDate(p.date),
+          invoiceDueDate: p.invoiceDueDate && dbToCalendarDate(p.invoiceDueDate),
+        })),
+      );
+      for (const update of updates) {
+        await tx.transaction.update({
+          where: { id: update.id },
+          data: { invoiceDueDate: calendarDateToDb(update.invoiceDueDate) },
+        });
+      }
     }
   });
   return reload(spaceId, id);
