@@ -95,6 +95,7 @@ model Space {
   categoriesSeededAt DateTime?
   members            SpaceMember[]
   categories         Category[]
+  accounts           Account[]
 }
 
 enum SpaceRole {
@@ -140,4 +141,23 @@ model Category {
 
   @@index([spaceId, type])
   @@index([parentId])
+}
+
+/// A bank account. Its balance is the initial balance on a calendar day plus the transactions
+/// after it (task 8).
+model Account {
+  id                  String    @id @default(uuid(7))
+  spaceId             String
+  space               Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name                String
+  color               String
+  /// May be negative (overdraft).
+  initialBalanceCents Int
+  /// A calendar day, not an instant.
+  initialBalanceDate  DateTime  @db.Date
+  archivedAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([spaceId])
 }

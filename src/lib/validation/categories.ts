@@ -1,11 +1,7 @@
 import { z } from "zod";
 
-import {
-  CATEGORY_COLORS,
-  CATEGORY_ICONS,
-  CATEGORY_NAME_MAX,
-  CATEGORY_TYPES,
-} from "@/domain/categories";
+import { CATEGORY_ICONS, CATEGORY_NAME_MAX, CATEGORY_TYPES } from "@/domain/categories";
+import { PALETTE_COLORS } from "@/domain/palette";
 
 const name = z
   .string()
@@ -15,7 +11,7 @@ const name = z
 
 const appearance = {
   icon: z.enum(CATEGORY_ICONS, { error: "Ícone inválido." }),
-  color: z.enum(CATEGORY_COLORS, { error: "Cor inválida." }),
+  color: z.enum(PALETTE_COLORS, { error: "Cor inválida." }),
   isFixed: z.boolean(),
 };
 

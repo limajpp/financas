@@ -1,10 +1,11 @@
-import type { CategoryColor, CategoryIcon, CategoryType } from "./categories";
+import type { CategoryIcon, CategoryType } from "./categories";
+import type { PaletteColor } from "./palette";
 
 export type DefaultCategory = {
   name: string;
   type: CategoryType;
   icon: CategoryIcon;
-  color: CategoryColor;
+  color: PaletteColor;
   isFixed?: boolean;
   children?: { name: string; icon?: CategoryIcon; isFixed?: boolean }[];
 };

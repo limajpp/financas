@@ -55,7 +55,9 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import type { CategoryColor, CategoryIcon as IconName } from "@/domain/categories";
+import { COLOR_CLASSES } from "@/components/palette";
+import type { CategoryIcon as IconName } from "@/domain/categories";
+import type { PaletteColor } from "@/domain/palette";
 
 export const ICON_COMPONENTS: Record<IconName, LucideIcon> = {
   House,
@@ -112,55 +114,6 @@ export const ICON_COMPONENTS: Record<IconName, LucideIcon> = {
   CircleEllipsis,
 };
 
-/** Tint (background) and ink (icon) for each palette key, readable in light and dark. */
-export const COLOR_CLASSES: Record<CategoryColor, { tint: string; ink: string; swatch: string }> = {
-  red: { tint: "bg-red-500/15", ink: "text-red-700 dark:text-red-300", swatch: "bg-red-500" },
-  orange: {
-    tint: "bg-orange-500/15",
-    ink: "text-orange-700 dark:text-orange-300",
-    swatch: "bg-orange-500",
-  },
-  amber: {
-    tint: "bg-amber-500/15",
-    ink: "text-amber-700 dark:text-amber-300",
-    swatch: "bg-amber-500",
-  },
-  lime: { tint: "bg-lime-500/15", ink: "text-lime-700 dark:text-lime-300", swatch: "bg-lime-500" },
-  green: {
-    tint: "bg-green-500/15",
-    ink: "text-green-700 dark:text-green-300",
-    swatch: "bg-green-500",
-  },
-  teal: { tint: "bg-teal-500/15", ink: "text-teal-700 dark:text-teal-300", swatch: "bg-teal-500" },
-  sky: { tint: "bg-sky-500/15", ink: "text-sky-700 dark:text-sky-300", swatch: "bg-sky-500" },
-  blue: { tint: "bg-blue-500/15", ink: "text-blue-700 dark:text-blue-300", swatch: "bg-blue-500" },
-  violet: {
-    tint: "bg-violet-500/15",
-    ink: "text-violet-700 dark:text-violet-300",
-    swatch: "bg-violet-500",
-  },
-  pink: { tint: "bg-pink-500/15", ink: "text-pink-700 dark:text-pink-300", swatch: "bg-pink-500" },
-  slate: {
-    tint: "bg-slate-500/15",
-    ink: "text-slate-700 dark:text-slate-300",
-    swatch: "bg-slate-500",
-  },
-};
-
-export const COLOR_LABELS: Record<CategoryColor, string> = {
-  red: "Vermelho",
-  orange: "Laranja",
-  amber: "Âmbar",
-  lime: "Lima",
-  green: "Verde",
-  teal: "Verde-azulado",
-  sky: "Céu",
-  blue: "Azul",
-  violet: "Violeta",
-  pink: "Rosa",
-  slate: "Cinza",
-};
-
 /** The category's icon on its color tint. Unknown values (old data) fall back to a tag in gray. */
 export function CategoryIcon({
   icon,
@@ -172,7 +125,7 @@ export function CategoryIcon({
   className?: string;
 }) {
   const Icon = ICON_COMPONENTS[icon as IconName] ?? Tag;
-  const colors = COLOR_CLASSES[color as CategoryColor] ?? COLOR_CLASSES.slate;
+  const colors = COLOR_CLASSES[color as PaletteColor] ?? COLOR_CLASSES.slate;
   return (
     <span
       aria-hidden

@@ -1,3 +1,5 @@
+import { normalizeName } from "./names";
+
 /**
  * Category rules: a two-level tree per space. Pure functions only (no Prisma, no I/O).
  */
@@ -62,22 +64,6 @@ export const CATEGORY_ICONS = [
 ] as const;
 export type CategoryIcon = (typeof CATEGORY_ICONS)[number];
 
-/** Palette keys. The UI turns each key into theme colors. */
-export const CATEGORY_COLORS = [
-  "red",
-  "orange",
-  "amber",
-  "lime",
-  "green",
-  "teal",
-  "sky",
-  "blue",
-  "violet",
-  "pink",
-  "slate",
-] as const;
-export type CategoryColor = (typeof CATEGORY_COLORS)[number];
-
 export const CATEGORY_NAME_MAX = 40;
 
 /** The fields the rules look at. */
@@ -108,16 +94,6 @@ export const CATEGORY_ERROR_MESSAGES: Record<CategoryError | "NOT_FOUND", string
 
 export type RuleResult<T = void> = { ok: true; value: T } | { ok: false; error: CategoryError };
 
-/** Comparison key: no accents, no case, single spaces. "  Saúde " → "saude". */
-export function normalizeCategoryName(name: string): string {
-  return name
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ");
-}
-
 /** Siblings share the parent (or, at the top level, the type). */
 function isSibling(
   a: Pick<CategoryNode, "parentId" | "type">,
@@ -130,10 +106,9 @@ function hasDuplicateName(
   candidate: Pick<CategoryNode, "parentId" | "type" | "name"> & { id?: string },
   existing: readonly CategoryNode[],
 ) {
-  const key = normalizeCategoryName(candidate.name);
+  const key = normalizeName(candidate.name);
   return existing.some(
-    (c) =>
-      c.id !== candidate.id && isSibling(c, candidate) && normalizeCategoryName(c.name) === key,
+    (c) => c.id !== candidate.id && isSibling(c, candidate) && normalizeName(c.name) === key,
   );
 }
 

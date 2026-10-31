@@ -1,6 +1,5 @@
 "use client";
 
-import { Check } from "lucide-react";
 import { useId, useState, useTransition } from "react";
 
 import {
@@ -9,28 +8,22 @@ import {
   updateCategoryAction,
 } from "@/app/(app)/configuracoes/categorias/actions";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { COLOR_CLASSES, ColorPicker } from "@/components/palette";
+import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
-  CATEGORY_COLORS,
   CATEGORY_ICONS,
   CATEGORY_NAME_MAX,
-  type CategoryColor,
   type CategoryIcon as IconName,
   type CategoryType,
 } from "@/domain/categories";
+import type { PaletteColor } from "@/domain/palette";
 import { cn } from "@/lib/utils";
 
-import { COLOR_CLASSES, COLOR_LABELS, ICON_COMPONENTS, ICON_LABELS } from "./category-icon";
+import { ICON_COMPONENTS, ICON_LABELS } from "./category-icon";
 import type { CategoryView } from "./types";
 
 export type DialogState =
@@ -51,10 +44,10 @@ export function CategoryDialog({
 
   return (
     <Dialog open={state !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="top-auto bottom-0 max-h-[90dvh] max-w-full translate-y-0 overflow-y-auto rounded-b-none sm:top-1/2 sm:bottom-auto sm:max-w-md sm:-translate-y-1/2 sm:rounded-b-xl">
+      <ResponsiveDialogContent>
         {/* key: a fresh form (and fresh defaults) each time the dialog opens for something else. */}
         {shown && <CategoryForm key={formKey(shown)} state={shown} onDone={onClose} />}
-      </DialogContent>
+      </ResponsiveDialogContent>
     </Dialog>
   );
 }
@@ -74,13 +67,13 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
   const [icon, setIcon] = useState<IconName>(
     (editing?.icon as IconName) ?? (parent?.icon as IconName) ?? "Tag",
   );
-  const [color, setColor] = useState<CategoryColor>(
-    (editing?.color as CategoryColor) ?? (parent?.color as CategoryColor) ?? "blue",
+  const [color, setColor] = useState<PaletteColor>(
+    (editing?.color as PaletteColor) ?? (parent?.color as PaletteColor) ?? "blue",
   );
   const [isFixed, setIsFixed] = useState(editing?.isFixed ?? false);
   const [result, setResult] = useState<CategoryActionResult | null>(null);
   const [pending, startTransition] = useTransition();
-  const ids = { name: useId(), fixed: useId(), icon: useId(), color: useId() };
+  const ids = { name: useId(), fixed: useId(), icon: useId() };
 
   const title = editing
     ? `Editar ${editing.name}`
@@ -161,33 +154,7 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
         </div>
       </fieldset>
 
-      <fieldset className="grid gap-2">
-        <legend className="mb-2 text-sm font-medium" id={ids.color}>
-          Cor
-        </legend>
-        <div role="radiogroup" aria-labelledby={ids.color} className="flex flex-wrap gap-2">
-          {CATEGORY_COLORS.map((key) => {
-            const selected = color === key;
-            return (
-              <button
-                key={key}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                aria-label={COLOR_LABELS[key]}
-                onClick={() => setColor(key)}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-full text-white ring-offset-2 ring-offset-popover outline-none focus-visible:ring-3 focus-visible:ring-ring",
-                  COLOR_CLASSES[key].swatch,
-                  selected && "ring-2 ring-foreground",
-                )}
-              >
-                {selected && <Check aria-hidden className="size-4" />}
-              </button>
-            );
-          })}
-        </div>
-      </fieldset>
+      <ColorPicker value={color} onChange={setColor} />
 
       {type === "EXPENSE" && (
         <div className="flex items-start justify-between gap-4">
@@ -209,11 +176,11 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
         </p>
       )}
 
-      <DialogFooter className="sticky -bottom-4 bg-popover pb-[max(1rem,env(safe-area-inset-bottom))] sm:static sm:bg-muted/50 sm:pb-4">
+      <ResponsiveDialogFooter>
         <Button type="submit" disabled={pending} className="h-10 w-full sm:w-auto">
           {pending ? "Salvando…" : "Salvar"}
         </Button>
-      </DialogFooter>
+      </ResponsiveDialogFooter>
     </form>
   );
 }
