@@ -61,7 +61,7 @@ export function CardManager({
       {visible.length === 0 ? (
         <p className="mt-4 text-muted-foreground">
           {cards.length > 0
-            ? "Todos os cartões estão arquivados."
+            ? "Todos os cartões estão arquivados. Ligue “Mostrar arquivadas” para vê-los."
             : "Nenhum cartão ainda. Cadastre com os dias de fechamento e vencimento da fatura."}
         </p>
       ) : (

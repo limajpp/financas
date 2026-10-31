@@ -28,6 +28,8 @@ function toCard(card: CardWithCycles, today: string) {
     archivedAt: card.archivedAt,
     account: card.account,
     cycles,
+    // Edits on the creation day correct the whole history (see cycleChange).
+    createdToday: todayInSaoPaulo(card.createdAt) === today,
     closingDay: cycle.closingDay,
     dueDay: cycle.dueDay,
     openInvoice: invoiceFor(cycle, today),
@@ -110,8 +112,8 @@ export async function updateCard(
   if (!checked.ok) return checked;
 
   const today = todayInSaoPaulo();
-  const { closingDay, dueDay } = toCard(current, today);
-  const change = cycleChange({ closingDay, dueDay }, input, today);
+  const { closingDay, dueDay, createdToday } = toCard(current, today);
+  const change = cycleChange({ closingDay, dueDay }, input, today, { createdToday });
 
   await db.$transaction(async (tx) => {
     await tx.card.update({

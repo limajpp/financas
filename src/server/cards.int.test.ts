@@ -55,6 +55,31 @@ async function card(spaceId: string, accountId: string, overrides: Record<string
 }
 
 describe("cartões", () => {
+  it("no dia em que o cartão foi criado, editar os dias corrige o ciclo inteiro", async () => {
+    today("2026-10-31");
+    const space = await spaceFor("ana@example.com");
+    const azul = await account(space.id);
+    const roxo = await card(space.id, azul.id, { closingDay: "5" });
+    expect(roxo.createdToday).toBe(true);
+
+    const result = await updateCard(
+      space.id,
+      roxo.id,
+      input(azul.id, { closingDay: "25", dueDay: "5" }),
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    expect(result.card.cycles).toEqual([{ closingDay: 25, dueDay: 5, validFrom: "1900-01-01" }]);
+    // A purchase from last week, entered now, uses the corrected days.
+    expect(invoiceFor(cycleOn(result.card.cycles, "2026-10-24"), "2026-10-24")).toEqual({
+      closingDate: "2026-10-25",
+      dueDate: "2026-11-05",
+    });
+
+    today("2026-11-01");
+    expect((await listCards(space.id))[0]?.createdToday).toBe(false);
+  });
+
   it("cria com o ciclo inicial, a conta e a fatura aberta de hoje", async () => {
     today("2026-10-08");
     const space = await spaceFor("ana@example.com");
@@ -100,10 +125,12 @@ describe("cartões", () => {
   });
 
   it("duas mudanças no mesmo dia substituem a versão do dia; mudar só o nome não cria versão", async () => {
-    today("2026-10-10");
+    today("2026-10-09");
     const space = await spaceFor("ana@example.com");
     const azul = await account(space.id);
     const roxo = await card(space.id, azul.id);
+
+    today("2026-10-10");
 
     await updateCard(space.id, roxo.id, input(azul.id, { closingDay: "20" }));
     await updateCard(space.id, roxo.id, input(azul.id, { closingDay: "22" }));
@@ -111,7 +138,7 @@ describe("cartões", () => {
 
     const cycles = await db.cardCycle.findMany({ where: { cardId: roxo.id } });
     expect(cycles).toHaveLength(2);
-    expect(cycles.map((c) => c.closingDay).sort()).toEqual([22, 5]);
+    expect(cycles.map((c) => c.closingDay).sort((a, b) => a - b)).toEqual([5, 22]);
   });
 
   it("recusa conta de outro espaço, conta arquivada num cartão novo e nome repetido", async () => {

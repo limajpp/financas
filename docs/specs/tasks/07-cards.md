@@ -83,7 +83,7 @@ Exemplos com o vencimento no mês seguinte, com fechamento dia 25 e vencimento d
   - nome, conta de pagamento (`<select>` nativo), dia do fechamento, dia do vencimento (`<select>` de 1 a 31) e limite (`MoneyInput`, opcional);
   - **prévia ao vivo** com a função do domínio: "Uma compra hoje cai na fatura que fecha em 03/11 e vence em 10/11/2026.";
   - para os dias 29 a 31, a dica "Nos meses mais curtos, vale o último dia do mês.";
-  - na edição, se o fechamento ou o vencimento mudarem, o aviso "A mudança vale para compras a partir de hoje. As anteriores continuam nas faturas de antes.";
+  - na edição (a partir do dia seguinte ao cadastro), se o fechamento ou o vencimento mudarem, o aviso "A mudança vale para compras a partir de hoje. As anteriores continuam nas faturas de antes.";
   - sem nenhuma conta cadastrada, o diálogo pede para cadastrar uma conta primeiro.
 - `/configuracoes` ganha o link "Cartões", que leva à seção em `/contas`.
 
@@ -108,7 +108,7 @@ Exemplos com o vencimento no mês seguinte, com fechamento dia 25 e vencimento d
   - a conta de outro espaço é recusada, e uma conta arquivada também, num cartão novo;
   - nome repetido é recusado;
   - um usuário não lista, edita nem arquiva o cartão de outro espaço.
-- [ ] CA6 — E2E (Chromium e iPhone/WebKit): cadastrar uma conta e um cartão, ver "Fecha dia X · vence dia Y" e a fatura aberta, editar o fechamento e ver o aviso, e arquivar.
+- [ ] CA6 — E2E (Chromium e iPhone/WebKit): cadastrar uma conta e um cartão, ver "Fecha dia X · vence dia Y" e a fatura aberta, editar o fechamento no dia do cadastro (correção, sem aviso) e arquivar. O aviso de "a partir de hoje" nos dias seguintes é coberto pela integração (CA4).
 - [ ] CA7 — Lint, format, test, build, `test:e2e:docker` e CI verdes. Tela conferida no desktop e no viewport de iPhone.
 
 ## Casos de borda
@@ -126,6 +126,16 @@ Exemplos com o vencimento no mês seguinte, com fechamento dia 25 e vencimento d
 - **A mudança vale a partir de hoje,** sem pedir uma data ao usuário. É o caso comum, quando o banco avisa e você atualiza o app. Escolher outra data pode entrar depois, se fizer falta.
 - **Cartões na tela `/contas`:** cada cartão está ligado a uma conta, e ver os dois juntos ajuda. A tela de faturas (task 18) é outra coisa: análise por vencimento.
 - **`<select>` nativo para os dias:** no iPhone, ele abre a roleta do sistema, mais rápida que digitar.
+
+## Revisão
+
+- O revisor refez a regra de forma independente e conferiu todos os valores esperados das tabelas. Rodou 13 mutações do módulo: 12 foram pegas pelos testes.
+- Corrigido:
+  - a mutação que sobreviveu (ajustar o dia do vencimento pelo mês do fechamento, e não pelo do vencimento). Entraram uma propriedade que confere o dia do vencimento em todas as combinações e casos de tabela com vencimento 29–31 no mês seguinte;
+  - **correção no dia do cadastro:** editar os dias no mesmo dia em que o cartão foi criado corrige a primeira versão do ciclo (vale para todas as compras), sem o aviso de "vale a partir de hoje". Sem isso, um erro de digitação no cadastro ficava para sempre nas compras antigas (onboarding). Quando existirem lançamentos (task 8), a condição pode virar "cartão sem lançamentos";
+  - mensagens do limite (formato inválido e acima do teto têm mensagem própria); dias validados só a partir de texto ou número; prévia sem o ano no fechamento; estado vazio dos cartões arquivados.
+- Para a task 12: os lançamentos guardam só o `invoiceDueDate`. Quando `dueDay ≤ closingDay`, o mês do fechamento é o do vencimento − 1, então a task 12 precisa de uma função que parta do vencimento. Ela também decide se as parcelas depois de uma mudança de ciclo usam o ciclo da data da compra ou o de cada mês.
+- Descartado: apagar a versão do dia quando uma mudança volta ao ciclo anterior (5 → 20 → 5). Fica uma versão redundante, com o resultado certo.
 
 ## Fora do escopo
 

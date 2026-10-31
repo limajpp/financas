@@ -4,11 +4,16 @@ import { CARD_NAME_MAX } from "@/domain/cards";
 import { MAX_AMOUNT_TEXT, parseBRL } from "@/domain/money";
 
 const cycleDay = (label: string) =>
-  z.coerce
-    .number({ error: `Escolha o dia do ${label}.` })
-    .int({ error: `Escolha o dia do ${label}.` })
-    .min(1, { error: `Escolha o dia do ${label}.` })
-    .max(31, { error: `Escolha o dia do ${label}.` });
+  z
+    .union([z.string(), z.number()], { error: `Escolha o dia do ${label}.` })
+    .pipe(z.coerce.number({ error: `Escolha o dia do ${label}.` }))
+    .pipe(
+      z
+        .number({ error: `Escolha o dia do ${label}.` })
+        .int({ error: `Escolha o dia do ${label}.` })
+        .min(1, { error: `Escolha o dia do ${label}.` })
+        .max(31, { error: `Escolha o dia do ${label}.` }),
+    );
 
 /** The card form as typed. The limit is optional text in Brazilian format; output is in cents. */
 export const cardSchema = z.object({
@@ -28,7 +33,14 @@ export const cardSchema = z.object({
     .transform((text, ctx) => {
       if (text === "") return null;
       const cents = parseBRL(text);
-      if (cents === null || cents <= 0) {
+      if (cents === null) {
+        ctx.addIssue({
+          code: "custom",
+          message: "Limite inválido. Use o formato 1.234,56, até R$ 20.000.000,00.",
+        });
+        return z.NEVER;
+      }
+      if (cents <= 0) {
         ctx.addIssue({ code: "custom", message: "Limite inválido. Use um valor maior que zero." });
         return z.NEVER;
       }

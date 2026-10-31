@@ -81,6 +81,25 @@ describe("invoiceFor", () => {
     ]);
   });
 
+  it("vencimento em 29–31 no mês seguinte ao fechamento: ajustado pelo mês do vencimento", () => {
+    check(cycle(31, 30), [
+      ["2026-01-15", "2026-01-31", "2026-02-28"],
+      ["2026-01-31", "2026-02-28", "2026-03-30"],
+      ["2026-02-10", "2026-02-28", "2026-03-30"],
+      ["2028-01-15", "2028-01-31", "2028-02-29"],
+    ]);
+    check(cycle(30, 29), [
+      ["2026-01-15", "2026-01-30", "2026-02-28"],
+      ["2026-02-10", "2026-02-28", "2026-03-29"],
+      ["2028-01-15", "2028-01-30", "2028-02-29"],
+      ["2028-02-10", "2028-02-29", "2028-03-29"],
+    ]);
+    check(cycle(5, 29), [
+      ["2026-02-01", "2026-02-05", "2026-02-28"],
+      ["2028-02-01", "2028-02-05", "2028-02-29"],
+    ]);
+  });
+
   it("vencimento menor que o fechamento: vence no mês seguinte", () => {
     check(cycle(28, 3), [
       ["2026-02-27", "2026-02-28", "2026-03-03"],
@@ -175,16 +194,26 @@ describe("propriedades (todas as combinações de dias, 2026–2028)", () => {
     expect(failures).toEqual([]);
   }, 30_000);
 
-  it("o fechamento da fatura é sempre o dia configurado, ou o último do mês", () => {
+  it("fechamento e vencimento são sempre o dia configurado, ou o último do próprio mês", () => {
+    const lastDay = (date: string) =>
+      new Date(Date.UTC(+date.slice(0, 4), +date.slice(5, 7), 0)).getUTCDate();
+    const sample = days.filter((_, i) => i % 5 === 0);
+    const failures: string[] = [];
     for (let closingDay = 1; closingDay <= 31; closingDay++) {
-      for (const day of days.filter((_, i) => i % 7 === 0)) {
-        const { closingDate } = invoiceFor(cycle(closingDay, 15), day);
-        const d = Number(closingDate.slice(8));
-        const last = new Date(Date.UTC(+closingDate.slice(0, 4), +closingDate.slice(5, 7), 0));
-        expect(d).toBe(Math.min(closingDay, last.getUTCDate()));
+      for (let dueDay = 1; dueDay <= 31; dueDay++) {
+        for (const day of sample) {
+          const { closingDate, dueDate } = invoiceFor(cycle(closingDay, dueDay), day);
+          if (Number(closingDate.slice(8)) !== Math.min(closingDay, lastDay(closingDate))) {
+            failures.push(`fecha ${closingDay}, compra ${day}: fechou em ${closingDate}`);
+          }
+          if (Number(dueDate.slice(8)) !== Math.min(dueDay, lastDay(dueDate))) {
+            failures.push(`vence ${dueDay}, compra ${day}: venceu em ${dueDate}`);
+          }
+        }
       }
     }
-  });
+    expect(failures.slice(0, 5)).toEqual([]);
+  }, 30_000);
 });
 
 describe("shiftInvoice", () => {

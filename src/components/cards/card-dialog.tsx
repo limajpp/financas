@@ -105,7 +105,8 @@ function CardForm({
   const closing = Number(closingDay);
   const due = Number(dueDay);
   const preview = closing && due ? invoiceFor({ closingDay: closing, dueDay: due }, today) : null;
-  const cycleChanged = card !== null && (closing !== card.closingDay || due !== card.dueDay);
+  const cycleChanged =
+    card !== null && !card.createdToday && (closing !== card.closingDay || due !== card.dueDay);
   const shortMonthHint = closing >= 29 || due >= 29;
 
   const fieldErrors = result && !result.ok ? (result.fieldErrors ?? {}) : {};
@@ -198,8 +199,9 @@ function CardForm({
       <div aria-live="polite" className="grid gap-2 text-sm">
         {preview && (
           <p className="rounded-lg bg-muted px-3 py-2">
-            Uma compra hoje cai na fatura que fecha em {formatCalendarDate(preview.closingDate)} e
-            vence em {formatCalendarDate(preview.dueDate)}.
+            Uma compra hoje cai na fatura que fecha em{" "}
+            {formatCalendarDate(preview.closingDate).slice(0, 5)} e vence em{" "}
+            {formatCalendarDate(preview.dueDate)}.
           </p>
         )}
         {shortMonthHint && (

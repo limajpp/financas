@@ -2,7 +2,7 @@
  * Credit-card rules. Pure functions only (no Prisma, no I/O).
  */
 import type { CalendarDate } from "./dates";
-import type { CycleVersion, InvoiceCycle } from "./invoice-cycle";
+import { CYCLE_EPOCH, type CycleVersion, type InvoiceCycle } from "./invoice-cycle";
 import { normalizeName } from "./names";
 
 export const CARD_NAME_MAX = 40;
@@ -44,15 +44,18 @@ export function validateCard(
 
 /**
  * The cycle version to write when a card's days are edited, or null when they didn't change.
- * It starts today; a version already starting today is replaced (same validFrom).
+ * Normally it starts today (a version already starting today is replaced: same validFrom).
+ * On the day the card was created, an edit is a correction: it rewrites the first version, so
+ * back-dated purchases don't keep the mistyped days.
  */
 export function cycleChange(
   current: InvoiceCycle,
   next: InvoiceCycle,
   today: CalendarDate,
+  { createdToday = false } = {},
 ): CycleVersion | null {
   if (current.closingDay === next.closingDay && current.dueDay === next.dueDay) return null;
-  return { ...next, validFrom: today };
+  return { ...next, validFrom: createdToday ? CYCLE_EPOCH : today };
 }
 
 const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });

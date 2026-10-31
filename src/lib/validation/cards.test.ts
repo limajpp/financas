@@ -33,6 +33,13 @@ describe("cardSchema", () => {
     expect(issues({ accountId: "" })).toEqual(["Escolha a conta que paga a fatura."]);
     expect(issues({ limit: "0" })).toEqual(["Limite inválido. Use um valor maior que zero."]);
     expect(issues({ limit: "-10" })).toEqual(["Limite inválido. Use um valor maior que zero."]);
-    expect(issues({ limit: "12.5" })).toEqual(["Limite inválido. Use um valor maior que zero."]);
+    expect(issues({ limit: "12.5" })).toEqual([
+      "Limite inválido. Use o formato 1.234,56, até R$ 20.000.000,00.",
+    ]);
+    expect(issues({ limit: "30.000.000" })).toEqual([
+      "Limite inválido. Use o formato 1.234,56, até R$ 20.000.000,00.",
+    ]);
+    expect(issues({ closingDay: true })).toEqual(["Escolha o dia do fechamento."]);
+    expect(issues({ closingDay: [5] })).toEqual(["Escolha o dia do fechamento."]);
   });
 });

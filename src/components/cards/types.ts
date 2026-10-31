@@ -8,6 +8,8 @@ export type CardView = {
   archived: boolean;
   accountId: string;
   accountName: string;
+  /** Created today: editing the days corrects them for every purchase. */
+  createdToday: boolean;
   closingDay: number;
   dueDay: number;
   openInvoice: { closingDate: CalendarDate; dueDate: CalendarDate };

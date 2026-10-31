@@ -68,6 +68,14 @@ describe("cycleChange", () => {
     });
     expect(cycleChange(current, { closingDay: 5, dueDay: 13 }, "2026-10-31")).not.toBeNull();
   });
+
+  it("on the card's first day, an edit corrects the first version instead", () => {
+    expect(
+      cycleChange({ closingDay: 5, dueDay: 12 }, { closingDay: 25, dueDay: 5 }, "2026-10-31", {
+        createdToday: true,
+      }),
+    ).toEqual({ closingDay: 25, dueDay: 5, validFrom: "1900-01-01" });
+  });
 });
 
 describe("sortCards", () => {

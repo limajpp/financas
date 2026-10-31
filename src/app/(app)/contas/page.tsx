@@ -41,6 +41,7 @@ async function Accounts() {
         archived: card.archivedAt !== null,
         accountId: card.account.id,
         accountName: card.account.name,
+        createdToday: card.createdToday,
         closingDay: card.closingDay,
         dueDay: card.dueDay,
         openInvoice: card.openInvoice,

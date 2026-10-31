@@ -1,5 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
+import { formatCalendarDate, todayInSaoPaulo } from "../src/domain/dates";
+import { invoiceFor } from "../src/domain/invoice-cycle";
 import { signUp } from "./helpers";
 
 async function createAccount(page: Page, name: string) {
@@ -37,15 +39,16 @@ test("cadastra, edita e arquiva um cartão", async ({ page }) => {
   const cards = page.getByRole("list", { name: "Cartões" });
   const roxo = cards.getByRole("listitem").filter({ hasText: "Cartão Roxo" });
   await expect(roxo).toContainText("Paga com Banco Azul · Fecha dia 3 · vence dia 10");
-  await expect(roxo).toContainText(/Fatura aberta vence em \d{2}\/\d{2}\/\d{4}/);
+  const open = invoiceFor({ closingDay: 3, dueDay: 10 }, todayInSaoPaulo());
+  await expect(roxo).toContainText(`Fatura aberta vence em ${formatCalendarDate(open.dueDate)}`);
   await expect(roxo).toContainText("Limite R$ 5.000,00");
 
-  // Editar o fechamento mostra o aviso de que vale só daqui para a frente.
+  // No dia do cadastro, editar os dias é uma correção: vale para todas as compras, sem o aviso
+  // de "a partir de hoje" (o aviso, nos dias seguintes, está coberto pela integração).
   await page.getByRole("button", { name: "Editar Cartão Roxo" }).click();
-  await expect(dialog.getByText(/A mudança vale para compras a partir de hoje/)).toBeHidden();
   await dialog.getByLabel("Fecha dia").selectOption("31");
   await dialog.getByLabel("Vence dia").selectOption("7");
-  await expect(dialog.getByText(/A mudança vale para compras a partir de hoje/)).toBeVisible();
+  await expect(dialog.getByText(/A mudança vale para compras a partir de hoje/)).toBeHidden();
   await expect(dialog.getByText("Nos meses mais curtos, vale o último dia do mês.")).toBeVisible();
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
