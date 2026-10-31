@@ -167,6 +167,15 @@ Todo PR para a `develop` ou a `main` roda no GitHub Actions ([`ci.yml`](.github/
 - **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção, com um Postgres de serviço e um `BETTER_AUTH_SECRET` gerado a cada execução.
 - **Commit messages and PR title** ([`commits.yml`](.github/workflows/commits.yml)): valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente. Roda de novo quando o título é editado.
 
+### Deploy
+
+[`deploy.yml`](.github/workflows/deploy.yml) roda depois que o CI passa. O deploy automático da Vercel pelo Git fica desligado (`vercel.json`); só o GitHub Actions publica.
+
+- **PR:** cria uma branch da Neon `preview/pr-<N>` (só schema, sem dados da produção), aplica as migrations, publica um preview e comenta a URL no PR. Os previews pedem login da Vercel. Fechar o PR apaga a branch.
+- **`main`:** aplica as migrations na Neon de produção, publica e faz um smoke test no domínio de produção.
+
+O banco de produção (Neon, São Paulo) está ligado só ao ambiente Production da Vercel. Por isso, `vercel env pull` em dev não traz nenhuma URL de banco. Em produção, só os e-mails de `SIGNUP_ALLOWED_EMAILS` podem criar conta.
+
 ## Como este projeto é desenvolvido
 
 O desenvolvimento é **orientado a spec** e feito task por task, em parceria com o [Claude Code](https://claude.com/claude-code):

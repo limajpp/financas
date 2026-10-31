@@ -1,5 +1,5 @@
 import { isAPIError } from "better-auth/api";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { db } from "@/lib/db";
 import { auth } from "@/server/auth";
@@ -13,6 +13,7 @@ function apiError(status: string, code?: string) {
 }
 
 beforeEach(resetDatabase);
+afterEach(() => vi.unstubAllEnvs());
 afterAll(() => db.$disconnect());
 
 describe("cadastro", () => {
@@ -76,5 +77,18 @@ describe("cadastro", () => {
     });
 
     expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).name).toBe("Ana Teste");
+  });
+
+  it("com a allowlist definida, recusa e-mail de fora e aceita o da lista", async () => {
+    vi.stubEnv("SIGNUP_ALLOWED_EMAILS", "ana@example.com");
+    const body = { name: "Ana Teste", password: "senha-segura" };
+
+    await expect(
+      auth.api.signUpEmail({ body: { ...body, email: "intrusa@example.com" } }),
+    ).rejects.toSatisfy(apiError("FORBIDDEN", "SIGNUP_CLOSED"));
+    expect(await db.user.count()).toBe(0);
+
+    await auth.api.signUpEmail({ body: { ...body, email: "Ana@Example.com" } });
+    expect(await db.user.count()).toBe(1);
   });
 });

@@ -7,6 +7,8 @@ import { nextCookies } from "better-auth/next-js";
 
 import { db } from "@/lib/db";
 import { signUpSchema } from "@/lib/validation/auth";
+import { authUrls } from "@/server/auth-urls";
+import { isSignUpAllowed } from "@/server/signup-allowlist";
 import { ensurePersonalSpace } from "@/server/spaces";
 
 // Better Auth only checks that name is a string; the endpoint can be called without our form.
@@ -17,8 +19,9 @@ function validName(name: unknown) {
   return parsed.data;
 }
 
-// Secret and base URL come from BETTER_AUTH_SECRET and BETTER_AUTH_URL.
+// Secret comes from BETTER_AUTH_SECRET.
 export const auth = betterAuth({
+  ...authUrls(process.env),
   database: prismaAdapter(db, { provider: "postgresql", transaction: true }),
   emailAndPassword: { enabled: true, minPasswordLength: 8, maxPasswordLength: 128 },
   // Better Auth's "account" holds login credentials; ours is the bank account (task 6).
@@ -40,7 +43,15 @@ export const auth = betterAuth({
   databaseHooks: {
     user: {
       create: {
-        before: async (user) => ({ data: { ...user, name: validName(user.name) } }),
+        before: async (user) => {
+          if (!isSignUpAllowed(user.email)) {
+            throw new APIError("FORBIDDEN", {
+              message: "Cadastro fechado.",
+              code: "SIGNUP_CLOSED",
+            });
+          }
+          return { data: { ...user, name: validName(user.name) } };
+        },
         // Runs after the sign-up transaction commits, so the account already exists: a failure here
         // must not fail the sign-up. getCurrentSpace() creates the space later.
         after: async (user) => {

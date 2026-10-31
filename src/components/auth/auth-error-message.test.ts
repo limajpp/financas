@@ -10,6 +10,7 @@ describe("authErrorMessage", () => {
       "Já existe uma conta com este e-mail.",
     ],
     [{ code: "USER_ALREADY_EXISTS", status: 422 }, "Já existe uma conta com este e-mail."],
+    [{ code: "SIGNUP_CLOSED", status: 403 }, "Cadastro fechado."],
     [{ status: 429 }, "Muitas tentativas. Espere um minuto e tente de novo."],
     [{ code: "PASSWORD_TOO_SHORT", status: 400 }, "A senha precisa ter pelo menos 8 caracteres."],
   ])("traduz %o", (error, message) => {
