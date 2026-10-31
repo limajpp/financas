@@ -17,6 +17,9 @@ describe("safeNextPath", () => {
     "\\\\evil.com",
     "lancamentos",
     "javascript:alert(1)",
+    // Browsers strip tabs and newlines from URLs: these become //evil.com.
+    "/\t/evil.com",
+    "/\n/evil.com",
     "",
   ])("recusa %s e volta para /", (path) => {
     expect(safeNextPath(path)).toBe("/");

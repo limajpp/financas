@@ -50,7 +50,7 @@ Só o dono vê os seus dados. Depois do cadastro, o usuário já entra no app co
 
 ### Testes e CI
 
-- O job `e2e` do CI ganha o mesmo serviço Postgres, roda `prisma migrate deploy` antes do build e recebe `BETTER_AUTH_SECRET` (valor fixo de teste, só do CI). Os e2e usam e-mails únicos por execução (`e2e+<uuid>@example.com`).
+- O job `e2e` do CI ganha o mesmo serviço Postgres, roda `prisma migrate deploy` antes do build e recebe um `BETTER_AUTH_SECRET` gerado a cada execução (nenhum segredo no repo). Os e2e usam e-mails únicos por execução (`e2e+<uuid>@example.com`).
 
 ## Critérios de aceite
 
@@ -78,6 +78,8 @@ Só o dono vê os seus dados. Depois do cadastro, o usuário já entra no app co
 - **Client do Better Auth no login e no cadastro, em vez de Server Actions** (mudança aprovada pelo João durante a task). O rate limit do Better Auth só roda no handler HTTP (`/api/auth/*`), e chamadas `auth.api.*` de uma Server Action passam direto por ele, o que deixaria o login aberto a tentativa e erro de senha. Sair continua numa Server Action.
 - **Rate limit no Postgres**: na Vercel cada instância tem a sua memória, então um contador em memória quase não limitaria. O IP vem do `x-forwarded-for`; na task 4, conferir que a Vercel sobrescreve esse header (senão o cliente forja o IP).
 - **URLs em pt-BR** (`/entrar`, `/cadastro`, `/lancamentos`…): o usuário vê na barra do navegador e no PWA. Os identificadores no código continuam em inglês.
+- **Renovação do cookie pelo navegador** (`SessionRefresher`, um `getSession()` do client ao abrir o app): o Server Component estende a sessão no banco, mas não consegue regravar o cookie, que expiraria 7 dias depois do login mesmo com uso diário.
+- **Nome validado também no servidor** (hooks `user.create.before`/`update.before` com o mesmo schema Zod): o endpoint do Better Auth aceita qualquer texto e pode ser chamado sem o formulário.
 - **Proxy só otimista** (cookie), como a doc do Next 16 recomenda: ele roda em toda navegação e prefetch, então não consulta o banco. A segurança real fica no `getCurrentUser()`.
 - **Mobile: Início, Lançamentos, +, Contas, Ajustes.** Faturas, Assinaturas e Estabelecimentos são telas de análise (web), e no celular ficam acessíveis por Ajustes até a task 25 redesenhar a home.
 - **Visual simples** (shadcn padrão): a identidade visual é da task 26.

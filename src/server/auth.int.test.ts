@@ -1,8 +1,16 @@
+import { isAPIError } from "better-auth/api";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { db } from "@/lib/db";
 import { auth } from "@/server/auth";
 import { resetDatabase } from "@/test/db";
+
+function apiError(status: string, code?: string) {
+  return (error: unknown) =>
+    isAPIError(error) &&
+    error.status === status &&
+    (code === undefined || error.body?.code === code);
+}
 
 beforeEach(resetDatabase);
 afterAll(() => db.$disconnect());
@@ -33,7 +41,7 @@ describe("cadastro", () => {
 
     await expect(
       auth.api.signUpEmail({ body: { ...body, email: "ANA@example.com" } }),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy(apiError("UNPROCESSABLE_ENTITY", "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"));
     expect(await db.user.count()).toBe(1);
     expect(await db.space.count()).toBe(1);
   });
@@ -47,6 +55,26 @@ describe("cadastro", () => {
 
     await expect(
       auth.api.signInEmail({ body: { email: body.email, password: "senha-errada" } }),
-    ).rejects.toThrow();
+    ).rejects.toSatisfy(apiError("UNAUTHORIZED", "INVALID_EMAIL_OR_PASSWORD"));
+  });
+
+  it("o servidor recusa nome vazio ou longo demais, mesmo sem passar pelo formulário", async () => {
+    const body = { email: "ana@example.com", password: "senha-segura" };
+
+    await expect(auth.api.signUpEmail({ body: { ...body, name: "   " } })).rejects.toSatisfy(
+      apiError("BAD_REQUEST"),
+    );
+    await expect(
+      auth.api.signUpEmail({ body: { ...body, name: "a".repeat(81) } }),
+    ).rejects.toSatisfy(apiError("BAD_REQUEST"));
+    expect(await db.user.count()).toBe(0);
+  });
+
+  it("guarda o nome sem espaços nas pontas", async () => {
+    const { user } = await auth.api.signUpEmail({
+      body: { name: "  Ana Teste  ", email: "ana@example.com", password: "senha-segura" },
+    });
+
+    expect((await db.user.findUniqueOrThrow({ where: { id: user.id } })).name).toBe("Ana Teste");
   });
 });

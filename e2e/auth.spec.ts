@@ -67,3 +67,19 @@ test("quem já está logado e abre /entrar vai para a home", async ({ page }) =>
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: `Olá, ${name}` })).toBeVisible();
 });
+
+test("cookie de sessão inválido passa pelo proxy, mas o servidor manda para o login", async ({
+  page,
+  baseURL,
+}) => {
+  await page
+    .context()
+    .addCookies([
+      { name: "better-auth.session_token", value: "token-falso.assinatura-falsa", url: baseURL! },
+    ]);
+
+  await page.goto("/lancamentos");
+
+  await expect(page).toHaveURL(/\/entrar$/);
+  await expect(page.getByRole("heading", { level: 2, name: "Entrar" })).toBeVisible();
+});
