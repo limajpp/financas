@@ -1,0 +1,160 @@
+name: Deploy
+
+# Runs after CI finishes; deploys only when it passed. GitHub Actions is the only way to Vercel
+# (vercel.json turns off Git deployments).
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+  pull_request:
+    types: [closed]
+
+concurrency:
+  group: deploy-${{ github.event.workflow_run.head_branch || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_ORG_ID: ${{ vars.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  VERCEL_CLI: vercel@65.9.0
+
+jobs:
+  preview:
+    name: Preview
+    # Only PRs from this repo: a fork's code must never run with these secrets.
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Find the PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          number=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --state open --json number --jq '.[0].number')
+          test -n "$number" || { echo "PR aberto não encontrado para a branch $BRANCH"; exit 1; }
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install -g npm@12.1.0 ${{ env.VERCEL_CLI }}
+      - run: npm ci
+      # Schema-only: previews never get a copy of production data.
+      - name: Neon branch for this PR
+        id: neon
+        uses: neondatabase/create-branch-action@v6
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch_name: preview/pr-${{ steps.pr.outputs.number }}
+          branch_type: schema-only
+          database: neondb
+          role: neondb_owner
+      - name: Mask database URLs
+        run: |
+          echo "::add-mask::${{ steps.neon.outputs.db_url }}"
+          echo "::add-mask::${{ steps.neon.outputs.db_url_pooled }}"
+      # A schema-only branch copies the tables but not _prisma_migrations, so start it empty once.
+      - name: Empty the new branch
+        if: steps.neon.outputs.created == 'true'
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+        run: echo 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;' | npx prisma db execute --stdin
+      - name: Migrate
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url }}
+        run: npx prisma migrate deploy
+      - run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+      # The real BETTER_AUTH_SECRET is a sensitive Vercel variable: `vercel pull` doesn't bring it, and
+      # the build only needs one to load the auth module. Server code reads the real one at runtime.
+      - name: Build
+        env:
+          DATABASE_URL: ${{ steps.neon.outputs.db_url_pooled }}
+        run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build --token=${{ secrets.VERCEL_TOKEN }}
+      # The preview's database is set per deployment: the project has no Preview DATABASE_URL.
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }} \
+            --env DATABASE_URL="${{ steps.neon.outputs.db_url_pooled }}")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+      - name: Comment the URL on the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.deploy.outputs.url }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          body=$(printf '<!-- preview-url -->\n🔎 **Preview:** %s\n\nCommit `%s`, banco Neon `preview/pr-%s` (só schema, sem dados da produção).' \
+            "$URL" "${SHA::7}" "${{ steps.pr.outputs.number }}")
+          gh pr comment "${{ steps.pr.outputs.number }}" --repo "$GITHUB_REPOSITORY" \
+            --body "$body" --edit-last --create-if-none
+
+  production:
+    name: Production
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm install -g npm@12.1.0 ${{ env.VERCEL_CLI }}
+      - run: npm ci
+      - run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      # Migrations first: if they fail, production keeps running the previous deployment.
+      - name: Migrate
+        run: |
+          set -a; . .vercel/.env.production.local; set +a
+          npx prisma migrate deploy
+      # Throwaway secret for the build only (see the preview job).
+      - run: BETTER_AUTH_SECRET=$(openssl rand -base64 32) vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      - run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+      # Against the production domain: deployment URLs are behind Vercel's login (deployment protection).
+      - name: Smoke test
+        run: |
+          set -eu
+          domain=$(vercel api "/v9/projects/$VERCEL_PROJECT_ID" --raw --token=${{ secrets.VERCEL_TOKEN }} \
+            | jq -r '.targets.production.alias[0]')
+          URL="https://$domain"
+          location=$(curl -s -o /dev/null -w '%{redirect_url}' "$URL/")
+          echo "/ → $location"
+          case "$location" in */entrar*) ;; *) echo "esperava redirecionar para /entrar"; exit 1 ;; esac
+          status=$(curl -s -o /dev/null -w '%{http_code}' "$URL/entrar")
+          echo "/entrar → $status"
+          test "$status" = 200
+
+  cleanup:
+    name: Delete the PR's Neon branch
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+          branch: preview/pr-${{ github.event.pull_request.number }}
