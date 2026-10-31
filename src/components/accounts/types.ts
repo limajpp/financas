@@ -7,5 +7,7 @@ export type AccountView = {
   color: string;
   initialBalanceCents: number;
   initialBalanceDate: CalendarDate;
+  /** Today's balance: the initial one plus the entries after its day (src/domain/balance.ts). */
+  currentBalanceCents: number;
   archived: boolean;
 };

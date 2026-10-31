@@ -17,7 +17,9 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   const azul = list.getByRole("listitem").filter({ hasText: "Banco Azul" });
-  await expect(azul).toContainText("R$ 1.234,56");
+  await expect(azul).toContainText("Saldo inicial R$ 1.234,56");
+  // Sem lançamentos ainda, o saldo atual é o inicial.
+  await expect(azul).toContainText("Saldo atual R$ 1.234,56");
 
   // Valor inválido mostra o erro no campo.
   await page.getByRole("button", { name: "Nova conta" }).click();
@@ -32,7 +34,7 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   await expect(list.getByRole("listitem").filter({ hasText: "Carteira" })).toContainText(
-    "-R$ 350,00",
+    "Saldo atual -R$ 350,00",
   );
 
   // Editar nome e saldo.
@@ -43,7 +45,7 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   const verde = list.getByRole("listitem").filter({ hasText: "Banco Verde" });
-  await expect(verde).toContainText("R$ 2.000,00");
+  await expect(verde).toContainText("Saldo atual R$ 2.000,00");
 
   // Arquivar tira da lista; "Mostrar arquivadas" traz de volta.
   await page.getByRole("button", { name: "Arquivar Banco Verde" }).click();
