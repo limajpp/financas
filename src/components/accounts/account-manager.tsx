@@ -13,10 +13,20 @@ import { formatBRL } from "@/domain/money";
 import type { PaletteColor } from "@/domain/palette";
 import { cn } from "@/lib/utils";
 
+import { CardManager } from "@/components/cards/card-manager";
+import type { CardView } from "@/components/cards/types";
+
 import { AccountDialog, type AccountDialogState } from "./account-dialog";
 import type { AccountView } from "./types";
 
-export function AccountManager({ accounts }: { accounts: AccountView[] }) {
+/** The accounts screen: accounts first, then the credit cards they pay. One archived toggle for both. */
+export function AccountManager({
+  accounts,
+  cards,
+}: {
+  accounts: AccountView[];
+  cards: CardView[];
+}) {
   const [showArchived, setShowArchived] = useState(false);
   const [dialog, setDialog] = useState<AccountDialogState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +131,12 @@ export function AccountManager({ accounts }: { accounts: AccountView[] }) {
       )}
 
       <AccountDialog state={dialog} onClose={() => setDialog(null)} />
+
+      <CardManager
+        cards={cards}
+        accounts={accounts.map(({ id, name, archived }) => ({ id, name, archived }))}
+        showArchived={showArchived}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ export const metadata: Metadata = { title: "Configurações · Finanças" };
 
 const settingsLinks = [
   { href: "/contas", label: "Contas" },
+  { href: "/contas#cartoes", label: "Cartões" },
   { href: "/configuracoes/categorias", label: "Categorias" },
 ];
 
