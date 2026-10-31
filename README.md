@@ -129,7 +129,7 @@ Pré-requisitos: Node 24+ (`nvm use`) e Docker.
 git clone git@github.com:limajpp/financas.git
 cd financas
 npm install                   # também ativa o hook de commit (.githooks) e gera o Prisma Client
-cp .env.example .env          # valores do Postgres local
+cp .env.example .env          # Postgres local; gere o BETTER_AUTH_SECRET (openssl rand -base64 32)
 npm run db:up                 # Postgres no Docker (porta 5433), com os bancos financas e financas_test
 npm run db:migrate            # aplica as migrations no banco de dev
 npx playwright install        # navegadores dos testes e2e
@@ -153,6 +153,8 @@ O Postgres roda num container só, com dois bancos: `financas` (dev) e `financas
 
 O WebKit do Playwright só tem suporte oficial em Ubuntu/Debian. Em outras distros (Fedora, Arch…), use `npm run test:e2e:docker`, ou `npx playwright test --project=chromium` para rodar só o Chromium. O script monta o repo com `:z` (SELinux): na primeira vez o Docker re-rotula os arquivos, o que demora um pouco. A versão da imagem acompanha a do `@playwright/test`, que fica fixada (sem `^`); atualize as duas juntas.
 
+O login usa o Better Auth (e-mail e senha) pelo `/api/auth/*`, que aplica rate limit (5 tentativas por minuto por IP em entrar e criar conta, guardado no Postgres). O limite liga só em produção; `AUTH_RATE_LIMIT=off` desliga (os e2e fazem isso) e `=on` força em dev. Rotas do app sem sessão vão para `/entrar`.
+
 Os testes de integração (`*.int.test.ts`) rodam contra o banco de `TEST_DATABASE_URL`, que precisa terminar em `_test`: antes de cada teste, `resetDatabase()` apaga todas as linhas. As migrations pendentes são aplicadas nele no começo de cada execução.
 
 O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a mesma versão.
@@ -162,7 +164,7 @@ O projeto usa **npm 12** (`packageManager` no `package.json`); o CI instala a me
 Todo PR para a `develop` ou a `main` roda no GitHub Actions ([`ci.yml`](.github/workflows/ci.yml)):
 
 - **Lint, test and build:** lint, tipos, formatação, testes (unitários e de integração, contra um Postgres de serviço) e build.
-- **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção.
+- **E2E:** Playwright em Chromium e WebKit (iPhone) contra o build de produção, com um Postgres de serviço e um `BETTER_AUTH_SECRET` gerado a cada execução.
 - **Commit messages and PR title** ([`commits.yml`](.github/workflows/commits.yml)): valida o título do PR (que vira o commit do squash) e cada commit com o mesmo hook usado localmente. Roda de novo quando o título é editado.
 
 ## Como este projeto é desenvolvido

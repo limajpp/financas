@@ -9,6 +9,8 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
+  // The dev server compiles each page on first visit; the production build (CI) doesn't need the slack.
+  expect: { timeout: process.env.CI ? 5_000 : 15_000 },
   use: {
     baseURL,
     locale: "pt-BR",
@@ -23,6 +25,8 @@ export default defineConfig({
   webServer: {
     // CI tests the production build; locally the dev server is enough.
     command: process.env.CI ? "npm run start" : "npm run dev",
+    // Many sign-ups from one IP in a few seconds: Better Auth's rate limit would block them.
+    env: { AUTH_RATE_LIMIT: "off" },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
