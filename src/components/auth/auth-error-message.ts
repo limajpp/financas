@@ -9,6 +9,8 @@ export function authErrorMessage(error: AuthClientError, fallback: string): stri
     case "USER_ALREADY_EXISTS":
     case "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL":
       return "Já existe uma conta com este e-mail.";
+    case "SIGNUP_CLOSED":
+      return "Cadastro fechado.";
     case "PASSWORD_TOO_SHORT":
       return "A senha precisa ter pelo menos 8 caracteres.";
     case "PASSWORD_TOO_LONG":
