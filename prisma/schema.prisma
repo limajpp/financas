@@ -20,6 +20,7 @@ model User {
   personalSpace Space?        @relation("PersonalSpace")
   sessions      Session[]
   authAccounts  AuthAccount[]
+  transactions  Transaction[]
 }
 
 // Better Auth tables. Field names follow its core schema.
@@ -84,19 +85,21 @@ enum SpaceType {
 // Every piece of data belongs to a space. v1 only has the personal one.
 // personalOwnerId is set only on PERSONAL spaces (CHECK in the migration): one per user.
 model Space {
-  id                 String        @id @default(uuid(7))
+  id                 String         @id @default(uuid(7))
   type               SpaceType
   name               String
-  personalOwnerId    String?       @unique
-  personalOwner      User?         @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  personalOwnerId    String?        @unique
+  personalOwner      User?          @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
   // Set once the default category list was created, so archived defaults never come back.
   categoriesSeededAt DateTime?
   members            SpaceMember[]
   categories         Category[]
   accounts           Account[]
   cards              Card[]
+  counterparties     Counterparty[]
+  transactions       Transaction[]
 }
 
 enum SpaceRole {
@@ -125,20 +128,22 @@ enum CategoryType {
 /// Two-level tree (parent → children). Depth, sibling-name uniqueness and type inheritance are
 /// enforced by src/domain/categories.ts, not by the database.
 model Category {
-  id         String       @id @default(uuid(7))
-  spaceId    String
-  space      Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  parentId   String?
-  parent     Category?    @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction)
-  children   Category[]   @relation("CategoryChildren")
-  name       String
-  type       CategoryType
-  icon       String
-  color      String
-  isFixed    Boolean      @default(false)
-  archivedAt DateTime?
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id                     String         @id @default(uuid(7))
+  spaceId                String
+  space                  Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  parentId               String?
+  parent                 Category?      @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction)
+  children               Category[]     @relation("CategoryChildren")
+  transactions           Transaction[]
+  defaultForCounterparty Counterparty[]
+  name                   String
+  type                   CategoryType
+  icon                   String
+  color                  String
+  isFixed                Boolean        @default(false)
+  archivedAt             DateTime?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
 
   @@index([spaceId, type])
   @@index([parentId])
@@ -160,7 +165,9 @@ model Account {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  cards Card[]
+  cards        Card[]
+  transactions Transaction[] @relation("AccountTransactions")
+  transfersIn  Transaction[] @relation("AccountTransfersIn")
 
   @@index([spaceId])
 }
@@ -168,18 +175,19 @@ model Account {
 /// A credit card. The invoice a purchase falls on comes from the cycle valid on the purchase date
 /// (src/domain/invoice-cycle.ts).
 model Card {
-  id         String      @id @default(uuid(7))
-  spaceId    String
-  space      Space       @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id           String        @id @default(uuid(7))
+  spaceId      String
+  space        Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   /// The account that pays the invoice.
-  accountId  String
-  account    Account     @relation(fields: [accountId], references: [id], onDelete: NoAction)
-  name       String
-  limitCents Int?
-  archivedAt DateTime?
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
-  cycles     CardCycle[]
+  accountId    String
+  account      Account       @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  name         String
+  limitCents   Int?
+  archivedAt   DateTime?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  cycles       CardCycle[]
+  transactions Transaction[]
 
   @@index([spaceId])
   @@index([accountId])
@@ -197,4 +205,89 @@ model CardCycle {
   createdAt  DateTime @default(now())
 
   @@unique([cardId, validFrom])
+}
+
+enum TransactionType {
+  EXPENSE
+  INCOME
+  TRANSFER
+  CARD_PAYMENT
+}
+
+enum PaymentMethod {
+  PIX
+  DEBIT
+  CREDIT
+  CASH
+  BOLETO
+  TED
+}
+
+/// The memory per merchant/person: the name you typed, plus (task 10) the names and CPF/CNPJ the
+/// bank shows and the description and category to suggest.
+model Counterparty {
+  id                 String        @id @default(uuid(7))
+  spaceId            String
+  space              Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name               String
+  /// normalizeName(name): one counterparty per name, regardless of case and accents.
+  nameKey            String
+  aliases            String[]      @default([])
+  /// CPF or CNPJ, digits only.
+  document           String?
+  defaultDescription String?
+  defaultCategoryId  String?
+  defaultCategory    Category?     @relation(fields: [defaultCategoryId], references: [id], onDelete: NoAction)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  transactions       Transaction[]
+
+  @@unique([spaceId, nameKey])
+  @@index([defaultCategoryId])
+}
+
+/// An expense, income, transfer or invoice payment. Which of account, card, destination and
+/// invoice are set depends on the type and method (CHECK in the migration; see
+/// docs/specs/tasks/08-transactions.md). The balance rule is src/domain/balance.ts.
+model Transaction {
+  id                String          @id @default(uuid(7))
+  spaceId           String
+  space             Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  /// Given by the device, so a retried create (offline sync) doesn't duplicate.
+  clientId          String
+  createdById       String
+  createdBy         User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  type              TransactionType
+  /// Always positive; the type gives the direction.
+  amountCents       Int
+  /// The purchase (or competence) day, not an instant.
+  date              DateTime        @db.Date
+  method            PaymentMethod
+  accountId         String?
+  account           Account?        @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: NoAction)
+  /// Transfer destination.
+  toAccountId       String?
+  toAccount         Account?        @relation("AccountTransfersIn", fields: [toAccountId], references: [id], onDelete: NoAction)
+  cardId            String?
+  card              Card?           @relation(fields: [cardId], references: [id], onDelete: NoAction)
+  /// The invoice (by due date) a credit purchase falls on, or the one a payment pays.
+  invoiceDueDate    DateTime?       @db.Date
+  /// True when the invoice was chosen by hand: cycle changes don't recompute it.
+  invoiceOverridden Boolean         @default(false)
+  categoryId        String?
+  category          Category?       @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+  counterpartyId    String?
+  counterparty      Counterparty?   @relation(fields: [counterpartyId], references: [id], onDelete: NoAction)
+  description       String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([spaceId, clientId])
+  @@index([spaceId, date])
+  @@index([accountId])
+  @@index([toAccountId])
+  @@index([cardId, invoiceDueDate])
+  @@index([categoryId])
+  @@index([counterpartyId])
+  @@index([createdById])
 }
