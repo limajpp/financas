@@ -17,6 +17,63 @@ model User {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
   memberships   SpaceMember[]
+  personalSpace Space?        @relation("PersonalSpace")
+  sessions      Session[]
+  authAccounts  AuthAccount[]
+}
+
+// Better Auth tables. Field names follow its core schema.
+model Session {
+  id        String   @id @default(uuid(7))
+  token     String   @unique
+  expiresAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// Better Auth's "account" (login credentials). Renamed: Account is the bank account (task 6).
+model AuthAccount {
+  id                    String    @id @default(uuid(7))
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+// Better Auth rate limit counters. In the database because Vercel instances don't share memory.
+model RateLimit {
+  id          String @id @default(uuid(7))
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
+model Verification {
+  id         String   @id @default(uuid(7))
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([identifier])
 }
 
 enum SpaceType {
@@ -25,13 +82,16 @@ enum SpaceType {
 }
 
 // Every piece of data belongs to a space. v1 only has the personal one.
+// personalOwnerId is set only on PERSONAL spaces (CHECK in the migration): one per user.
 model Space {
-  id        String        @id @default(uuid(7))
-  type      SpaceType
-  name      String
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
-  members   SpaceMember[]
+  id              String        @id @default(uuid(7))
+  type            SpaceType
+  name            String
+  personalOwnerId String?       @unique
+  personalOwner   User?         @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  members         SpaceMember[]
 }
 
 enum SpaceRole {

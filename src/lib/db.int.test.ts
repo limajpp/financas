@@ -7,15 +7,18 @@ import { resetDatabase } from "@/test/db";
 beforeEach(resetDatabase);
 afterAll(() => db.$disconnect());
 
-function createUserWithPersonalSpace(email = "ana@example.com") {
-  return db.user.create({
+async function createUserWithPersonalSpace(email = "ana@example.com") {
+  const user = await db.user.create({ data: { name: "Ana Teste", email } });
+  await db.space.create({
     data: {
-      name: "Ana Teste",
-      email,
-      memberships: {
-        create: { role: "OWNER", space: { create: { type: "PERSONAL", name: "Pessoal" } } },
-      },
+      type: "PERSONAL",
+      name: "Pessoal",
+      personalOwnerId: user.id,
+      members: { create: { userId: user.id, role: "OWNER" } },
     },
+  });
+  return db.user.findUniqueOrThrow({
+    where: { id: user.id },
     include: { memberships: { include: { space: true } } },
   });
 }
@@ -49,13 +52,15 @@ describe("schema inicial", () => {
     );
   });
 
-  it("apagar o usuário apaga os seus vínculos", async () => {
+  it("apagar o usuário apaga os seus vínculos, mas não os espaços compartilhados", async () => {
     const user = await createUserWithPersonalSpace();
+    const shared = await db.space.create({ data: { type: "SHARED", name: "Casa" } });
+    await db.spaceMember.create({ data: { spaceId: shared.id, userId: user.id, role: "MEMBER" } });
 
     await db.user.delete({ where: { id: user.id } });
 
     expect(await db.spaceMember.count()).toBe(0);
-    expect(await db.space.count()).toBe(1);
+    expect(await db.space.findMany({ select: { id: true } })).toEqual([{ id: shared.id }]);
   });
 
   it("apagar o espaço apaga os seus vínculos, mas não o usuário", async () => {
