@@ -39,8 +39,14 @@ describe("entrySchema", () => {
         counterparty: "  Padaria do Bairro ",
         description: "   ",
         categoryId: "",
+        invoiceDueDate: "  ",
       }),
-    ).toMatchObject({ counterparty: "Padaria do Bairro", description: null, categoryId: null });
+    ).toMatchObject({
+      counterparty: "Padaria do Bairro",
+      description: null,
+      categoryId: null,
+      invoiceDueDate: null,
+    });
   });
 
   it("on credit, keeps the card and invoice and drops the account", () => {

@@ -10,9 +10,11 @@ import {
   PAYMENT_METHODS,
 } from "@/domain/transactions";
 
-/** "" (an empty select or field) counts as absent. */
+/** A blank value (an empty select or field) counts as absent. */
 const optional = <T extends z.ZodType>(schema: T) =>
-  z.preprocess((v) => (v === "" ? null : v), schema.nullish()).transform((v) => v ?? null);
+  z
+    .preprocess((v) => (typeof v === "string" && v.trim() === "" ? null : v), schema.nullish())
+    .transform((v) => v ?? null);
 
 const optionalText = (max: number, message: string) =>
   z

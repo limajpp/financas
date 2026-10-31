@@ -387,6 +387,21 @@ describe("lançamentos", () => {
       invoiceDueDate: "2026-12-12",
     });
     expect(todays.invoiceDueDate).toBe("2026-11-12");
+    // An invoice payment (task 11) names the invoice it paid: a cycle change never moves it.
+    const payment = await db.transaction.create({
+      data: {
+        spaceId: ana.spaceId,
+        clientId: randomUUID(),
+        createdById: ana.userId,
+        type: "CARD_PAYMENT",
+        method: "PIX",
+        amountCents: 1_000,
+        date: calendarDateToDb("2026-10-10"),
+        accountId: azul.id,
+        cardId: roxo.id,
+        invoiceDueDate: calendarDateToDb("2026-10-12"),
+      },
+    });
 
     const result = await updateCard(
       ana.spaceId,
@@ -402,6 +417,25 @@ describe("lançamentos", () => {
     expect(await invoiceOf(before.id)).toBe("2026-11-12"); // before the change: old cycle
     expect(await invoiceOf(todays.id)).toBe("2026-10-27"); // closes 20/10 now
     expect(await invoiceOf(manual.id)).toBe("2026-12-12"); // chosen by hand
+    expect(await invoiceOf(payment.id)).toBe("2026-10-12"); // a payment, not a purchase
+
+    // The manual choice can be saved again as is (e.g. fixing the description only).
+    expect(
+      await updateTransaction(
+        ana.spaceId,
+        manual.id,
+        entry({
+          method: "CREDIT",
+          cardId: roxo.id,
+          date: "2026-10-10",
+          invoiceDueDate: "2026-12-12",
+          description: "Presente",
+        }),
+      ),
+    ).toMatchObject({
+      ok: true,
+      transaction: { invoiceOverridden: true, description: "Presente" },
+    });
   });
 
   it("CA5: a correção no dia do cadastro recalcula as compras antigas já registradas", async () => {

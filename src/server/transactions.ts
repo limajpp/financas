@@ -150,6 +150,10 @@ async function findByClientId(spaceId: string, clientId: string) {
 /**
  * Creates an expense or income. Idempotent by `clientId`: if the space already has it, returns
  * that one unchanged (`created: false`), including when two calls race.
+ *
+ * Reads, validation and the insert aren't one database transaction: a card cycle edited in the
+ * same instant could leave this purchase on the old cycle's invoice. Accepted (one user per space,
+ * and the invoice can be fixed by editing).
  */
 export async function createTransaction(
   spaceId: string,
@@ -197,29 +201,49 @@ export async function updateTransaction(
 ): Promise<TransactionResult> {
   const current = await db.transaction.findFirst({
     where: { id, spaceId },
-    select: { type: true, accountId: true, cardId: true, categoryId: true },
+    select: {
+      type: true,
+      accountId: true,
+      cardId: true,
+      categoryId: true,
+      date: true,
+      invoiceDueDate: true,
+      invoiceOverridden: true,
+    },
   });
   if (!current) return { ok: false, error: "NOT_FOUND" };
   if (current.type !== "EXPENSE" && current.type !== "INCOME") {
     return { ok: false, error: "NOT_EDITABLE" };
   }
 
-  const refs: CurrentRefs = current;
+  const refs: CurrentRefs = {
+    ...current,
+    date: dbToCalendarDate(current.date),
+    invoiceDueDate: current.invoiceDueDate && dbToCalendarDate(current.invoiceDueDate),
+  };
   const checked = validateEntry(input, await refsFor(spaceId, input), {
     today: todayInSaoPaulo(),
     current: refs,
   });
   if (!checked.ok) return checked;
 
-  const row = await db.transaction.update({
-    where: { id, spaceId },
-    data: {
-      counterpartyId: await counterpartyIdFor(spaceId, input.counterparty),
-      ...entryData(input, checked.invoice),
-    },
-    select: transactionSelect,
-  });
-  return { ok: true, transaction: toTransaction(row) };
+  try {
+    const row = await db.transaction.update({
+      where: { id, spaceId },
+      data: {
+        counterpartyId: await counterpartyIdFor(spaceId, input.counterparty),
+        ...entryData(input, checked.invoice),
+      },
+      select: transactionSelect,
+    });
+    return { ok: true, transaction: toTransaction(row) };
+  } catch (error) {
+    // Deleted meanwhile (another tab or device).
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return { ok: false, error: "NOT_FOUND" };
+    }
+    throw error;
+  }
 }
 
 export async function deleteTransaction(

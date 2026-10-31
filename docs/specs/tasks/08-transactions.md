@@ -95,15 +95,15 @@ O **saldo atual** é `accountBalance(conta, lançamentos, hoje em São Paulo)`.
 
 ## Critérios de aceite
 
-- [ ] CA1 — Unitário (saldo): uma despesa no crédito **não** reduz o saldo da conta, e o pagamento da fatura reduz. Também cobre receita, despesa no Pix e no débito, e transferência (− na origem, + no destino).
-- [ ] CA2 — Unitário (saldo): um lançamento com data anterior ao saldo inicial, ou no mesmo dia, não entra no saldo; um do dia seguinte entra. Um lançamento depois de `até` não entra.
-- [ ] CA3 — Integração: criar duas vezes com o mesmo `clientId`, em sequência e em paralelo, gera um lançamento só (e um estabelecimento só), e a segunda chamada devolve o primeiro. O mesmo `clientId` em outro espaço cria normalmente.
-- [ ] CA4 — Integração: um usuário não lê, edita nem exclui lançamento de outro espaço, e não consegue usar conta, cartão ou categoria de outro espaço num lançamento seu.
-- [ ] CA5 — Integração: uma compra no crédito grava o `invoiceDueDate` do ciclo da data da compra. Com a fatura trocada à mão, grava a escolhida, e uma fatura fora da janela é recusada. Mudar o ciclo do cartão recalcula as compras afetadas e não mexe nas trocadas à mão nem nas anteriores à mudança.
-- [ ] CA6 — Unitário e integração: categoria de outro tipo, categoria ou conta arquivada (num lançamento novo), receita no crédito e data futura são recusadas, cada uma com mensagem própria.
-- [ ] CA7 — Integração: `accountBalances` bate com o módulo de saldo para uma conta com receitas, despesas e compras no crédito. Apagar o usuário apaga lançamentos e estabelecimentos.
-- [ ] CA8 — E2E (Chromium e iPhone/WebKit): uma conta nova mostra o saldo atual igual ao inicial.
-- [ ] CA9 — Lint, format, test, build, `test:e2e:docker` e CI verdes. Tela conferida no desktop e no viewport de iPhone.
+- [x] CA1 — Unitário (saldo): uma despesa no crédito **não** reduz o saldo da conta, e o pagamento da fatura reduz. Também cobre receita, despesa no Pix e no débito, e transferência (− na origem, + no destino).
+- [x] CA2 — Unitário (saldo): um lançamento com data anterior ao saldo inicial, ou no mesmo dia, não entra no saldo; um do dia seguinte entra. Um lançamento depois de `até` não entra.
+- [x] CA3 — Integração: criar duas vezes com o mesmo `clientId`, em sequência e em paralelo, gera um lançamento só (e um estabelecimento só), e a segunda chamada devolve o primeiro. O mesmo `clientId` em outro espaço cria normalmente.
+- [x] CA4 — Integração: um usuário não lê, edita nem exclui lançamento de outro espaço, e não consegue usar conta, cartão ou categoria de outro espaço num lançamento seu.
+- [x] CA5 — Integração: uma compra no crédito grava o `invoiceDueDate` do ciclo da data da compra. Com a fatura trocada à mão, grava a escolhida, e uma fatura fora da janela é recusada. Mudar o ciclo do cartão recalcula as compras afetadas e não mexe nas trocadas à mão nem nas anteriores à mudança.
+- [x] CA6 — Unitário e integração: categoria de outro tipo, categoria ou conta arquivada (num lançamento novo), receita no crédito e data futura são recusadas, cada uma com mensagem própria.
+- [x] CA7 — Integração: `accountBalances` bate com o módulo de saldo para uma conta com receitas, despesas e compras no crédito. Apagar o usuário apaga lançamentos e estabelecimentos.
+- [x] CA8 — E2E (Chromium e iPhone/WebKit): uma conta nova mostra o saldo atual igual ao inicial.
+- [x] CA9 — Lint, format, test, build, `test:e2e:docker` e CI verdes. Tela conferida no desktop e no viewport de iPhone.
 
 ## Casos de borda
 
@@ -127,6 +127,18 @@ O **saldo atual** é `accountBalance(conta, lançamentos, hoje em São Paulo)`.
 - **Campos de parcela e assinatura ficam para as tasks 12 e 13** (`installmentGroupId`, `installmentNumber/Total` e `recurringRuleId`). A issue pede todos os campos do design, mas esses dependem de regras e da tabela `RecurringRule`, que ainda não existem. Cada um entra com sua migration.
 - **Saldo calculado no código, não em SQL.** O servidor busca os lançamentos que mexem em contas, até hoje, e passa para o módulo. A regra fica num lugar só e testada. Para o volume de uma pessoa (milhares de lançamentos), é rápido. Se pesar, dá para agregar no banco depois, com o módulo como referência nos testes.
 - **Excluir apaga de verdade.** Contas e categorias são arquivadas porque os lançamentos apontam para elas. Nada aponta para um lançamento.
+
+### Revisão
+
+- Corrigido: a escolha manual de fatura podia ficar impossível de salvar de novo. Isso acontecia quando uma correção do ciclo tirava a fatura escolhida da janela de 3, e editar só a descrição era recusado com "Essa fatura não é deste cartão.". Agora a escolha manual que volta igual, com o mesmo cartão e a mesma data, é mantida sem nova checagem.
+- Corrigido: editar um lançamento excluído no meio do caminho, em outra aba ou aparelho, devolve "Lançamento não encontrado." em vez de um erro inesperado. Um id só com espaços conta como vazio.
+- Teste novo: o recálculo das faturas depois de uma mudança de ciclo não mexe num pagamento de fatura. Antes, retirar o filtro "só compras no crédito" não quebrava nenhum teste.
+- Mudança durante a implementação: `createdById` usa `onDelete: Cascade`. Com `NoAction`, apagar o usuário falhava, porque o Postgres checa essa chave antes de a cascata do espaço apagar os lançamentos. O revisor sugeriu voltar para `NoAction` pensando na fase 2, mas na prática isso quebra a exclusão. Na fase 2, um gasto compartilhado continua no espaço de quem pagou (design), então a cascata segue certa.
+- Aceito:
+  - **Leitura, validação e gravação fora de uma única transação do banco.** Se o ciclo de um cartão fosse editado no mesmo instante, a compra podia ficar com a fatura do ciclo antigo. Com um usuário por espaço, é improvável, e a edição corrige.
+  - **Estabelecimento órfão.** Uma compra repetida pelo sync que perde a corrida, trazendo outro nome, deixa um estabelecimento sem lançamentos. A task 10 deve ignorar, no autocomplete, os estabelecimentos sem lançamentos.
+  - **Server Actions sem teste próprio,** como as de contas e cartões. A regra está nos testes do servidor.
+- Para a task 9: a tela de edição precisa reenviar a fatura escolhida à mão (`invoiceDueDate`). Sem ela, a edição volta para a fatura calculada.
 
 ## Fora do escopo
 

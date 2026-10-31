@@ -171,6 +171,57 @@ describe("validateEntry", () => {
   });
 });
 
+describe("validateEntry: a manual invoice on edit", () => {
+  // Chosen by hand as the 12/12 invoice; then the cycle was corrected to due day 27 (creation-day
+  // correction), so 12/12 is no longer one of this card's invoices.
+  const changedRefs: EntryRefs = {
+    ...refs,
+    cards: [
+      {
+        id: "roxo",
+        archivedAt: null,
+        cycles: [{ closingDay: 5, dueDay: 27, validFrom: CYCLE_EPOCH }],
+      },
+    ],
+  };
+  const current = {
+    accountId: null,
+    cardId: "roxo",
+    categoryId: "mercado",
+    date: "2026-10-20",
+    invoiceDueDate: "2026-12-12",
+    invoiceOverridden: true,
+  };
+
+  it("stays as is while the card and date don't change", () => {
+    expect(
+      validateEntry(
+        credit({ invoiceDueDate: "2026-12-12", description: "Presente" }),
+        changedRefs,
+        {
+          today,
+          current,
+        },
+      ),
+    ).toEqual({ ok: true, invoice: { invoiceDueDate: "2026-12-12", invoiceOverridden: true } });
+  });
+
+  it("is checked again when the date changes, or when it wasn't a manual choice", () => {
+    expect(
+      validateEntry(credit({ date: "2026-10-21", invoiceDueDate: "2026-12-12" }), changedRefs, {
+        today,
+        current,
+      }),
+    ).toEqual({ ok: false, error: "INVALID_INVOICE" });
+    expect(
+      validateEntry(credit({ invoiceDueDate: "2026-12-12" }), changedRefs, {
+        today,
+        current: { ...current, invoiceOverridden: false },
+      }),
+    ).toEqual({ ok: false, error: "INVALID_INVOICE" });
+  });
+});
+
 describe("resolveInvoice", () => {
   const date = "2026-10-20"; // computed invoice: closes 05/11, due 12/11
 

@@ -99,11 +99,18 @@ export type EntryRefs = {
   }[];
 };
 
-/** On an edit, what the entry already points to: it may stay even if archived since. */
+/**
+ * On an edit, what the entry already points to: it may stay even if archived since. A manually
+ * chosen invoice may also stay as is while the card and date don't change, even if a later cycle
+ * change took it out of the window.
+ */
 export type CurrentRefs = {
   accountId: string | null;
   cardId: string | null;
   categoryId: string | null;
+  date?: CalendarDate;
+  invoiceDueDate?: CalendarDate | null;
+  invoiceOverridden?: boolean;
 };
 
 export type InvoiceChoice = { invoiceDueDate: CalendarDate; invoiceOverridden: boolean };
@@ -131,12 +138,22 @@ export function validateEntry(
     if (card.archivedAt !== null && card.id !== current?.cardId) {
       return { ok: false, error: "CARD_ARCHIVED" };
     }
-    const resolved = resolveInvoice(card.cycles, input.date, input.invoiceDueDate);
-    if (!resolved.ok) return resolved;
-    invoice = {
-      invoiceDueDate: resolved.invoiceDueDate,
-      invoiceOverridden: resolved.invoiceOverridden,
-    };
+    const keepsChoice =
+      current?.invoiceOverridden === true &&
+      current.cardId === card.id &&
+      current.date === input.date &&
+      input.invoiceDueDate !== null &&
+      current.invoiceDueDate === input.invoiceDueDate;
+    if (keepsChoice) {
+      invoice = { invoiceDueDate: input.invoiceDueDate!, invoiceOverridden: true };
+    } else {
+      const resolved = resolveInvoice(card.cycles, input.date, input.invoiceDueDate);
+      if (!resolved.ok) return resolved;
+      invoice = {
+        invoiceDueDate: resolved.invoiceDueDate,
+        invoiceOverridden: resolved.invoiceOverridden,
+      };
+    }
   } else {
     const account = refs.accounts.find((a) => a.id === input.accountId);
     if (!account) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
