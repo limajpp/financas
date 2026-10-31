@@ -9,8 +9,7 @@ export type CalendarDate = string;
 
 const CALENDAR_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-// en-CA formats as YYYY-MM-DD.
-const isoDay = new Intl.DateTimeFormat("en-CA", {
+const dayParts = new Intl.DateTimeFormat("en-CA", {
   timeZone: APP_TIME_ZONE,
   year: "numeric",
   month: "2-digit",
@@ -28,7 +27,10 @@ export function isCalendarDate(value: string): value is CalendarDate {
 
 /** Today's date in São Paulo. */
 export function todayInSaoPaulo(now: Date = new Date()): CalendarDate {
-  return isoDay.format(now);
+  // Built from parts: a locale's pattern (e.g. en-CA) isn't guaranteed across browsers.
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    dayParts.formatToParts(now).find((p) => p.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** For a Prisma DATE column: the day at UTC midnight. */

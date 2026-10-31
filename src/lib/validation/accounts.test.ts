@@ -41,6 +41,10 @@ describe("accountSchema", () => {
     expect(issues({ initialBalance: "  " })).toEqual(["Informe o saldo inicial."]);
     expect(issues({ initialBalance: "12.5" })).toEqual(["Valor inválido. Use o formato 1.234,56."]);
     expect(issues({ initialBalanceDate: "2026-02-30" })).toEqual(["Data inválida."]);
+    expect(issues({ initialBalanceDate: "" })).toEqual(["Informe a data."]);
+    expect(issues({ initialBalance: "1".repeat(31) })).toEqual([
+      "Valor inválido. Use o formato 1.234,56.",
+    ]);
     expect(issues({ name: "" })).toEqual(["Informe o nome."]);
     expect(issues({ color: "black" })).toEqual(["Cor inválida."]);
   });

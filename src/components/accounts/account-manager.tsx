@@ -53,7 +53,9 @@ export function AccountManager({ accounts }: { accounts: AccountView[] }) {
 
       {visible.length === 0 ? (
         <p className="mt-6 text-muted-foreground">
-          Nenhuma conta ainda. Cadastre as contas do seu banco com o saldo de hoje.
+          {accounts.length > 0
+            ? "Todas as contas estão arquivadas. Ligue “Mostrar arquivadas” para vê-las."
+            : "Nenhuma conta ainda. Cadastre as contas do seu banco com o saldo de hoje."}
         </p>
       ) : (
         <ul aria-label="Contas" className="mt-4 divide-y rounded-lg border">

@@ -27,18 +27,20 @@ function done(result: AccountResult): ActionResult {
 }
 
 export async function createAccountAction(input: unknown): Promise<ActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsed = accountSchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  const space = await getCurrentSpace();
   return done(await createAccount(space.id, parsed.data));
 }
 
 export async function updateAccountAction(id: unknown, input: unknown): Promise<ActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsedId = accountIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: ACCOUNT_ERROR_MESSAGES.NOT_FOUND };
   const parsed = accountSchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  const space = await getCurrentSpace();
   return done(await updateAccount(space.id, parsedId.data, parsed.data));
 }
 
@@ -46,10 +48,11 @@ export async function setAccountArchivedAction(
   id: unknown,
   archived: unknown,
 ): Promise<ActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsedId = accountIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: ACCOUNT_ERROR_MESSAGES.NOT_FOUND };
   const parsedArchived = z.boolean().safeParse(archived);
   if (!parsedArchived.success) return { ok: false, error: "Dados inválidos." };
-  const space = await getCurrentSpace();
   return done(await setAccountArchived(space.id, parsedId.data, parsedArchived.data));
 }

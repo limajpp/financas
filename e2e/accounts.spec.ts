@@ -13,7 +13,7 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
   // Criar.
   await page.getByRole("button", { name: "Nova conta" }).click();
   await dialog.getByLabel("Nome").fill("Banco Azul");
-  await dialog.getByLabel("Saldo inicial").fill("1.234,56");
+  await dialog.getByLabel("Saldo inicial em reais").fill("1.234,56");
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   const azul = list.getByRole("listitem").filter({ hasText: "Banco Azul" });
@@ -22,12 +22,12 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
   // Valor inválido mostra o erro no campo.
   await page.getByRole("button", { name: "Nova conta" }).click();
   await dialog.getByLabel("Nome").fill("Carteira");
-  await dialog.getByLabel("Saldo inicial").fill("12.5");
+  await dialog.getByLabel("Saldo inicial em reais").fill("12.5");
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog.getByText("Valor inválido. Use o formato 1.234,56.")).toBeVisible();
 
   // Saldo negativo pela opção (o teclado do iPhone não tem a tecla de menos).
-  await dialog.getByLabel("Saldo inicial").fill("350");
+  await dialog.getByLabel("Saldo inicial em reais").fill("350");
   await dialog.getByLabel("Saldo negativo (cheque especial)").click();
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
@@ -37,9 +37,9 @@ test("cadastra, edita e arquiva uma conta", async ({ page }) => {
 
   // Editar nome e saldo.
   await page.getByRole("button", { name: "Editar Banco Azul" }).click();
-  await expect(dialog.getByLabel("Saldo inicial")).toHaveValue("1.234,56");
+  await expect(dialog.getByLabel("Saldo inicial em reais")).toHaveValue("1.234,56");
   await dialog.getByLabel("Nome").fill("Banco Verde");
-  await dialog.getByLabel("Saldo inicial").fill("2000");
+  await dialog.getByLabel("Saldo inicial em reais").fill("2000");
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   const verde = list.getByRole("listitem").filter({ hasText: "Banco Verde" });

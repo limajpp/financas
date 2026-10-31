@@ -34,9 +34,10 @@ function done(result: CategoryResult): CategoryActionResult {
 }
 
 export async function createCategoryAction(input: unknown): Promise<CategoryActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsed = createCategorySchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  const space = await getCurrentSpace();
   return done(await createCategory(space.id, parsed.data));
 }
 
@@ -44,11 +45,12 @@ export async function updateCategoryAction(
   id: unknown,
   input: unknown,
 ): Promise<CategoryActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsedId = categoryIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: CATEGORY_ERROR_MESSAGES.NOT_FOUND };
   const parsed = updateCategorySchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  const space = await getCurrentSpace();
   return done(await updateCategory(space.id, parsedId.data, parsed.data));
 }
 
@@ -56,10 +58,11 @@ export async function setCategoryArchivedAction(
   id: unknown,
   archived: unknown,
 ): Promise<CategoryActionResult> {
+  // Session first: no parsing work for anonymous requests.
+  const space = await getCurrentSpace();
   const parsedId = categoryIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: CATEGORY_ERROR_MESSAGES.NOT_FOUND };
   const parsedArchived = z.boolean().safeParse(archived);
   if (!parsedArchived.success) return { ok: false, error: "Dados inválidos." };
-  const space = await getCurrentSpace();
   return done(await setCategoryArchived(space.id, parsedId.data, parsedArchived.data));
 }

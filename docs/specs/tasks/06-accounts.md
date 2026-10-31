@@ -97,6 +97,12 @@ Cadastrar as contas bancárias com um saldo inicial numa data, que é o ponto de
 - **Peças comuns extraídas:** `ActionResult`/`zodFailure` (`src/lib/action-result.ts`), `normalizeName` (`src/domain/names.ts`), `ColorPicker` e `ResponsiveDialogContent`/`ResponsiveDialogFooter`.
 - **Paleta comum:** `CATEGORY_COLORS` vira `PALETTE_COLORS` num módulo compartilhado, usado por categorias e contas.
 
+### Revisão
+
+- Corrigido (bloqueio): a regex do `parseBRL` tinha retrocesso quadrático com muitos espaços, e o campo não tinha limite de tamanho. Isso travaria o servidor com um texto grande. Agora a regex é linear, o campo aceita até 30 caracteres, o `parseBRL` recusa textos longos e há teste de tempo. As actions (contas e categorias) leem a sessão antes de validar a entrada.
+- Corrigido: `palette.tsx` sem `"use client"` (as constantes de cor podem ser usadas em Server Components); `todayInSaoPaulo` montado por partes, sem depender do formato do `en-CA`; "Informe a data." para data vazia; dica da data ligada ao campo; "em reais" para leitor de tela; mensagem própria quando todas as contas estão arquivadas; testes do limite negativo.
+- Aceito: nome único checado no código, sem restrição no banco (igual às categorias; um usuário por espaço e botão desabilitado durante o envio). Foco do teclado depois de arquivar fica para a task 26.
+
 ## Fora do escopo
 
 - Saldo atual calculado (task 8).

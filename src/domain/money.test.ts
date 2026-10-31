@@ -51,6 +51,7 @@ describe("parseBRL", () => {
     ["R$ -350,00", -35000],
     ["-0", 0],
     ["20.000.000,00", 2_000_000_000],
+    ["-20.000.000,00", -2_000_000_000],
   ])("%s → %d cents", (input, cents) => {
     expect(parseBRL(input)).toBe(cents);
   });
@@ -71,9 +72,17 @@ describe("parseBRL", () => {
     "5-",
     "R$",
     "20.000.000,01",
+    "-20.000.000,01",
     "99999999999999999999",
   ])("%j is not an amount", (input) => {
     expect(parseBRL(input)).toBeNull();
+  });
+
+  it("rejects long input quickly (no catastrophic backtracking)", () => {
+    const started = performance.now();
+    expect(parseBRL("-" + " ".repeat(100_000) + "x")).toBeNull();
+    expect(parseBRL("R$" + " ".repeat(20) + "x")).toBeNull();
+    expect(performance.now() - started).toBeLessThan(50);
   });
 
   it("never returns negative zero", () => {

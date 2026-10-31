@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { ACCOUNT_NAME_MAX } from "@/domain/accounts";
 import { isCalendarDate } from "@/domain/dates";
-import { parseBRL } from "@/domain/money";
+import { MAX_AMOUNT_TEXT, parseBRL } from "@/domain/money";
 import { PALETTE_COLORS } from "@/domain/palette";
 
 /**
@@ -23,6 +23,7 @@ export const accountSchema = z
       .string({ error: "Informe o saldo inicial." })
       .trim()
       .min(1, { error: "Informe o saldo inicial." })
+      .max(MAX_AMOUNT_TEXT, { error: "Valor inválido. Use o formato 1.234,56." })
       .transform((text, ctx) => {
         const cents = parseBRL(text);
         if (cents === null) {
@@ -33,7 +34,8 @@ export const accountSchema = z
       }),
     negative: z.boolean().default(false),
     initialBalanceDate: z
-      .string({ error: "Data inválida." })
+      .string({ error: "Informe a data." })
+      .min(1, { error: "Informe a data.", abort: true })
       .refine(isCalendarDate, { error: "Data inválida." }),
   })
   .transform(({ initialBalance, negative, ...rest }) => {

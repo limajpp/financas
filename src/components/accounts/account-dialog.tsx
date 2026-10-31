@@ -78,8 +78,14 @@ function AccountForm({ account, onDone }: { account: AccountView | null; onDone:
   const knownFields = ["name", "initialBalance", "initialBalanceDate"];
   const formError =
     result && !result.ok && !knownFields.some((f) => fieldErrors[f]) ? result.error : null;
-  const errorProps = (id: string, error?: string) =>
-    error ? { "aria-invalid": true, "aria-describedby": `${id}-error` } : {};
+  // Links the field to its error and, when there is one, its hint.
+  const errorProps = (id: string, error?: string, hintId?: string) => {
+    const describedBy = [error && `${id}-error`, hintId].filter(Boolean).join(" ");
+    return {
+      ...(error ? { "aria-invalid": true } : {}),
+      ...(describedBy ? { "aria-describedby": describedBy } : {}),
+    };
+  };
 
   return (
     <form onSubmit={submit} className="grid gap-5" noValidate>
@@ -106,7 +112,9 @@ function AccountForm({ account, onDone }: { account: AccountView | null; onDone:
       <ColorPicker value={color} onChange={setColor} />
 
       <div className="grid gap-2">
-        <Label htmlFor={ids.balance}>Saldo inicial</Label>
+        <Label htmlFor={ids.balance}>
+          Saldo inicial<span className="sr-only"> em reais</span>
+        </Label>
         <MoneyInput
           id={ids.balance}
           value={initialBalance}
@@ -131,10 +139,10 @@ function AccountForm({ account, onDone }: { account: AccountView | null; onDone:
           value={initialBalanceDate}
           max={today}
           onChange={(e) => setInitialBalanceDate(e.target.value)}
-          {...errorProps(ids.date, fieldErrors.initialBalanceDate)}
+          {...errorProps(ids.date, fieldErrors.initialBalanceDate, `${ids.date}-hint`)}
         />
         <ErrorText id={ids.date} error={fieldErrors.initialBalanceDate} />
-        <p className="text-sm text-muted-foreground">
+        <p id={`${ids.date}-hint`} className="text-sm text-muted-foreground">
           O saldo que o banco mostrava no fim desse dia.
         </p>
       </div>
