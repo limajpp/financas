@@ -2,19 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildCategoryTree,
-  CATEGORY_COLORS,
   CATEGORY_ICONS,
   type CategoryNode,
   fixedFlagFor,
   isArchivedEffective,
   isFixedEffective,
-  normalizeCategoryName,
   selectableTree,
   validateNewCategory,
   validateRename,
   validateUnarchive,
 } from "./categories";
 import { DEFAULT_CATEGORIES } from "./default-categories";
+import { normalizeName } from "./names";
+import { PALETTE_COLORS } from "./palette";
 
 let seq = 0;
 function cat(overrides: Partial<CategoryNode> = {}): CategoryNode {
@@ -30,10 +30,10 @@ function cat(overrides: Partial<CategoryNode> = {}): CategoryNode {
   };
 }
 
-describe("normalizeCategoryName", () => {
+describe("normalizeName", () => {
   it("ignores accents, case and extra spaces", () => {
-    expect(normalizeCategoryName("  Saúde   Mental ")).toBe("saude mental");
-    expect(normalizeCategoryName("ALIMENTAÇÃO")).toBe(normalizeCategoryName("alimentacao"));
+    expect(normalizeName("  Saúde   Mental ")).toBe("saude mental");
+    expect(normalizeName("ALIMENTAÇÃO")).toBe(normalizeName("alimentacao"));
   });
 });
 
@@ -179,7 +179,7 @@ describe("DEFAULT_CATEGORIES", () => {
   it("uses only known icons and colors, and income is never fixed", () => {
     for (const parent of DEFAULT_CATEGORIES) {
       expect(CATEGORY_ICONS).toContain(parent.icon);
-      expect(CATEGORY_COLORS).toContain(parent.color);
+      expect(PALETTE_COLORS).toContain(parent.color);
       for (const child of parent.children ?? []) {
         if (child.icon) expect(CATEGORY_ICONS).toContain(child.icon);
       }

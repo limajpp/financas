@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { formatBRL } from "./money";
+import { formatBRL, formatBRLInput, parseBRL } from "./money";
 
 // Intl separates "R$" from the amount with a non-breaking space (U+00A0).
 const nbsp = " ";
@@ -28,5 +28,70 @@ describe("formatBRL", () => {
 
   it("rejects fractional cents", () => {
     expect(() => formatBRL(10.5)).toThrow(RangeError);
+  });
+});
+
+describe("parseBRL", () => {
+  it.each([
+    ["1.234,56", 123456],
+    ["1234,56", 123456],
+    ["1234", 123400],
+    ["0,5", 50],
+    ["0,05", 5],
+    ["0", 0],
+    ["R$ 1.234,56", 123456],
+    ["R$1.234,56", 123456],
+    ["  47,90  ", 4790],
+    ["1.234", 123400],
+    ["1.234.567,89", 123456789],
+    ["-350", -35000],
+    ["−350,00", -35000],
+    ["- 350,00", -35000],
+    ["-R$ 350,00", -35000],
+    ["R$ -350,00", -35000],
+    ["-0", 0],
+    ["20.000.000,00", 2_000_000_000],
+  ])("%s → %d cents", (input, cents) => {
+    expect(parseBRL(input)).toBe(cents);
+  });
+
+  it.each([
+    "",
+    "   ",
+    "abc",
+    "12.5",
+    "1.23,45",
+    "1.2345",
+    "1,234",
+    "1,",
+    ",5",
+    "1.234.56",
+    "1 234",
+    "--5",
+    "5-",
+    "R$",
+    "20.000.000,01",
+    "99999999999999999999",
+  ])("%j is not an amount", (input) => {
+    expect(parseBRL(input)).toBeNull();
+  });
+
+  it("never returns negative zero", () => {
+    expect(Object.is(parseBRL("-0,00"), 0)).toBe(true);
+  });
+});
+
+describe("formatBRLInput", () => {
+  it("formats cents for an input field, without the currency symbol", () => {
+    expect(formatBRLInput(123456)).toBe("1.234,56");
+    expect(formatBRLInput(50)).toBe("0,50");
+    expect(formatBRLInput(0)).toBe("0,00");
+    expect(formatBRLInput(-35000)).toBe("-350,00");
+  });
+
+  it("round-trips with parseBRL", () => {
+    for (const cents of [0, 1, 99, 100, 123456, -35000, 2_000_000_000]) {
+      expect(parseBRL(formatBRLInput(cents))).toBe(cents);
+    }
   });
 });

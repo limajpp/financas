@@ -6,7 +6,10 @@ import { SignOutButton } from "@/components/nav/sign-out-button";
 
 export const metadata: Metadata = { title: "Configurações · Finanças" };
 
-const settingsLinks = [{ href: "/configuracoes/categorias", label: "Categorias" }];
+const settingsLinks = [
+  { href: "/contas", label: "Contas" },
+  { href: "/configuracoes/categorias", label: "Categorias" },
+];
 
 // On mobile the analysis pages aren't in the bottom bar yet, so they're reachable from here.
 const moreLinks = [
