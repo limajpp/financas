@@ -25,7 +25,7 @@ Todo PR ganha uma URL de preview funcionando (para testar no iPhone), e a `main`
 
 - `prisma.config.ts`: as migrations usam `DATABASE_URL_UNPOOLED` quando existe (o pooler da Neon não serve para o `migrate`), e caem no `DATABASE_URL` no resto.
 - `src/server/auth.ts`:
-  - `baseURL` vem do `BETTER_AUTH_URL` ou, num preview, de `https://${VERCEL_URL}`;
+  - `baseURL` e `trustedOrigins` vêm de `authUrls()`: `BETTER_AUTH_URL` quando definida, senão `VERCEL_PROJECT_PRODUCTION_URL` em produção e `VERCEL_URL` no preview;
   - **IP do rate limit**: o Better Auth lê o `x-forwarded-for`, que a Vercel sobrescreve com o IP real. Isso é conferido na produção (CA5); se não for verdade, configuro `advanced.ipAddress.ipAddressHeaders`.
 - **Cadastro restrito:** `SIGNUP_ALLOWED_EMAILS` (lista separada por vírgula). Quando a variável está definida, só esses e-mails podem se cadastrar; os outros veem "Cadastro fechado.". Quando está vazia, o cadastro fica aberto (dev, testes, preview).
 - `.env.example` documenta as variáveis novas.
@@ -42,6 +42,7 @@ Roda via `workflow_run` depois que o workflow `CI` termina com sucesso:
   - comenta a URL no PR, num comentário único que é atualizado a cada push.
 - **Push na `main` (produção):** só se o commit ainda for a ponta da `main` (um re-run de CI antigo não publica código velho) → `vercel build --prod` → `prisma migrate deploy` contra a branch principal da Neon → `vercel deploy --prebuilt --prod` → smoke test com `curl` no domínio de produção (`/` redireciona para `/entrar`, e `/entrar` responde 200). O build vem antes da migration: um build quebrado não deixa código antigo sobre o schema novo. Sem rollback automático: se o smoke test falhar, `vercel rollback`.
 - **Segredos no log:** o repo e os logs do Actions são públicos. A senha do banco do preview é buscada na API da Neon e mascarada antes de qualquer saída; as URLs só passam entre os passos pelo `$GITHUB_ENV`, já mascaradas, e o `vercel deploy --env DATABASE_URL` lê o valor do ambiente. Nenhum segredo entra em `${{ }}` dentro de um script.
+- **Não reexecutar o job de preview com debug logging:** a `create-branch-action` grava `db_url` e `password` como saídas sem máscara (não usadas), e o modo debug poderia imprimi-las.
 - **Concorrência:** o preview e a limpeza de um PR compartilham o grupo `preview-<branch>`, para um merge logo depois do CI não apagar a branch no meio do preview; se o PR já fechou quando o preview termina, o próprio preview apaga a branch.
 - **Build:** recebe um `BETTER_AUTH_SECRET` descartável. O de verdade é uma variável sensível da Vercel, que o `vercel pull` não traz; a função lê o valor real em runtime.
 - **PR fechado:** apaga a branch `preview/pr-<N>` da Neon (o plano free tem limite de branches).
