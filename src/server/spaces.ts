@@ -2,12 +2,20 @@ import "server-only";
 
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { ensureDefaultCategories } from "@/server/categories";
 
 /**
- * Returns the user's personal space, creating it (with the OWNER membership) if missing.
- * Safe to call concurrently: the unique personalOwnerId settles races.
+ * Returns the user's personal space, creating it (with the OWNER membership and the default
+ * categories) if missing. Also seeds the categories of an older space that never got them.
+ * Safe to call concurrently: the unique personalOwnerId and the categoriesSeededAt mark settle races.
  */
 export async function ensurePersonalSpace(userId: string) {
+  const space = await findOrCreatePersonalSpace(userId);
+  if (space.categoriesSeededAt === null) await ensureDefaultCategories(space.id);
+  return space;
+}
+
+async function findOrCreatePersonalSpace(userId: string) {
   const existing = await db.space.findUnique({ where: { personalOwnerId: userId } });
   if (existing) return existing;
 
