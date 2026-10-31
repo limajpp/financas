@@ -106,6 +106,15 @@ export function AccountManager({
                   em {formatCalendarDate(account.initialBalanceDate)}
                 </p>
               </div>
+              <p
+                className={cn(
+                  "shrink-0 text-right font-semibold tabular-nums",
+                  account.currentBalanceCents < 0 && "text-destructive",
+                )}
+              >
+                <span className="sr-only">Saldo atual </span>
+                {formatBRL(account.currentBalanceCents)}
+              </p>
               <div className="flex shrink-0 items-center">
                 <Button
                   variant="ghost"

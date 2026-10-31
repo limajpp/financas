@@ -5,6 +5,7 @@ import { AccountManager } from "@/components/accounts/account-manager";
 import { listAccounts } from "@/server/accounts";
 import { listCards } from "@/server/cards";
 import { getCurrentSpace } from "@/server/session";
+import { accountBalances } from "@/server/transactions";
 
 export const metadata: Metadata = { title: "Contas · Finanças" };
 
@@ -24,14 +25,16 @@ export default function ContasPage() {
 
 async function Accounts() {
   const space = await getCurrentSpace();
-  const [accounts, cards] = await Promise.all([
+  const [accounts, cards, balances] = await Promise.all([
     listAccounts(space.id, { includeArchived: true }),
     listCards(space.id, { includeArchived: true }),
+    accountBalances(space.id),
   ]);
   return (
     <AccountManager
       accounts={accounts.map(({ archivedAt, ...account }) => ({
         ...account,
+        currentBalanceCents: balances.get(account.id) ?? account.initialBalanceCents,
         archived: archivedAt !== null,
       }))}
       cards={cards.map((card) => ({
