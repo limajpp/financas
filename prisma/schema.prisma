@@ -84,14 +84,17 @@ enum SpaceType {
 // Every piece of data belongs to a space. v1 only has the personal one.
 // personalOwnerId is set only on PERSONAL spaces (CHECK in the migration): one per user.
 model Space {
-  id              String        @id @default(uuid(7))
-  type            SpaceType
-  name            String
-  personalOwnerId String?       @unique
-  personalOwner   User?         @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  members         SpaceMember[]
+  id                 String        @id @default(uuid(7))
+  type               SpaceType
+  name               String
+  personalOwnerId    String?       @unique
+  personalOwner      User?         @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  // Set once the default category list was created, so archived defaults never come back.
+  categoriesSeededAt DateTime?
+  members            SpaceMember[]
+  categories         Category[]
 }
 
 enum SpaceRole {
@@ -110,4 +113,31 @@ model SpaceMember {
 
   @@unique([spaceId, userId])
   @@index([userId])
+}
+
+enum CategoryType {
+  EXPENSE
+  INCOME
+}
+
+/// Two-level tree (parent → children). Depth, sibling-name uniqueness and type inheritance are
+/// enforced by src/domain/categories.ts, not by the database.
+model Category {
+  id         String       @id @default(uuid(7))
+  spaceId    String
+  space      Space        @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  parentId   String?
+  parent     Category?    @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction)
+  children   Category[]   @relation("CategoryChildren")
+  name       String
+  type       CategoryType
+  icon       String
+  color      String
+  isFixed    Boolean      @default(false)
+  archivedAt DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  @@index([spaceId, type])
+  @@index([parentId])
 }
