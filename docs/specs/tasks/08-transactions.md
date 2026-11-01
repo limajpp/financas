@@ -59,7 +59,7 @@ Criar o modelo central do app: despesas e receitas, ligadas a uma conta ou a um 
 `accountBalance(conta, lançamentos, até)` devolve centavos:
 
 - parte do `initialBalanceCents`;
-- conta só os lançamentos com data **depois** de `initialBalanceDate` (o saldo inicial é o do fim daquele dia) e até a data `até`, inclusive;
+- conta só os lançamentos com data **depois** de `initialBalanceDate` (o saldo inicial é o do fim daquele dia) e até a data `até`, inclusive. A task 9 ajustou isso: um saldo informado para o próprio dia também conta os lançamentos daquele dia registrados depois dele (ver `09-register.md`);
 - receita na conta: **+**;
 - despesa na conta, por qualquer meio que não seja crédito: **−**;
 - despesa no crédito: **não mexe** no saldo. Quem mexe é o pagamento da fatura;

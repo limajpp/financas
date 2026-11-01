@@ -1,3 +1,8 @@
+import { Plus } from "lucide-react";
+import Link from "next/link";
+
+import { Button } from "@/components/ui/button";
+
 import { NavLink } from "./nav-link";
 import { sidebarItems } from "./nav-items";
 import { SignOutButton } from "./sign-out-button";
@@ -5,7 +10,15 @@ import { SignOutButton } from "./sign-out-button";
 export function Sidebar({ user }: { user: React.ReactNode }) {
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-sidebar text-sidebar-foreground md:flex">
-      <div className="px-5 py-6 text-lg font-semibold tracking-tight">Finanças</div>
+      <div className="px-5 pt-6 pb-4 text-lg font-semibold tracking-tight">Finanças</div>
+      <div className="px-3 pb-4">
+        <Button asChild className="w-full gap-2">
+          <Link href="/registrar">
+            <Plus aria-hidden />
+            Registrar
+          </Link>
+        </Button>
+      </div>
       <nav aria-label="Navegação principal" className="flex-1 px-3">
         <ul className="grid gap-1">
           {sidebarItems.map((item) => (

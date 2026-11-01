@@ -3,7 +3,7 @@
 import { refresh } from "next/cache";
 
 import { TRANSACTION_ERROR_MESSAGES } from "@/domain/transactions";
-import { type ActionResult, zodFailure } from "@/lib/action-result";
+import { type ActionFailure, type ActionResult, zodFailure } from "@/lib/action-result";
 import { clientIdSchema, entrySchema, transactionIdSchema } from "@/lib/validation/transactions";
 import { getCurrentSpace, getCurrentUser } from "@/server/session";
 import { createTransaction, deleteTransaction, updateTransaction } from "@/server/transactions";
@@ -24,7 +24,7 @@ const FIELD_OF_ERROR: Partial<Record<ErrorCode, string>> = {
   INVALID_INVOICE: "invoiceDueDate",
 };
 
-function failure(code: ErrorCode): ActionResult {
+function failure(code: ErrorCode): ActionFailure {
   const error = TRANSACTION_ERROR_MESSAGES[code];
   const field = FIELD_OF_ERROR[code];
   return { ok: false, error, fieldErrors: field ? { [field]: error } : undefined };
@@ -36,17 +36,24 @@ function done(result: { ok: true } | { ok: false; error: ErrorCode }): ActionRes
   return { ok: true };
 }
 
-/** Creates an expense or income. Sending the same `clientId` again doesn't duplicate it. */
+/**
+ * Creates an expense or income and returns its id (for "Desfazer"). Sending the same `clientId`
+ * again doesn't duplicate it.
+ */
 export async function createTransactionAction(
   clientId: unknown,
   input: unknown,
-): Promise<ActionResult> {
+): Promise<{ ok: true; id: string } | ActionFailure> {
   const [user, space] = await Promise.all([getCurrentUser(), getCurrentSpace()]);
   const parsedClientId = clientIdSchema.safeParse(clientId);
   if (!parsedClientId.success) return zodFailure(parsedClientId.error);
   const parsed = entrySchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  return done(await createTransaction(space.id, user.id, parsedClientId.data, parsed.data));
+  const result = await createTransaction(space.id, user.id, parsedClientId.data, parsed.data);
+  if (!result.ok) return failure(result.error);
+  // No refresh(): the register screen navigates away right after, and the pages are dynamic, so
+  // the next one already reads the new entry.
+  return { ok: true, id: result.transaction.id };
 }
 
 export async function updateTransactionAction(id: unknown, input: unknown): Promise<ActionResult> {

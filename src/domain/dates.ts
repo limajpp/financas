@@ -49,3 +49,8 @@ export function formatCalendarDate(date: CalendarDate): string {
   const [y, m, d] = date.split("-");
   return `${d}/${m}/${y}`;
 }
+
+/** The calendar day `n` days after `date` (negative goes back). */
+export function addDays(date: CalendarDate, n: number): CalendarDate {
+  return dbToCalendarDate(new Date(calendarDateToDb(date).getTime() + n * 86_400_000));
+}

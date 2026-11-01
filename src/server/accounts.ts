@@ -66,9 +66,19 @@ export async function updateAccount(
   const checked = validateAccount({ id, ...input }, existing, todayInSaoPaulo());
   if (!checked.ok) return checked;
 
+  const current = existing.find((a) => a.id === id)!;
+  const balanceChanged =
+    current.initialBalanceCents !== input.initialBalanceCents ||
+    current.initialBalanceDate !== input.initialBalanceDate;
+
   const row = await db.account.update({
     where: { id, spaceId },
-    data: { ...input, initialBalanceDate: calendarDateToDb(input.initialBalanceDate) },
+    data: {
+      ...input,
+      initialBalanceDate: calendarDateToDb(input.initialBalanceDate),
+      // A new balance already includes what was registered until now.
+      ...(balanceChanged ? { initialBalanceSetAt: new Date() } : {}),
+    },
     select: accountSelect,
   });
   return { ok: true, account: toAccount(row) };

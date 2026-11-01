@@ -4,8 +4,10 @@ import type { z } from "zod";
 export type ActionResult =
   { ok: true } | { ok: false; error: string; fieldErrors?: Partial<Record<string, string>> };
 
+export type ActionFailure = Extract<ActionResult, { ok: false }>;
+
 /** A Zod failure as an ActionResult, keeping the first message of each field. */
-export function zodFailure(error: z.ZodError): ActionResult {
+export function zodFailure(error: z.ZodError): ActionFailure {
   const fieldErrors: Record<string, string> = {};
   for (const issue of error.issues) {
     const field = String(issue.path[0] ?? "");

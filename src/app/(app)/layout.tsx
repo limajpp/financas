@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { SessionRefresher } from "@/components/auth/session-refresher";
 import { BottomNav } from "@/components/nav/bottom-nav";
 import { Sidebar } from "@/components/nav/sidebar";
+import { Toaster } from "@/components/toaster";
 import { getCurrentUser } from "@/server/session";
 
 // The navigation is static and prerenders; only the user's name waits for the session.
@@ -19,6 +20,7 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
       <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">{children}</main>
       <BottomNav />
       <SessionRefresher />
+      <Toaster />
     </div>
   );
 }

@@ -143,7 +143,7 @@ function AccountForm({ account, onDone }: { account: AccountView | null; onDone:
         />
         <ErrorText id={ids.date} error={fieldErrors.initialBalanceDate} />
         <p id={`${ids.date}-hint`} className="text-sm text-muted-foreground">
-          O saldo que o banco mostrava no fim desse dia.
+          Se for hoje, o saldo de agora. Se for outro dia, o do fim daquele dia.
         </p>
       </div>
 

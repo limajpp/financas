@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { accountSchema } from "@/lib/validation/accounts";
 import { cardSchema } from "@/lib/validation/cards";
 import { entrySchema } from "@/lib/validation/transactions";
-import { createAccount, setAccountArchived } from "@/server/accounts";
+import { createAccount, setAccountArchived, updateAccount } from "@/server/accounts";
 import { createCard, setCardArchived, updateCard } from "@/server/cards";
 import { setCategoryArchived } from "@/server/categories";
 import { ensurePersonalSpace } from "@/server/spaces";
@@ -146,12 +146,14 @@ describe("lançamentos", () => {
     expect((await accountBalances(ana.spaceId)).get(azul.id)).toBe(70_000);
   });
 
-  it("CA2 e CA7: o saldo conta só depois da data do saldo inicial e bate com o módulo", async () => {
+  it("CA2 e CA7: o saldo conta o que vem depois do saldo inicial e bate com o módulo", async () => {
     today("2026-10-31");
     const ana = await user("ana@example.com");
     const azul = await account(ana.spaceId); // R$ 1.000,00 on 2026-10-01
     const verde = await account(ana.spaceId, "Banco Verde", "0");
     const roxo = await card(ana.spaceId, azul.id);
+    // The entries are registered a minute after the balances were informed.
+    vi.setSystemTime(new Date("2026-10-31T15:01:00Z"));
 
     await create(ana, { method: "PIX", accountId: azul.id, date: "2026-09-30", amountCents: 1 });
     await create(ana, { method: "PIX", accountId: azul.id, date: "2026-10-01", amountCents: 10 });
@@ -177,14 +179,63 @@ describe("lançamentos", () => {
     await create(ana, { method: "PIX", accountId: verde.id, amountCents: 2_000 });
 
     const balances = await accountBalances(ana.spaceId);
+    // 09-30 and 10-01: in the balance of the end of 10-01 (informed on a later day).
     expect(balances.get(azul.id)).toBe(100_000 - 100 + 500_000);
     expect(balances.get(verde.id)).toBe(-2_000);
 
     const rows = await db.transaction.findMany({ where: { spaceId: ana.spaceId } });
     const entries = rows.map((r) => ({ ...r, date: r.date.toISOString().slice(0, 10) }));
+    const azulRow = await db.account.findUniqueOrThrow({ where: { id: azul.id } });
     expect(balances.get(azul.id)).toBe(
-      accountBalance({ ...azul, initialBalanceDate: "2026-10-01" }, entries, "2026-10-31"),
+      accountBalance({ ...azulRow, initialBalanceDate: "2026-10-01" }, entries, "2026-10-31"),
     );
+
+    // Informing a new balance (amount or day) takes in what was registered until then.
+    const updated = await updateAccount(
+      ana.spaceId,
+      azul.id,
+      accountSchema.parse({
+        name: "Banco Azul",
+        color: "blue",
+        initialBalance: "2.000,00",
+        initialBalanceDate: "2026-10-05",
+      }),
+    );
+    expect(updated.ok).toBe(true);
+    // Only the 10-10 credit purchase is after 10-05, and it doesn't touch the balance.
+    expect((await accountBalances(ana.spaceId)).get(azul.id)).toBe(200_000);
+  });
+
+  it("conta cadastrada hoje com o saldo de agora: o que se registra depois, hoje, entra", async () => {
+    today("2026-10-31");
+    const ana = await user("ana@example.com");
+    const result = await createAccount(
+      ana.spaceId,
+      accountSchema.parse({
+        name: "Banco Hoje",
+        color: "blue",
+        initialBalance: "1.000,00",
+        initialBalanceDate: "2026-10-31",
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    vi.setSystemTime(new Date("2026-10-31T16:00:00Z")); // lunch, an hour later
+    await create(ana, {
+      method: "PIX",
+      accountId: result.account.id,
+      date: "2026-10-31",
+      amountCents: 4_790,
+    });
+    // Yesterday's coffee, registered now: already in the balance seen this morning.
+    await create(ana, {
+      method: "PIX",
+      accountId: result.account.id,
+      date: "2026-10-30",
+      amountCents: 500,
+    });
+
+    expect((await accountBalances(ana.spaceId)).get(result.account.id)).toBe(100_000 - 4_790);
   });
 
   it("CA3: o mesmo clientId não duplica, em sequência nem em paralelo", async () => {
