@@ -28,7 +28,7 @@ Resolver a dor principal: o extrato mostra "PAG\*JOSE SILVA 12.345.678/0001-90" 
 - **no documento,** quando a consulta, sem pontuação, tem pelo menos 3 dígitos. A comparação é sem pontuação: "345.678", "345678" e "12.345.678/0001-90" acham o CNPJ `12345678000190`. Dígitos dentro de um apelido ("PAG\*JOSE SILVA 12.345.678/0001-90") também valem;
 - **ordem:**
   - quem começa com a consulta vem antes de quem só a contém;
-  - o nome vale mais que um apelido, e um apelido mais que o documento;
+  - o nome vale mais que um apelido, e um apelido mais que o documento. Assim, um documento que começa com a consulta fica abaixo de um nome ou apelido que apenas a contém: o texto é o que você mais digita;
   - no empate, o mais usado, e depois o usado mais recentemente;
 - **consulta vazia:** os 5 estabelecimentos mais usados nos últimos 90 dias, como atalho ao focar o campo.
 
@@ -116,6 +116,28 @@ O servidor calcula isso por agregação (`groupBy` por estabelecimento, tipo e c
 - **Documento não é único.** Um intermediador ("PAG\*", maquininhas) usa o mesmo CNPJ para muitos estabelecimentos. Por isso, um texto igual a um documento ou apelido só resolve quando há um único dono.
 - **Apelido mais antigo sai depois de 10.** Sem limite, a lista cresce para sempre. Com um limite que recusasse o novo, o nome que o banco mostra hoje ficaria de fora.
 - **Os campos novos ficam em "Mais detalhes".** O design pede que o registro não fique mais lento: quem não precisa, nem vê.
+
+### Revisão
+
+O revisor (Opus, effort high) pediu mudanças por um problema maior, que foi corrigido.
+
+- **O CPF/CNPJ trazido por uma sugestão seguia o lançamento quando você mudava de ideia.**
+  - **Escolher A e depois B:** B salvava com o CNPJ de A, sobrescrevendo o documento verdadeiro de B sem você ver, porque o campo fica em "Mais detalhes".
+  - **Escolher A e depois editar o texto:** o estabelecimento novo nascia com o CNPJ de A.
+  - **Escolher A e depois apagar o texto:** salvar pedia "Informe o que foi para guardar o CPF/CNPJ".
+  - **Correção:** a tela agora guarda o que a sugestão preencheu (`src/components/register/prefill.ts`, com testes). Numa nova escolha, o que ainda está igual ao preenchido é trocado. Quando o texto deixa de ser o nome escolhido, o preenchido é limpo. O que você editou fica.
+  - O mesmo vale para a categoria e a observação sugeridas. O e2e cobre o caso de escolher e apagar.
+- Também corrigido:
+  - a observação mais recente é buscada com `DISTINCT ON` no banco. O `distinct` do Prisma lia todos os lançamentos com observação e filtrava na memória;
+  - agrupamento em `Map` no lugar de buscas dentro do laço;
+  - estabelecimentos órfãos (de um lançamento desfeito) não deixam mais um apelido ambíguo;
+  - uma consulta com uma só letra acentuada ("é") volta a buscar;
+  - um apelido igual ao nome não é guardado;
+  - Enter de composição (IME) é ignorado;
+  - o mouse sobre uma sugestão a destaca;
+  - mais testes: ordem entre "contém" no nome e no apelido, entre começo e meio do documento, o padrão de 5 resultados, o teto de 500, a categoria com a mãe arquivada e o toque no iPhone.
+- **Toque no iPhone.** O e2e com toque de verdade (`tap`) mostrou que a lista fechava no `blur` do campo antes de o toque chegar. Agora a escolha acontece no `touchend`, que também cancela o clique fantasma na categoria por baixo.
+- Aceito: dois salvamentos no mesmo instante podem guardar só um dos apelidos novos (leitura e escrita sem trava; uma pessoa por espaço). O "Desfazer" não desfaz o apelido nem o documento acrescentados.
 
 ## Fora do escopo
 
