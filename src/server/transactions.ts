@@ -2,6 +2,7 @@ import "server-only";
 
 import { type BalanceEntry, accountBalance } from "@/domain/balance";
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
+import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
 import {
   type CurrentRefs,
@@ -96,28 +97,54 @@ async function refsFor(spaceId: string, input: EntryInput): Promise<EntryRefs> {
 }
 
 /**
- * The counterparty with this name in the space (compared without case and accents), created if
- * missing. By name, not id: an entry made offline may name one the server doesn't know yet.
+ * The counterparty an entry names, in the space: by name (without case and accents), else the
+ * only one with exactly that alias or CPF/CNPJ; created if none. By name, not id: an entry made
+ * offline may name one the server doesn't know yet. The alias and CPF/CNPJ typed with the entry
+ * are then added to it.
  */
-async function counterpartyIdFor(spaceId: string, name: string | null) {
+async function counterpartyIdFor(
+  spaceId: string,
+  input: Pick<EntryInput, "counterparty" | "counterpartyAlias" | "counterpartyDocument">,
+) {
+  const name = input.counterparty;
   if (name === null) return null;
   const nameKey = normalizeName(name);
   const where = { spaceId_nameKey: { spaceId, nameKey } };
-  const existing = await db.counterparty.findUnique({ where, select: { id: true } });
-  if (existing) return existing.id;
-  try {
-    const created = await db.counterparty.create({
-      data: { spaceId, name, nameKey },
-      select: { id: true },
+  const select = { id: true, aliases: true, document: true } as const;
+
+  let found = await db.counterparty.findUnique({ where, select });
+  if (!found) {
+    // Only counterparties in use: an orphan (an undone entry) must not make an alias ambiguous.
+    const all = await db.counterparty.findMany({
+      where: { spaceId, transactions: { some: {} } },
+      select: { ...select, name: true },
     });
-    return created.id;
-  } catch (error) {
-    // Created at the same time by another request.
-    if (isUniqueViolation(error)) {
-      return (await db.counterparty.findUniqueOrThrow({ where, select: { id: true } })).id;
-    }
-    throw error;
+    const id = resolveCounterparty(name, all);
+    found = all.find((c) => c.id === id) ?? null;
   }
+  if (!found) {
+    try {
+      found = await db.counterparty.create({ data: { spaceId, name, nameKey }, select });
+    } catch (error) {
+      // Created at the same time by another request.
+      if (!isUniqueViolation(error)) throw error;
+      found = await db.counterparty.findUniqueOrThrow({ where, select });
+    }
+  }
+
+  // Read-modify-write without a lock: two saves at the same instant may keep only one new alias.
+  // Accepted (one person per space). An alias equal to the name adds nothing.
+  const aliases =
+    input.counterpartyAlias && normalizeName(input.counterpartyAlias) !== normalizeName(name)
+      ? addAlias(found.aliases, input.counterpartyAlias)
+      : found.aliases;
+  const document = input.counterpartyDocument ?? found.document;
+  // Compared by content: at the limit, adding one drops the oldest (same length).
+  const aliasesChanged = aliases.join("\n") !== found.aliases.join("\n");
+  if (aliasesChanged || document !== found.document) {
+    await db.counterparty.update({ where: { id: found.id }, data: { aliases, document } });
+  }
+  return found.id;
 }
 
 function entryData(
@@ -175,7 +202,7 @@ export async function createTransaction(
         spaceId,
         clientId,
         createdById: userId,
-        counterpartyId: await counterpartyIdFor(spaceId, input.counterparty),
+        counterpartyId: await counterpartyIdFor(spaceId, input),
         ...entryData(input, checked.invoice),
       },
       select: transactionSelect,
@@ -231,7 +258,7 @@ export async function updateTransaction(
     const row = await db.transaction.update({
       where: { id, spaceId },
       data: {
-        counterpartyId: await counterpartyIdFor(spaceId, input.counterparty),
+        counterpartyId: await counterpartyIdFor(spaceId, input),
         ...entryData(input, checked.invoice),
       },
       select: transactionSelect,

@@ -84,6 +84,10 @@ export type EntryInput = {
   invoiceDueDate: CalendarDate | null;
   categoryId: string | null;
   counterparty: string | null;
+  /** A name the bank shows for the counterparty, added to its aliases (task 10). */
+  counterpartyAlias: string | null;
+  /** The counterparty's CPF/CNPJ, normalized (task 10). */
+  counterpartyDocument: string | null;
   description: string | null;
 };
 

@@ -45,6 +45,8 @@ function pix(overrides: Partial<EntryInput> = {}): EntryInput {
     invoiceDueDate: null,
     categoryId: "mercado",
     counterparty: null,
+    counterpartyAlias: null,
+    counterpartyDocument: null,
     description: null,
     ...overrides,
   };
