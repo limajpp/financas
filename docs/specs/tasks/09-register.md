@@ -34,7 +34,7 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 
 ### Categorias mais usadas (`src/domain/register.ts`, com testes)
 
-- `topCategories(uso, categorias, n = 5)`:
+- `topCategories(uso, categorias, ordemPadrão, n = 5)`:
   - ordena as categorias selecionáveis do tipo pela quantidade de lançamentos nos últimos 90 dias;
   - em caso de empate, vale o uso mais recente;
   - completa com as categorias-mãe na ordem da lista padrão quando não há uso suficiente. Assim, no primeiro dia já aparecem Alimentação, Mercado etc.;
@@ -44,7 +44,7 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 ### Última conta e forma de pagamento
 
 - O servidor lê o lançamento mais recente (pela data de criação) de cada tipo: despesa e receita lembram em separado.
-- `defaultPayment(último, contas, cartões, tipo)` (puro, com testes) decide o que vem selecionado:
+- `defaultPayment(tipo, memória, contas, cartões)` (puro, com testes) decide o que vem selecionado:
   - a mesma forma de pagamento e a mesma conta ou cartão do último lançamento, se ainda estiverem ativos;
   - se o cartão do último crédito foi arquivado, o primeiro cartão ativo; sem cartão ativo, Pix na última conta usada;
   - se a conta foi arquivada, a primeira conta ativa com a mesma forma;
@@ -105,12 +105,33 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 
 ### Mudanças durante a implementação
 
-- **Saldo no dia do saldo inicial (regra da task 8 ajustada).** Uma conta cadastrada hoje com o saldo de agora não contava as compras registradas hoje, porque só entravam os dias seguintes. Agora, no dia do saldo inicial, entram os lançamentos registrados **depois** que o saldo foi informado. A conta guarda esse momento em `initialBalanceSetAt`, que muda quando o valor ou a data do saldo inicial mudam (migration `initial_balance_set_at`). Os lançamentos daquele dia registrados antes, e os dos dias anteriores, já estão no saldo que o banco mostrava.
+- **Saldo no dia do saldo inicial (regra da task 8 ajustada).** Uma conta cadastrada hoje com o saldo de agora não contava as compras registradas hoje, porque só entravam os dias seguintes. A conta passa a guardar o momento em que o saldo foi informado, em `initialBalanceSetAt` (migration `initial_balance_set_at`). Ele muda quando o valor ou a data do saldo inicial mudam.
+  - **Saldo informado para o próprio dia** (hoje, em São Paulo) é o saldo daquele momento: entram também os lançamentos do dia registrados depois dele.
+  - **Saldo informado para um dia passado** continua sendo o do fim daquele dia: só entram os dias seguintes.
+  - A dica do formulário de conta diz isso: "Se for hoje, o saldo de agora. Se for outro dia, o do fim daquele dia."
 - **O formulário volta em branco depois de salvar.** Com `cacheComponents`, o Next 16 mantém a rota anterior escondida (`<Activity>`), com o estado intacto. Sem limpar, a próxima visita mostraria o valor antigo e reusaria o `clientId`, e o servidor trataria o lançamento novo como repetição do anterior. O e2e cobre isso.
 - **Aviso no topo, não embaixo.** Embaixo, ele cobria o botão Salvar ao voltar para registrar outro lançamento.
 - **Criar não chama `refresh()`.** A tela sai para o início logo depois, e as páginas são dinâmicas.
 - **Tela compacta.** As teclas ficam menores em telas baixas. No PWA instalado, cabe tudo. No Safari, com as barras do navegador, a data fica logo abaixo e é preciso rolar.
 - **O e2e navega pelos links depois de salvar.** Um `page.goto` logo depois de uma navegação no cliente aborta a resposta ainda em streaming. O WebKit trata isso como erro de rede, e o Next recarrega a página inteira. No uso real, a navegação é pelos links.
+
+### Revisão
+
+O revisor (Opus, effort high) pediu mudanças: cinco problemas maiores, todos corrigidos.
+
+- **Enter no teclado físico salvava em qualquer botão ou link focado** e cancelava o clique: Enter no botão da forma de pagamento salvava com a forma antiga. Agora Enter só salva fora de botões, links e campos. O e2e cobre isso.
+- **"OK" do teclado do iPhone em "O que foi?" salvava o formulário.** Era o envio implícito do formulário, e o lançamento ia sem categoria. Agora Return fecha o teclado, nesse campo e na Observação. O e2e cobre isso.
+- **Digitar o ano na data, com Crédito, derrubava a tela.** Enquanto você digita, o campo informa datas como `0002-03-11`, e o cálculo da fatura não tem ciclo para elas. Agora a fatura só é calculada para uma data válida entre 2000 e hoje, e o campo tem `min`.
+- **Um erro de rede ao salvar derrubava a tela.** Agora aparece "Não foi possível salvar. Verifique a conexão e tente de novo.", e tudo continua preenchido, com o mesmo `clientId`, para o reenvio não duplicar.
+- **A regra nova do saldo contava em dobro** os lançamentos registrados depois para um saldo de dia passado. Agora ela vale só para o saldo informado no próprio dia (ver acima), com testes unitários e de integração.
+- Também corrigido:
+  - **forma de pagamento lembrada:** acompanha o servidor quando ela muda em outro aparelho ou depois de um "Desfazer", e volta ao padrão se a conta ou o cartão escolhido foi arquivado (antes aparecia "undefined · Débito");
+  - **"Hoje":** acompanha a virada do dia com a tela guardada;
+  - **formulário em branco:** volta quando a tela sai de vista, sem piscar vazio antes do início;
+  - **toques:** botões de toque com 40 px;
+  - **e2e:** o "Desfazer" para o aviso antes de clicar, e os 375 px também são conferidos no Crédito.
+- Os e2e longos (registro e categorias) ficaram marcados como lentos. No WebKit, com o servidor de desenvolvimento, passavam perto do limite de 30 s.
+- Aceito: o e2e do crédito confere a fatura e o saldo, mas não que o lançamento está no cartão. Isso está nos testes de integração da task 8 e vai aparecer na tela de faturas (task 18).
 
 ## Fora do escopo
 
