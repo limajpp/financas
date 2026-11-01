@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addDays,
   calendarDateToDb,
   dbToCalendarDate,
   formatCalendarDate,
@@ -51,5 +52,16 @@ describe("database round-trip", () => {
 describe("formatCalendarDate", () => {
   it("formats as dd/mm/yyyy", () => {
     expect(formatCalendarDate("2026-10-31")).toBe("31/10/2026");
+  });
+});
+
+describe("addDays", () => {
+  it("moves across months, years and leap days", () => {
+    expect(addDays("2026-10-31", 1)).toBe("2026-11-01");
+    expect(addDays("2026-11-01", -1)).toBe("2026-10-31");
+    expect(addDays("2027-01-01", -1)).toBe("2026-12-31");
+    expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
+    expect(addDays("2026-10-31", -90)).toBe("2026-08-02");
+    expect(addDays("2026-10-31", 0)).toBe("2026-10-31");
   });
 });
