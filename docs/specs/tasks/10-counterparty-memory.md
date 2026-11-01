@@ -137,6 +137,11 @@ O revisor (Opus, effort high) pediu mudanças por um problema maior, que foi cor
   - o mouse sobre uma sugestão a destaca;
   - mais testes: ordem entre "contém" no nome e no apelido, entre começo e meio do documento, o padrão de 5 resultados, o teto de 500, a categoria com a mãe arquivada e o toque no iPhone.
 - **Toque no iPhone.** O e2e com toque de verdade (`tap`) mostrou que a lista fechava no `blur` do campo antes de o toque chegar. Agora a escolha acontece no `touchend`, que também cancela o clique fantasma na categoria por baixo.
+- **Segunda rodada** (aprovado com nits):
+  - **Arraste não escolhe.** Um arraste que começa numa sugestão, para rolar a página com o teclado aberto, não a escolhe mais: o dedo precisa ficar a até 10 px do ponto onde tocou.
+  - **Edição que mantém o nome não limpa o preenchido.** Mudar só maiúsculas ou espaços em "O que foi?" mantém a categoria, a observação e o documento sugeridos.
+  - **Teste novo:** a mesma escolha duas vezes (`touchend` e clique) dá o mesmo resultado.
+  - **Aceito:** uma categoria desmarcada e marcada de novo, igual à sugerida, ainda conta como da sugestão. Separar esse caso exigiria marcar cada toque, e ele é raro.
 - Aceito: dois salvamentos no mesmo instante podem guardar só um dos apelidos novos (leitura e escrita sem trava; uma pessoa por espaço). O "Desfazer" não desfaz o apelido nem o documento acrescentados.
 
 ## Fora do escopo
