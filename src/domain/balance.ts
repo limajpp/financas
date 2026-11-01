@@ -1,8 +1,10 @@
 /**
  * An account's balance. Pure functions only (no Prisma, no I/O).
  *
- * Balance = initial balance + every entry after the initial balance day (that balance is the
- * end of that day) up to `asOf`:
+ * Balance = initial balance + the entries after it, up to `asOf`. "After" is any later day, or the
+ * initial balance day itself when the entry was registered after the balance was informed (you
+ * set the balance in the morning and register the lunch at noon). Entries of that day registered
+ * earlier, and of earlier days, are already in the balance the bank showed.
  * - income: +
  * - expense by any method but credit: −  (a credit purchase is paid through the invoice)
  * - invoice payment: − on the paying account
@@ -15,6 +17,8 @@ export type BalanceAccount = {
   id: string;
   initialBalanceCents: number;
   initialBalanceDate: CalendarDate;
+  /** When the initial balance (amount or day) was last informed. */
+  initialBalanceSetAt: Date;
 };
 
 export type BalanceEntry = {
@@ -24,6 +28,7 @@ export type BalanceEntry = {
   date: CalendarDate;
   accountId: string | null;
   toAccountId: string | null;
+  createdAt: Date;
 };
 
 /** How much `entry` moves account `accountId`, in cents (0 when it doesn't touch it). */
@@ -43,6 +48,11 @@ export function balanceEffect(entry: BalanceEntry, accountId: string): number {
   }
 }
 
+function isAfterInitialBalance(entry: BalanceEntry, account: BalanceAccount) {
+  if (entry.date !== account.initialBalanceDate) return entry.date > account.initialBalanceDate;
+  return entry.createdAt.getTime() > account.initialBalanceSetAt.getTime();
+}
+
 /** The balance of `account` at the end of `asOf`. */
 export function accountBalance(
   account: BalanceAccount,
@@ -52,7 +62,7 @@ export function accountBalance(
   let balance = account.initialBalanceCents;
   for (const entry of entries) {
     // "YYYY-MM-DD" strings compare in calendar order.
-    if (entry.date <= account.initialBalanceDate || entry.date > asOf) continue;
+    if (entry.date > asOf || !isAfterInitialBalance(entry, account)) continue;
     balance += balanceEffect(entry, account.id);
   }
   return balance;

@@ -161,6 +161,9 @@ model Account {
   initialBalanceCents Int
   /// A calendar day, not an instant.
   initialBalanceDate  DateTime  @db.Date
+  /// When the initial balance (amount or day) was last informed: entries of that same day
+  /// registered after it count in the balance (src/domain/balance.ts).
+  initialBalanceSetAt DateTime  @default(now())
   archivedAt          DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

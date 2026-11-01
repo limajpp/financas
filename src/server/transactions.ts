@@ -260,7 +260,12 @@ export async function accountBalances(spaceId: string): Promise<Map<string, numb
   const [accounts, rows] = await Promise.all([
     db.account.findMany({
       where: { spaceId },
-      select: { id: true, initialBalanceCents: true, initialBalanceDate: true },
+      select: {
+        id: true,
+        initialBalanceCents: true,
+        initialBalanceDate: true,
+        initialBalanceSetAt: true,
+      },
     }),
     // Only what can move an account: credit purchases point to a card instead.
     db.transaction.findMany({
@@ -276,6 +281,7 @@ export async function accountBalances(spaceId: string): Promise<Map<string, numb
         date: true,
         accountId: true,
         toAccountId: true,
+        createdAt: true,
       },
     }),
   ]);
