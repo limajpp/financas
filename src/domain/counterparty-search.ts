@@ -84,8 +84,9 @@ export function searchCounterparties<T extends SearchableCounterparty>(
       .map((counterparty) => ({ counterparty, match: { field: "name", text: counterparty.name } }));
   }
 
+  // Only punctuation: nothing to look for. Letters of any alphabet count ("é", "ç").
+  if (!/[\p{L}\p{N}]/u.test(text)) return [];
   const key = documentKey(query);
-  if (key === "") return [];
   const digits = key.replace(/\D/g, "").length;
   const docQuery = digits >= MIN_DOCUMENT_DIGITS ? key : null;
 

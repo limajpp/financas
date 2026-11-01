@@ -33,7 +33,10 @@ async function openRegister(page: Page) {
 
 const suggestions = (page: Page) => page.getByRole("listbox", { name: "Sugestões" });
 
-test("escolher uma sugestão preenche o estabelecimento e a categoria", async ({ page }) => {
+test("escolher uma sugestão preenche o estabelecimento e a categoria", async ({
+  page,
+  isMobile,
+}) => {
   test.slow(); // three saves on the dev server
   await signUp(page);
   await createAccount(page);
@@ -53,7 +56,9 @@ test("escolher uma sugestão preenche o estabelecimento e a categoria", async ({
   await what.fill("pada");
   const option = suggestions(page).getByRole("option", { name: /Padaria do Bairro/ });
   await expect(option).toBeVisible();
-  await option.click();
+  // A tap on the iPhone, a click on the computer.
+  if (isMobile) await option.tap();
+  else await option.click();
   await expect(what).toHaveValue("Padaria do Bairro");
   await expect(what).not.toBeFocused();
   await expect(categories.getByRole("button", { name: "Alimentação" })).toHaveAttribute(
@@ -80,7 +85,7 @@ test("guarda o nome no extrato e o CNPJ, e acha por eles", async ({ page }) => {
   await typeAmount(page, "1500");
   await page.getByLabel("O que foi?").fill("Feira da Praça");
   await page.getByLabel("O que foi?").press("Enter");
-  await page.getByRole("button", { name: "Mais detalhes" }).click();
+  await page.getByRole("button", { name: /Mais detalhes/ }).click();
   await page.getByLabel("Nome no extrato").fill("PAG*JOSE SILVA");
 
   // CA4 na tela: um CNPJ inválido é recusado com a mensagem do validador.
@@ -104,4 +109,14 @@ test("guarda o nome no extrato e o CNPJ, e acha por eles", async ({ page }) => {
   await expect(suggestions(page).getByRole("option")).toHaveText([
     /Feira da Praça.*CPF\/CNPJ: 11\.222\.333\/0001-81/,
   ]);
+
+  // Escolher e depois apagar o texto: o CNPJ que a sugestão trouxe vai junto, e salvar funciona
+  // sem estabelecimento (antes, o CNPJ escondido pedia "Informe o que foi…").
+  await page.getByRole("option", { name: /Feira da Praça/ }).click();
+  await page.getByRole("button", { name: /Mais detalhes/ }).click();
+  await expect(page.getByLabel("CPF/CNPJ")).toHaveValue("11.222.333/0001-81");
+  await what.fill("");
+  await expect(page.getByLabel("CPF/CNPJ")).toHaveValue("");
+  await typeAmount(page, "300");
+  await save(page, "Despesa de R$ 3,00 salva");
 });

@@ -8,7 +8,7 @@ import { accountSchema } from "@/lib/validation/accounts";
 import { entrySchema } from "@/lib/validation/transactions";
 import { createAccount } from "@/server/accounts";
 import { setCategoryArchived } from "@/server/categories";
-import { registerData } from "@/server/register";
+import { counterpartyMemory, registerData } from "@/server/register";
 import { ensurePersonalSpace } from "@/server/spaces";
 import { createTransaction } from "@/server/transactions";
 import { resetDatabase } from "@/test/db";
@@ -112,6 +112,23 @@ describe("memória por estabelecimento", () => {
     );
   });
 
+  it("CA5: categoria com a mãe arquivada não é sugerida", async () => {
+    const ana = await owner("ana@example.com");
+    const padaria = await ana.category("Padaria e lanches");
+    const alimentacao = await ana.category("Alimentação");
+    await create(ana, { counterparty: "Padaria do Bairro", categoryId: padaria.id });
+    await setCategoryArchived(ana.spaceId, alimentacao.id, true);
+    expect((await memoryOf(ana, "Padaria do Bairro"))?.suggestions.EXPENSE.categoryId).toBeNull();
+  });
+
+  it("leva só os usados mais recentemente, até o limite", async () => {
+    const ana = await owner("ana@example.com");
+    for (const name of ["Antigo", "Meio", "Recente"]) await create(ana, { counterparty: name });
+    const none = { EXPENSE: new Set<string>(), INCOME: new Set<string>() };
+    const kept = await counterpartyMemory(ana.spaceId, none, 2);
+    expect(kept.map((c) => c.name)).toEqual(["Recente", "Meio"]);
+  });
+
   it("CA5: sem estabelecimentos órfãos nem de outro espaço", async () => {
     const ana = await owner("ana@example.com");
     const bia = await owner("bia@example.com");
@@ -184,6 +201,18 @@ describe("memória por estabelecimento", () => {
     expect(byAlias.counterparty?.name).toBe("PAGSEGURO");
     expect(byDocument.counterparty?.name).toBe("12.345.678/0001-95");
     expect(await db.counterparty.count({ where: { spaceId: ana.spaceId } })).toBe(4);
+  });
+
+  it("um órfão (lançamento desfeito) não deixa o apelido ambíguo; apelido igual ao nome não entra", async () => {
+    const ana = await owner("ana@example.com");
+    const lojaX = await create(ana, { counterparty: "Loja X", counterpartyAlias: "PAGSEGURO" });
+    await db.transaction.delete({ where: { id: lojaX.id } }); // "Desfazer"
+    const lojaY = await create(ana, { counterparty: "Loja Y", counterpartyAlias: "PAGSEGURO" });
+    const typed = await create(ana, { counterparty: "pagseguro" });
+    expect(typed.counterparty?.id).toBe(lojaY.counterparty?.id);
+
+    await create(ana, { counterparty: "Loja Y", counterpartyAlias: "loja y" });
+    expect((await memoryOf(ana, "Loja Y"))?.aliases).toEqual(["PAGSEGURO"]);
   });
 
   it("CA6: o apelido e o documento de outro espaço não resolvem", async () => {

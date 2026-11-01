@@ -114,8 +114,9 @@ async function counterpartyIdFor(
 
   let found = await db.counterparty.findUnique({ where, select });
   if (!found) {
+    // Only counterparties in use: an orphan (an undone entry) must not make an alias ambiguous.
     const all = await db.counterparty.findMany({
-      where: { spaceId },
+      where: { spaceId, transactions: { some: {} } },
       select: { ...select, name: true },
     });
     const id = resolveCounterparty(name, all);
@@ -131,9 +132,12 @@ async function counterpartyIdFor(
     }
   }
 
-  const aliases = input.counterpartyAlias
-    ? addAlias(found.aliases, input.counterpartyAlias)
-    : found.aliases;
+  // Read-modify-write without a lock: two saves at the same instant may keep only one new alias.
+  // Accepted (one person per space). An alias equal to the name adds nothing.
+  const aliases =
+    input.counterpartyAlias && normalizeName(input.counterpartyAlias) !== normalizeName(name)
+      ? addAlias(found.aliases, input.counterpartyAlias)
+      : found.aliases;
   const document = input.counterpartyDocument ?? found.document;
   // Compared by content: at the limit, adding one drops the oldest (same length).
   const aliasesChanged = aliases.join("\n") !== found.aliases.join("\n");

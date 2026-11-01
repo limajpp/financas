@@ -63,6 +63,7 @@ export const MEMORY_LIMIT = 500;
 export async function counterpartyMemory(
   spaceId: string,
   selectable: Record<CategoryType, ReadonlySet<string>>,
+  limit = MEMORY_LIMIT,
 ) {
   const since = calendarDateToDb(addDays(todayInSaoPaulo(), -USAGE_WINDOW_DAYS));
   const withCounterparty = { spaceId, counterpartyId: { not: null } };
@@ -85,13 +86,17 @@ export async function counterpartyMemory(
       _count: { _all: true },
       _max: { createdAt: true },
     }),
-    // The latest description per counterparty and type.
-    db.transaction.findMany({
-      where: { ...withCounterparty, type: entryTypes, description: { not: null } },
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      distinct: ["counterpartyId", "type"],
-      select: { counterpartyId: true, type: true, description: true },
-    }),
+    // The latest description per counterparty and type. DISTINCT ON in SQL: Prisma's
+    // `distinct` would read every described entry and dedupe in memory.
+    db.$queryRaw<{ counterpartyId: string; type: CategoryType; description: string }[]>`
+      SELECT DISTINCT ON ("counterpartyId", "type") "counterpartyId", "type", "description"
+      FROM "Transaction"
+      WHERE "spaceId" = ${spaceId}
+        AND "counterpartyId" IS NOT NULL
+        AND "description" IS NOT NULL
+        AND "type" IN ('EXPENSE', 'INCOME')
+      ORDER BY "counterpartyId", "type", "createdAt" DESC, "id" DESC
+    `,
   ]);
 
   const kept = totals
@@ -101,7 +106,7 @@ export async function counterpartyMemory(
       lastUsedAt: t._max.createdAt ?? new Date(0),
     }))
     .sort((a, b) => b.lastUsedAt.getTime() - a.lastUsedAt.getTime())
-    .slice(0, MEMORY_LIMIT);
+    .slice(0, limit);
   const counterparties = await db.counterparty.findMany({
     where: { spaceId, id: { in: kept.map((k) => k.id) } },
     select: {
@@ -115,6 +120,20 @@ export async function counterpartyMemory(
   });
   const byId = new Map(counterparties.map((c) => [c.id, c]));
   const recentCount = new Map(recent.map((r) => [r.counterpartyId!, r._count._all]));
+  const key = (counterpartyId: string, type: string) => `${counterpartyId}:${type}`;
+  const usageByKey = new Map<string, { categoryId: string; count: number; lastUsedAt: Date }[]>();
+  for (const u of usage) {
+    const list = usageByKey.get(key(u.counterpartyId!, u.type)) ?? [];
+    list.push({
+      categoryId: u.categoryId!,
+      count: u._count._all,
+      lastUsedAt: u._max.createdAt ?? new Date(0),
+    });
+    usageByKey.set(key(u.counterpartyId!, u.type), list);
+  }
+  const descriptionByKey = new Map(
+    descriptions.map((d) => [key(d.counterpartyId, d.type), d.description]),
+  );
 
   return kept.flatMap((k) => {
     const counterparty = byId.get(k.id);
@@ -124,16 +143,8 @@ export async function counterpartyMemory(
         {
           defaultCategoryId: counterparty.defaultCategoryId,
           defaultDescription: counterparty.defaultDescription,
-          categoryUsage: usage
-            .filter((u) => u.counterpartyId === k.id && u.type === type)
-            .map((u) => ({
-              categoryId: u.categoryId!,
-              count: u._count._all,
-              lastUsedAt: u._max.createdAt ?? new Date(0),
-            })),
-          lastDescription:
-            descriptions.find((d) => d.counterpartyId === k.id && d.type === type)?.description ??
-            null,
+          categoryUsage: usageByKey.get(key(k.id, type)) ?? [],
+          lastDescription: descriptionByKey.get(key(k.id, type)) ?? null,
         },
         selectable[type],
       );

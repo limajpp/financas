@@ -236,7 +236,7 @@ model Counterparty {
   /// normalizeName(name): one counterparty per name, regardless of case and accents.
   nameKey            String
   aliases            String[]      @default([])
-  /// CPF or CNPJ, digits only.
+  /// CPF or CNPJ, normalized: digits and (alphanumeric CNPJ) uppercase letters.
   document           String?
   defaultDescription String?
   defaultCategoryId  String?

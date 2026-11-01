@@ -86,6 +86,36 @@ describe("searchCounterparties", () => {
     ]);
   });
 
+  it("name contains before alias contains; document prefix before document contains", () => {
+    const contains = [
+      cp("alias-contains", "Zeta", { aliases: ["Rua do Bar"], useCount: 9 }),
+      cp("name-contains", "O Bar", { useCount: 1 }),
+    ];
+    expect(searchCounterparties("bar", contains).map((r) => r.counterparty.id)).toEqual([
+      "name-contains",
+      "alias-contains",
+    ]);
+    const documents = [
+      cp("doc-contains", "A", { document: "99123456000100", useCount: 9 }),
+      cp("doc-prefix", "B", { document: "12345678000195", useCount: 1 }),
+    ];
+    expect(searchCounterparties("1234", documents).map((r) => r.counterparty.id)).toEqual([
+      "doc-prefix",
+      "doc-contains",
+    ]);
+  });
+
+  it("returns 5 by default", () => {
+    const many = Array.from({ length: 8 }, (_, i) => cp(`c${i}`, `Bar ${i}`));
+    expect(searchCounterparties("bar", many)).toHaveLength(5);
+    expect(searchCounterparties("", many)).toHaveLength(5);
+  });
+
+  it("a single accented letter is a query too", () => {
+    const cafe = [cp("cafe", "Café da Esquina")];
+    expect(searchCounterparties("é", cafe).map((r) => r.counterparty.id)).toEqual(["cafe"]);
+  });
+
   it("ties on use go to the most recently used", () => {
     const tied = [
       cp("old", "Bar Velho", { lastUsedAt: day(1) }),
