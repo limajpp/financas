@@ -131,6 +131,11 @@ O revisor (Opus, effort high) pediu mudanças: cinco problemas maiores, todos co
   - **toques:** botões de toque com 40 px;
   - **e2e:** o "Desfazer" para o aviso antes de clicar, e os 375 px também são conferidos no Crédito.
 - Os e2e longos (registro e categorias) ficaram marcados como lentos. No WebKit, com o servidor de desenvolvimento, passavam perto do limite de 30 s.
+- **Segunda rodada** (aprovado com nits):
+  - **Enter depois de um clique.** Com a regra da primeira rodada, depois de clicar num botão com o mouse, o Enter repetia o clique: tirava a categoria ou digitava outro dígito, em vez de salvar. Agora a tela registra como o foco chegou. Enter só mantém o sentido próprio num controle alcançado com Tab; depois de um clique ou toque, salva. `:focus-visible` não serve para isso, porque o Chromium o liga assim que uma tecla é apertada. O e2e cobre os dois casos.
+  - **Toque duplo em Salvar** entre salvar e a tela sair: agora é ignorado, sem aviso repetido.
+  - **e2e mais forte:** o Enter em "O que foi?" tira o foco do campo, e o aviso de salvo aparece uma vez só.
+  - **Aceito:** se a sessão expirar durante o envio, a mensagem "Não foi possível salvar" pisca antes de o Next levar ao login.
 - Aceito: o e2e do crédito confere a fatura e o saldo, mas não que o lançamento está no cartão. Isso está nos testes de integração da task 8 e vai aparecer na tela de faturas (task 18).
 
 ## Fora do escopo
