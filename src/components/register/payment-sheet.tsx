@@ -1,6 +1,7 @@
 "use client";
 
 import { Check } from "lucide-react";
+import { useId } from "react";
 
 import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/responsive-dialog";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ export function PaymentSheet({
   accounts: { id: string; name: string }[];
   cards: { id: string; name: string }[];
 }) {
+  const placeId = useId();
   const credit = value.method === "CREDIT";
   const options = credit ? cards : accounts;
   const selectedId = credit ? value.cardId : value.accountId;
@@ -78,10 +80,10 @@ export function PaymentSheet({
         </div>
 
         <div className="grid gap-1">
-          <p className="text-sm font-medium" id="payment-place">
+          <p className="text-sm font-medium" id={placeId}>
             {credit ? "Cartão" : "Conta"}
           </p>
-          <ul aria-labelledby="payment-place" className="grid gap-0.5">
+          <ul aria-labelledby={placeId} className="grid gap-0.5">
             {options.map((option) => (
               <li key={option.id}>
                 <button

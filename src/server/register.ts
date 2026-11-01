@@ -10,6 +10,7 @@ import {
   defaultPayment,
   topCategories,
 } from "@/domain/register";
+import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { selectableAccounts } from "@/server/accounts";
 import { selectableCards } from "@/server/cards";
@@ -32,7 +33,7 @@ export async function categoryUsage(spaceId: string, type: CategoryType): Promis
 
 /** What the last entries of `type` used: its method, the last non-credit account, the last card. */
 export async function paymentMemory(spaceId: string, type: CategoryType): Promise<PaymentMemory> {
-  const latest = (where: object) =>
+  const latest = (where: Prisma.TransactionWhereInput) =>
     db.transaction.findFirst({
       where: { spaceId, type, ...where },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

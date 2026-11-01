@@ -48,6 +48,7 @@ async function savedHome(page: Page, message: string) {
 const payment = (page: Page) => page.getByRole("button", { name: /^Forma de pagamento:/ });
 
 test("registra uma despesa só com o valor, com uma categoria, e desfaz", async ({ page }) => {
+  test.slow(); // three saves and several page loads: past 30 s on the dev server in WebKit
   await signUp(page);
   await createAccount(page, "Banco Azul", "1.000,00");
 
@@ -56,6 +57,12 @@ test("registra uma despesa só com o valor, com uma categoria, e desfaz", async 
   const save = page.getByRole("button", { name: /^Salvar/ });
   await expect(save).toBeDisabled();
   await typeAmount(page, "4790");
+  // Return on "O que foi?" (OK on the iPhone keyboard) closes the keyboard; it doesn't save.
+  const what = page.getByLabel("O que foi?");
+  await what.fill("Padaria");
+  await what.press("Enter");
+  await expect(page).toHaveURL(/\/registrar$/);
+  await what.fill("");
   await expect(page.getByRole("status", { name: "Valor" })).toHaveText("R$ 47,90");
   await save.click();
   await savedHome(page, "Despesa de R$ 47,90 salva");
@@ -80,11 +87,9 @@ test("registra uma despesa só com o valor, com uma categoria, e desfaz", async 
   await typeAmount(page, "10000");
   await save.click();
   await savedHome(page, "Despesa de R$ 100,00 salva");
-  await page
-    .getByRole("listitem")
-    .filter({ hasText: "Despesa de R$ 100,00 salva" })
-    .getByRole("button", { name: "Desfazer" })
-    .click();
+  const toastItem = page.getByRole("listitem").filter({ hasText: "Despesa de R$ 100,00 salva" });
+  await toastItem.hover(); // sonner pauses the timer while hovered
+  await toastItem.getByRole("button", { name: "Desfazer" }).click();
   await expect(page.getByText("Lançamento desfeito.")).toBeVisible();
   await expect(await currentBalance(page, "Banco Azul")).toContainText("Saldo atual R$ 939,60");
 });
@@ -96,13 +101,17 @@ test("lembra a última conta e forma de pagamento", async ({ page }) => {
 
   await page.goto("/registrar");
   await expect(payment(page)).toHaveText("Banco Azul · Pix");
-  await payment(page).click();
+  // Enter on a focused button keeps its meaning (opens the sheet), even with an amount typed.
+  await typeAmount(page, "500");
+  await payment(page).focus();
+  await page.keyboard.press("Enter");
   const sheet = page.getByRole("dialog");
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(/\/registrar$/);
   await sheet.getByRole("button", { name: "Débito" }).click();
   await sheet.getByRole("button", { name: "Banco Inter" }).click();
   await expect(sheet).toBeHidden();
   await expect(payment(page)).toHaveText("Banco Inter · Débito");
-  await typeAmount(page, "500");
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await savedHome(page, "Despesa de R$ 5,00 salva");
 
@@ -152,12 +161,26 @@ test("sem conta, pede uma conta; em 375 px, não rola na horizontal", async ({ p
   await expect(page.getByText("Cadastre uma conta para começar a registrar.")).toBeVisible();
 
   await createAccount(page, "Banco com um nome bem comprido demais", "0");
-  // CA4: largura de iPhone SE/mini.
+  const dialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Novo cartão" }).click();
+  await dialog.getByLabel("Nome").fill("Cartão com nome comprido demais");
+  await dialog.getByLabel("Fecha dia").selectOption("3");
+  await dialog.getByLabel("Vence dia").selectOption("10");
+  await dialog.getByRole("button", { name: "Salvar" }).click();
+  await expect(dialog).toBeHidden();
+
+  // CA4: largura de iPhone SE/mini, com Pix e com Crédito (fatura na tela).
   await page.setViewportSize({ width: 375, height: 667 });
   await page.goto("/registrar");
+  const overflow = () =>
+    page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
   await expect(payment(page)).toBeVisible();
-  const overflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
-  );
-  expect(overflow).toBe(0);
+  expect(await overflow()).toBe(0);
+  await payment(page).click();
+  await dialog.getByRole("button", { name: "Crédito" }).click();
+  await dialog.getByRole("button", { name: "Cartão com nome comprido demais" }).click();
+  await expect(page.getByLabel("Cai na fatura que vence em")).toBeVisible();
+  expect(await overflow()).toBe(0);
 });

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type KeypadKey, KEYPAD_DIGITS, pressKey } from "@/domain/amount-keypad";
-import { addDays, type CalendarDate, formatCalendarDate } from "@/domain/dates";
+import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
 import type { PaymentChoice } from "@/domain/register";
@@ -22,6 +22,7 @@ import {
   type EntryType,
   INVOICE_OVERRIDE_WINDOW,
   PAYMENT_METHOD_LABELS,
+  TRANSACTION_DATE_MIN,
 } from "@/domain/transactions";
 import { cn } from "@/lib/utils";
 
@@ -50,6 +51,21 @@ function isTyping(target: EventTarget | null) {
   );
 }
 
+/** Enter on these keeps its own meaning (click, follow): it never saves. */
+function isInteractive(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    target.closest("button, a, [role=button], summary, [tabindex]") !== null
+  );
+}
+
+/** Return on a text field closes the keyboard; it doesn't submit the form. */
+function closeKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  event.currentTarget.blur();
+}
+
 /** The single register screen: amount on the keypad, a category, save. The rest comes filled. */
 export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProps) {
   const router = useRouter();
@@ -62,7 +78,21 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
     EXPENSE: byType.EXPENSE.payment!,
     INCOME: byType.INCOME.payment!,
   });
+  // Next keeps this route alive between visits (<Activity>), and the props are fetched again.
+  // When the server's remembered payment changes (another device, "Desfazer"), follow it.
+  const seeded = JSON.stringify([byType.EXPENSE.payment, byType.INCOME.payment]);
+  const [seed, setSeed] = useState(seeded);
+  if (seed !== seeded) {
+    setSeed(seeded);
+    setPayments({ EXPENSE: byType.EXPENSE.payment!, INCOME: byType.INCOME.payment! });
+  }
   const [date, setDate] = useState<CalendarDate>(today);
+  // A new day while the screen was kept: "Hoje" moves along.
+  const [knownToday, setKnownToday] = useState(today);
+  if (knownToday !== today) {
+    setKnownToday(today);
+    if (date === knownToday) setDate(today);
+  }
   const [chosenInvoice, setChosenInvoice] = useState<CalendarDate | null>(null);
   const [description, setDescription] = useState("");
   const [showDetails, setShowDetails] = useState(false);
@@ -71,12 +101,21 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   const [pending, startTransition] = useTransition();
   // One id per screen: a double tap or a retry after an error doesn't duplicate (task 8).
   const clientId = useRef<string | null>(null);
+  const saved = useRef(false);
+  const resetRef = useRef<() => void>(() => {});
   const ids = { counterparty: useId(), date: useId(), invoice: useId(), description: useId() };
 
   const data = byType[type];
-  const payment = payments[type];
+  // The chosen account or card may have been archived since: back to the server's default.
+  const stored = payments[type];
+  const usable =
+    accounts.some((a) => a.id === stored.accountId) &&
+    (stored.method !== "CREDIT" || cards.some((c) => c.id === stored.cardId));
+  const payment = usable ? stored : data.payment!;
   const card = payment.method === "CREDIT" ? cards.find((c) => c.id === payment.cardId) : undefined;
-  const invoice = card ? invoiceOptions(card, date) : null;
+  // While a year is being typed the date input reports dates like 0002-03-11: no invoice then.
+  const validDate = isCalendarDate(date) && date >= TRANSACTION_DATE_MIN && date <= today;
+  const invoice = card && validDate ? invoiceOptions(card, date) : null;
   const yesterday = addDays(today, -1);
 
   // The chosen category stays visible: it takes the last button when it isn't a top one.
@@ -110,7 +149,7 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
       if (key) {
         setError(null);
         setCents((c) => pressKey(c, key));
-      } else if (event.key === "Enter") {
+      } else if (event.key === "Enter" && !isInteractive(event.target)) {
         saveRef.current();
       } else {
         return;
@@ -165,24 +204,32 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
     const amount = cents;
     const label = TYPE_LABELS[type];
     startTransition(async () => {
-      const result = await createTransactionAction(clientId.current, {
-        type,
-        amountCents: amount,
-        date,
-        method: payment.method,
-        accountId: payment.accountId,
-        cardId: payment.cardId,
-        invoiceDueDate: chosenInvoice,
-        categoryId,
-        counterparty,
-        description,
-      });
+      let result: Awaited<ReturnType<typeof createTransactionAction>>;
+      try {
+        result = await createTransactionAction(clientId.current, {
+          type,
+          amountCents: amount,
+          date,
+          method: payment.method,
+          accountId: payment.accountId,
+          cardId: payment.cardId,
+          invoiceDueDate: chosenInvoice,
+          categoryId,
+          counterparty,
+          description,
+        });
+      } catch {
+        // Offline or a server error: keep everything (and the clientId, so a retry can't
+        // duplicate if the first request did arrive).
+        setError("Não foi possível salvar. Verifique a conexão e tente de novo.");
+        return;
+      }
       if (!result.ok) {
         setError(result.error);
         return;
       }
       const id = result.id;
-      reset();
+      saved.current = true;
       toast(`${label} de ${formatBRL(amount)} salva`, {
         duration: 5_000,
         action: {
@@ -199,7 +246,20 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   }
   useEffect(() => {
     saveRef.current = save;
+    resetRef.current = reset;
   });
+
+  // After a save, the form goes blank once this route is hidden or left (effects are cleaned up
+  // then), so the screen doesn't flash empty before the home page shows.
+  useEffect(
+    () => () => {
+      if (saved.current) {
+        saved.current = false;
+        resetRef.current();
+      }
+    },
+    [],
+  );
 
   return (
     <form
@@ -217,7 +277,7 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
             type="button"
             aria-pressed={type === t}
             onClick={() => switchType(t)}
-            className="h-9 rounded-md text-sm font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+            className="h-10 rounded-md text-sm font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
             {TYPE_LABELS[t]}
           </button>
@@ -247,6 +307,7 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
           maxLength={COUNTERPARTY_NAME_MAX}
           autoComplete="off"
           enterKeyHint="done"
+          onKeyDown={closeKeyboardOnEnter}
           placeholder={
             type === "EXPENSE" ? "O que foi? Padaria, mercado…" : "O que foi? Salário, freela…"
           }
@@ -319,8 +380,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
             <Button
               key={option.label}
               type="button"
-              size="sm"
               variant={date === option.value ? "default" : "outline"}
+              className="h-10"
               aria-pressed={date === option.value}
               onClick={() => changeDate(option.value)}
             >
@@ -332,9 +393,10 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
             type="date"
             aria-label="Data"
             value={date}
+            min={TRANSACTION_DATE_MIN}
             max={today}
             onChange={(e) => changeDate(e.target.value)}
-            className="h-8 min-w-0 flex-1"
+            className="h-10 min-w-0 flex-1"
           />
         </div>
 
@@ -355,6 +417,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
               onChange={(e) => setDescription(e.target.value)}
               maxLength={DESCRIPTION_MAX}
               autoComplete="off"
+              enterKeyHint="done"
+              onKeyDown={closeKeyboardOnEnter}
             />
           </div>
         )}

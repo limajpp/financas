@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { signUp } from "./helpers";
 
 test("gerencia as categorias a partir da lista padrão", async ({ page }) => {
+  test.slow(); // ~25 s in WebKit on the dev server: under load it passed the 30 s default
   await signUp(page);
   await page.goto("/configuracoes");
   await page.getByRole("link", { name: "Categorias" }).click();
