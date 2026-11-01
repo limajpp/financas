@@ -42,6 +42,14 @@ describe("applyPick", () => {
   });
 });
 
+describe("applyPick: the same pick twice (touchend and click)", () => {
+  it("gives the same fields and prefill", () => {
+    const first = applyPick(empty, null, padaria);
+    expect(applyPick(first.fields, first.prefill, padaria)).toEqual(first);
+    expect(applyPick(empty, null, padaria)).toEqual(first);
+  });
+});
+
 describe("leavePick", () => {
   it("clears what the pick filled and the user didn't touch", () => {
     const { fields, prefill } = applyPick(empty, null, padaria);

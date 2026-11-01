@@ -11,6 +11,9 @@ import { cn } from "@/lib/utils";
 
 import type { CounterpartyOption, RegisterCategory } from "./types";
 
+/** How far (px) a finger may move and still count as a tap. */
+const TAP_SLOP = 10;
+
 function matchHint(match: CounterpartyMatch) {
   if (match.field === "alias") return `no extrato: ${match.text}`;
   if (match.field === "document") return `CPF/CNPJ: ${match.text}`;
@@ -45,6 +48,8 @@ export function CounterpartyCombobox({
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
   const inputRef = useRef<HTMLInputElement>(null);
+  // Where a touch on an option started: a drag (scrolling) isn't a tap.
+  const touchStart = useRef<{ x: number; y: number } | null>(null);
   const results = useMemo(() => searchCounterparties(value, options), [value, options]);
   const expanded = open && results.length > 0;
 
@@ -129,7 +134,20 @@ export function CounterpartyCombobox({
               onMouseDown={(e) => e.preventDefault()}
               // Touch: pick on touchend and cancel the emulated mouse events, so the field's
               // blur doesn't close the list first and no ghost click hits the category below.
+              onTouchStart={(e) => {
+                const touch = e.touches[0];
+                touchStart.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+              }}
               onTouchEnd={(e) => {
+                const start = touchStart.current;
+                const touch = e.changedTouches[0];
+                touchStart.current = null;
+                const moved =
+                  !start ||
+                  !touch ||
+                  Math.hypot(touch.clientX - start.x, touch.clientY - start.y) > TAP_SLOP;
+                // Scrolling already started (non-cancelable) or the finger moved: not a pick.
+                if (moved || !e.cancelable) return;
                 e.preventDefault();
                 pick(counterparty, inputRef.current);
               }}

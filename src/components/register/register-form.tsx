@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { type KeypadKey, KEYPAD_DIGITS, pressKey } from "@/domain/amount-keypad";
 import { ALIAS_MAX } from "@/domain/counterparty-memory";
 import { formatDocument } from "@/domain/document";
+import { normalizeName } from "@/domain/names";
 import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
@@ -219,7 +220,7 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
   function changeCounterparty(text: string) {
     setCounterparty(text);
     // Typing something else leaves the pick: what it filled goes with it.
-    if (prefill && text !== prefill.name) {
+    if (prefill && normalizeName(text) !== normalizeName(prefill.name)) {
       setFields(leavePick({ categoryId, description, document: documentText }, prefill));
       setPrefill(null);
     }
