@@ -1,16 +1,16 @@
 /**
  * An account's balance. Pure functions only (no Prisma, no I/O).
  *
- * Balance = initial balance + the entries after it, up to `asOf`. "After" is any later day, or the
- * initial balance day itself when the entry was registered after the balance was informed (you
- * set the balance in the morning and register the lunch at noon). Entries of that day registered
- * earlier, and of earlier days, are already in the balance the bank showed.
+ * Balance = initial balance + the entries after it, up to `asOf`. A balance informed for a past day
+ * is that day's end-of-day balance: only later days count. A balance informed on its own day is
+ * the balance at that moment: entries of that day registered after it count too (you set the
+ * balance in the morning and register the lunch at noon).
  * - income: +
  * - expense by any method but credit: −  (a credit purchase is paid through the invoice)
  * - invoice payment: − on the paying account
  * - transfer: − on the origin, + on the destination
  */
-import type { CalendarDate } from "./dates";
+import { type CalendarDate, todayInSaoPaulo } from "./dates";
 import type { PaymentMethod, TransactionType } from "./transactions";
 
 export type BalanceAccount = {
@@ -50,6 +50,7 @@ export function balanceEffect(entry: BalanceEntry, accountId: string): number {
 
 function isAfterInitialBalance(entry: BalanceEntry, account: BalanceAccount) {
   if (entry.date !== account.initialBalanceDate) return entry.date > account.initialBalanceDate;
+  if (todayInSaoPaulo(account.initialBalanceSetAt) !== account.initialBalanceDate) return false;
   return entry.createdAt.getTime() > account.initialBalanceSetAt.getTime();
 }
 

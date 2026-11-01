@@ -106,6 +106,25 @@ describe("accountBalance", () => {
     expect(accountBalance(azul, entries, asOf)).toBe(100_000 - 1_100);
   });
 
+  it("a balance informed for a past day is that day's end of day, whenever entries are registered", () => {
+    const pastDay = { ...azul, initialBalanceSetAt: new Date("2026-10-12T15:00:00Z") };
+    const entries = [
+      entry({ date: "2026-10-10", amountCents: 10, createdAt: new Date("2026-10-13T12:00:00Z") }),
+      entry({ date: "2026-10-11", amountCents: 100 }),
+    ];
+    expect(accountBalance(pastDay, entries, asOf)).toBe(100_000 - 100);
+  });
+
+  it("the informed day is the day in São Paulo (23:30 there is already the next day in UTC)", () => {
+    const lateNight = { ...azul, initialBalanceSetAt: new Date("2026-10-11T02:30:00Z") };
+    const later = entry({
+      date: "2026-10-10",
+      amountCents: 10,
+      createdAt: new Date("2026-10-11T02:45:00Z"),
+    });
+    expect(accountBalance(lateNight, [later], asOf)).toBe(100_000 - 10);
+  });
+
   it("can go negative", () => {
     expect(accountBalance(azul, [entry({ amountCents: 150_000 })], asOf)).toBe(-50_000);
   });

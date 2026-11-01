@@ -179,8 +179,8 @@ describe("lançamentos", () => {
     await create(ana, { method: "PIX", accountId: verde.id, amountCents: 2_000 });
 
     const balances = await accountBalances(ana.spaceId);
-    // 09-30: before the initial balance. 10-01: its day, but registered after it was informed.
-    expect(balances.get(azul.id)).toBe(100_000 - 10 - 100 + 500_000);
+    // 09-30 and 10-01: in the balance of the end of 10-01 (informed on a later day).
+    expect(balances.get(azul.id)).toBe(100_000 - 100 + 500_000);
     expect(balances.get(verde.id)).toBe(-2_000);
 
     const rows = await db.transaction.findMany({ where: { spaceId: ana.spaceId } });
@@ -204,6 +204,38 @@ describe("lançamentos", () => {
     expect(updated.ok).toBe(true);
     // Only the 10-10 credit purchase is after 10-05, and it doesn't touch the balance.
     expect((await accountBalances(ana.spaceId)).get(azul.id)).toBe(200_000);
+  });
+
+  it("conta cadastrada hoje com o saldo de agora: o que se registra depois, hoje, entra", async () => {
+    today("2026-10-31");
+    const ana = await user("ana@example.com");
+    const result = await createAccount(
+      ana.spaceId,
+      accountSchema.parse({
+        name: "Banco Hoje",
+        color: "blue",
+        initialBalance: "1.000,00",
+        initialBalanceDate: "2026-10-31",
+      }),
+    );
+    if (!result.ok) throw new Error(result.error);
+
+    vi.setSystemTime(new Date("2026-10-31T16:00:00Z")); // lunch, an hour later
+    await create(ana, {
+      method: "PIX",
+      accountId: result.account.id,
+      date: "2026-10-31",
+      amountCents: 4_790,
+    });
+    // Yesterday's coffee, registered now: already in the balance seen this morning.
+    await create(ana, {
+      method: "PIX",
+      accountId: result.account.id,
+      date: "2026-10-30",
+      amountCents: 500,
+    });
+
+    expect((await accountBalances(ana.spaceId)).get(result.account.id)).toBe(100_000 - 4_790);
   });
 
   it("CA3: o mesmo clientId não duplica, em sequência nem em paralelo", async () => {
