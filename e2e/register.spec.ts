@@ -61,11 +61,14 @@ test("registra uma despesa só com o valor, com uma categoria, e desfaz", async 
   const what = page.getByLabel("O que foi?");
   await what.fill("Padaria");
   await what.press("Enter");
+  await expect(what).not.toBeFocused();
   await expect(page).toHaveURL(/\/registrar$/);
   await what.fill("");
   await expect(page.getByRole("status", { name: "Valor" })).toHaveText("R$ 47,90");
   await save.click();
   await savedHome(page, "Despesa de R$ 47,90 salva");
+  // Saved once: the Enter on "O que foi?" above didn't save it too.
+  await expect(page.getByText("Despesa de R$ 47,90 salva")).toHaveCount(1);
   await expect(await currentBalance(page, "Banco Azul")).toContainText("Saldo atual R$ 952,10");
 
   // CA3: valor + categoria + Salvar (2 toques além do valor), e a categoria fica gravada:
@@ -75,7 +78,8 @@ test("registra uma despesa só com o valor, com uma categoria, e desfaz", async 
   await expect(categories.getByRole("button").first()).toHaveText("Moradia");
   await typeAmount(page, "1250");
   await categories.getByRole("button", { name: "Alimentação" }).click();
-  await save.click();
+  // On a computer, Enter saves even with the clicked category focused (it doesn't untoggle it).
+  await page.keyboard.press("Enter");
   await savedHome(page, "Despesa de R$ 12,50 salva");
   await open(page, "Registrar");
   await expect(categories.getByRole("button").first()).toHaveText("Alimentação");
@@ -103,7 +107,11 @@ test("lembra a última conta e forma de pagamento", async ({ page }) => {
   await expect(payment(page)).toHaveText("Banco Azul · Pix");
   // Enter on a focused button keeps its meaning (opens the sheet), even with an amount typed.
   await typeAmount(page, "500");
+  // Reached with the keyboard (Shift+Tab, Tab): the button shows its focus ring.
   await payment(page).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(payment(page)).toBeFocused();
   await page.keyboard.press("Enter");
   const sheet = page.getByRole("dialog");
   await expect(sheet).toBeVisible();

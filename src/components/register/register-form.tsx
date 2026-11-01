@@ -51,7 +51,6 @@ function isTyping(target: EventTarget | null) {
   );
 }
 
-/** Enter on these keeps its own meaning (click, follow): it never saves. */
 function isInteractive(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -136,9 +135,20 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   }
 
   // On a computer, the physical keyboard types the amount too (outside text fields).
+  // Enter saves, except on a control reached with Tab, where it keeps its own meaning (click,
+  // follow). A button focused by a click doesn't count: there the browser's Enter would click it
+  // again. (:focus-visible can't tell: Chromium turns it on as soon as a key is pressed.)
   const saveRef = useRef<() => void>(() => {});
   useEffect(() => {
+    let focusByKeyboard = false;
+    function onPointerDown() {
+      focusByKeyboard = false;
+    }
     function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Tab") {
+        focusByKeyboard = true;
+        return;
+      }
       if (event.defaultPrevented || isTyping(event.target) || sheet !== null) return;
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const key: KeypadKey | null = (KEYPAD_DIGITS as readonly string[]).includes(event.key)
@@ -149,7 +159,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
       if (key) {
         setError(null);
         setCents((c) => pressKey(c, key));
-      } else if (event.key === "Enter" && !isInteractive(event.target)) {
+      } else if (event.key === "Enter" && !(focusByKeyboard && isInteractive(event.target))) {
+        // Saving instead of the browser's Enter, which would click the focused button again.
         saveRef.current();
       } else {
         return;
@@ -157,7 +168,11 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
       event.preventDefault();
     }
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
   }, [sheet]);
 
   function switchType(next: EntryType) {
@@ -198,7 +213,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   }
 
   function save() {
-    if (cents === 0 || pending) return;
+    // Already saved: the screen is on its way home (the form resets once it's hidden).
+    if (cents === 0 || pending || saved.current) return;
     setError(null);
     clientId.current ??= crypto.randomUUID();
     const amount = cents;
