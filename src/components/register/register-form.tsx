@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type KeypadKey, KEYPAD_DIGITS, pressKey } from "@/domain/amount-keypad";
+import { ALIAS_MAX } from "@/domain/counterparty-memory";
+import { formatDocument } from "@/domain/document";
 import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
@@ -27,9 +29,10 @@ import {
 import { cn } from "@/lib/utils";
 
 import { CategorySheet } from "./category-sheet";
+import { CounterpartyCombobox } from "./counterparty-combobox";
 import { Keypad } from "./keypad";
 import { PaymentSheet } from "./payment-sheet";
-import type { RegisterCard, RegisterProps } from "./types";
+import type { CounterpartyOption, RegisterCard, RegisterProps } from "./types";
 
 const TYPE_LABELS: Record<EntryType, string> = { EXPENSE: "Despesa", INCOME: "Receita" };
 
@@ -66,7 +69,7 @@ function closeKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
 }
 
 /** The single register screen: amount on the keypad, a category, save. The rest comes filled. */
-export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProps) {
+export function RegisterForm({ accounts, cards, counterparties, today, ...byType }: RegisterProps) {
   const router = useRouter();
   const [type, setType] = useState<EntryType>("EXPENSE");
   const [cents, setCents] = useState(0);
@@ -94,6 +97,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   }
   const [chosenInvoice, setChosenInvoice] = useState<CalendarDate | null>(null);
   const [description, setDescription] = useState("");
+  const [alias, setAlias] = useState("");
+  const [documentText, setDocumentText] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [sheet, setSheet] = useState<"categories" | "payment" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -102,7 +107,13 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
   const clientId = useRef<string | null>(null);
   const saved = useRef(false);
   const resetRef = useRef<() => void>(() => {});
-  const ids = { counterparty: useId(), date: useId(), invoice: useId(), description: useId() };
+  const ids = {
+    date: useId(),
+    invoice: useId(),
+    description: useId(),
+    alias: useId(),
+    document: useId(),
+  };
 
   const data = byType[type];
   // The chosen account or card may have been archived since: back to the server's default.
@@ -175,6 +186,21 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
     };
   }, [sheet]);
 
+  const categoriesById = new Map(
+    data.tree.flatMap((p) => [p, ...p.children]).map((c) => [c.id, c]),
+  );
+
+  /** A memory suggestion fills what's still empty: name, category, description, CPF/CNPJ. */
+  function pickCounterparty(option: CounterpartyOption) {
+    setCounterparty(option.name);
+    const suggestion = option.suggestions[type];
+    if (categoryId === null && suggestion.categoryId && categoriesById.has(suggestion.categoryId)) {
+      setCategoryId(suggestion.categoryId);
+    }
+    if (description === "" && suggestion.description) setDescription(suggestion.description);
+    if (documentText === "" && option.document) setDocumentText(formatDocument(option.document));
+  }
+
   function switchType(next: EntryType) {
     if (next === type) return;
     setType(next);
@@ -208,6 +234,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
     setDate(today);
     setChosenInvoice(null);
     setDescription("");
+    setAlias("");
+    setDocumentText("");
     setShowDetails(false);
     setError(null);
   }
@@ -232,6 +260,8 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
           invoiceDueDate: chosenInvoice,
           categoryId,
           counterparty,
+          counterpartyAlias: alias,
+          counterpartyDocument: documentText,
           description,
         });
       } catch {
@@ -312,23 +342,18 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
         {formatBRL(cents)}
       </output>
 
-      <div>
-        <Label htmlFor={ids.counterparty} className="sr-only">
-          O que foi?
-        </Label>
-        <Input
-          id={ids.counterparty}
-          value={counterparty}
-          onChange={(e) => setCounterparty(e.target.value)}
-          maxLength={COUNTERPARTY_NAME_MAX}
-          autoComplete="off"
-          enterKeyHint="done"
-          onKeyDown={closeKeyboardOnEnter}
-          placeholder={
-            type === "EXPENSE" ? "O que foi? Padaria, mercado…" : "O que foi? Salário, freela…"
-          }
-        />
-      </div>
+      <CounterpartyCombobox
+        value={counterparty}
+        onChange={setCounterparty}
+        onPick={pickCounterparty}
+        options={counterparties}
+        type={type}
+        categories={categoriesById}
+        maxLength={COUNTERPARTY_NAME_MAX}
+        placeholder={
+          type === "EXPENSE" ? "O que foi? Padaria, mercado…" : "O que foi? Salário, freela…"
+        }
+      />
 
       <div role="group" aria-label="Categoria" className="grid grid-cols-3 gap-2">
         {buttons.map((category) => (
@@ -422,20 +447,53 @@ export function RegisterForm({ accounts, cards, today, ...byType }: RegisterProp
           onClick={() => setShowDetails((s) => !s)}
           className="justify-self-start text-sm text-muted-foreground underline-offset-4 hover:underline"
         >
-          {showDetails ? "Menos detalhes" : "Mais detalhes"}
+          {showDetails
+            ? "Menos detalhes"
+            : description
+              ? "Mais detalhes · com observação"
+              : "Mais detalhes"}
         </button>
         {showDetails && (
-          <div className="grid gap-1.5">
-            <Label htmlFor={ids.description}>Observação</Label>
-            <Input
-              id={ids.description}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              maxLength={DESCRIPTION_MAX}
-              autoComplete="off"
-              enterKeyHint="done"
-              onKeyDown={closeKeyboardOnEnter}
-            />
+          <div className="grid gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor={ids.description}>Observação</Label>
+              <Input
+                id={ids.description}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                maxLength={DESCRIPTION_MAX}
+                autoComplete="off"
+                enterKeyHint="done"
+                onKeyDown={closeKeyboardOnEnter}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={ids.alias}>Nome no extrato</Label>
+              <Input
+                id={ids.alias}
+                value={alias}
+                onChange={(e) => setAlias(e.target.value)}
+                maxLength={ALIAS_MAX}
+                autoComplete="off"
+                autoCapitalize="characters"
+                enterKeyHint="done"
+                onKeyDown={closeKeyboardOnEnter}
+                placeholder="Como aparece no banco: PAG*JOSE…"
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor={ids.document}>CPF/CNPJ</Label>
+              <Input
+                id={ids.document}
+                value={documentText}
+                onChange={(e) => setDocumentText(e.target.value)}
+                maxLength={24}
+                autoComplete="off"
+                autoCapitalize="characters"
+                enterKeyHint="done"
+                onKeyDown={closeKeyboardOnEnter}
+              />
+            </div>
           </div>
         )}
       </div>
