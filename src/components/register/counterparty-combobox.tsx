@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 
 import { CategoryIcon } from "@/components/categories/category-icon";
 import { Input } from "@/components/ui/input";
@@ -44,6 +44,7 @@ export function CounterpartyCombobox({
   const listId = `${id}-list`;
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+  const inputRef = useRef<HTMLInputElement>(null);
   const results = useMemo(() => searchCounterparties(value, options), [value, options]);
   const expanded = open && results.length > 0;
 
@@ -67,6 +68,8 @@ export function CounterpartyCombobox({
       setOpen(false);
       setActive(-1);
     } else if (event.key === "Enter") {
+      // Enter that confirms an IME composition (accents, other alphabets) isn't ours.
+      if (event.nativeEvent.isComposing) return;
       // Never submits the form: picks the highlighted option or closes the keyboard.
       event.preventDefault();
       const chosen = expanded && active >= 0 ? results[active] : undefined;
@@ -81,6 +84,7 @@ export function CounterpartyCombobox({
         O que foi?
       </Label>
       <Input
+        ref={inputRef}
         id={id}
         role="combobox"
         aria-expanded={expanded}
@@ -121,9 +125,17 @@ export function CounterpartyCombobox({
               id={`${id}-option-${index}`}
               role="option"
               aria-selected={index === active}
-              // Keeps the focus in the field until the click lands (else blur closes the list).
-              onPointerDown={(e) => e.preventDefault()}
-              onClick={() => pick(counterparty, document.getElementById(id) as HTMLInputElement)}
+              // Mouse: keep the focus in the field until the click lands (a blur closes the list).
+              onMouseDown={(e) => e.preventDefault()}
+              // Touch: pick on touchend and cancel the emulated mouse events, so the field's
+              // blur doesn't close the list first and no ghost click hits the category below.
+              onTouchEnd={(e) => {
+                e.preventDefault();
+                pick(counterparty, inputRef.current);
+              }}
+              onPointerEnter={() => setActive(index)}
+              // Mouse and screen readers (VoiceOver activates with a click).
+              onClick={() => pick(counterparty, inputRef.current)}
               className={cn(
                 "flex min-h-11 cursor-pointer items-center gap-3 px-3 py-1.5",
                 index === active && "bg-muted",

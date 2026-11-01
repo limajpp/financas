@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 
 import { CategorySheet } from "./category-sheet";
 import { CounterpartyCombobox } from "./counterparty-combobox";
+import { applyPick, leavePick, type Prefill, type PrefillFields } from "./prefill";
 import { Keypad } from "./keypad";
 import { PaymentSheet } from "./payment-sheet";
 import type { CounterpartyOption, RegisterCard, RegisterProps } from "./types";
@@ -99,6 +100,8 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
   const [description, setDescription] = useState("");
   const [alias, setAlias] = useState("");
   const [documentText, setDocumentText] = useState("");
+  // What the last memory suggestion filled (see ./prefill.ts).
+  const [prefill, setPrefill] = useState<Prefill | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [sheet, setSheet] = useState<"categories" | "payment" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -191,14 +194,35 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
   );
 
   /** A memory suggestion fills what's still empty: name, category, description, CPF/CNPJ. */
+  function setFields(fields: PrefillFields) {
+    setCategoryId(fields.categoryId);
+    setDescription(fields.description);
+    setDocumentText(fields.document);
+  }
+
   function pickCounterparty(option: CounterpartyOption) {
     setCounterparty(option.name);
     const suggestion = option.suggestions[type];
-    if (categoryId === null && suggestion.categoryId && categoriesById.has(suggestion.categoryId)) {
-      setCategoryId(suggestion.categoryId);
+    const picked = applyPick({ categoryId, description, document: documentText }, prefill, {
+      name: option.name,
+      categoryId:
+        suggestion.categoryId && categoriesById.has(suggestion.categoryId)
+          ? suggestion.categoryId
+          : null,
+      description: suggestion.description,
+      document: option.document && formatDocument(option.document),
+    });
+    setFields(picked.fields);
+    setPrefill(picked.prefill);
+  }
+
+  function changeCounterparty(text: string) {
+    setCounterparty(text);
+    // Typing something else leaves the pick: what it filled goes with it.
+    if (prefill && text !== prefill.name) {
+      setFields(leavePick({ categoryId, description, document: documentText }, prefill));
+      setPrefill(null);
     }
-    if (description === "" && suggestion.description) setDescription(suggestion.description);
-    if (documentText === "" && option.document) setDocumentText(formatDocument(option.document));
   }
 
   function switchType(next: EntryType) {
@@ -236,6 +260,7 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
     setDescription("");
     setAlias("");
     setDocumentText("");
+    setPrefill(null);
     setShowDetails(false);
     setError(null);
   }
@@ -344,7 +369,7 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
 
       <CounterpartyCombobox
         value={counterparty}
-        onChange={setCounterparty}
+        onChange={changeCounterparty}
         onPick={pickCounterparty}
         options={counterparties}
         type={type}
@@ -449,8 +474,8 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
         >
           {showDetails
             ? "Menos detalhes"
-            : description
-              ? "Mais detalhes · com observação"
+            : description || documentText || alias
+              ? "Mais detalhes · preenchidos"
               : "Mais detalhes"}
         </button>
         {showDetails && (
