@@ -28,6 +28,8 @@ describe("entrySchema", () => {
       invoiceDueDate: null,
       categoryId: null,
       counterparty: null,
+      counterpartyAlias: null,
+      counterpartyDocument: null,
       description: null,
     });
   });
@@ -102,6 +104,53 @@ describe("entrySchema", () => {
     });
     expect(issues({ ...base, method: "CREDIT", cardId, invoiceDueDate: "12/11" })).toEqual({
       invoiceDueDate: "Fatura inválida.",
+    });
+  });
+});
+
+describe("entrySchema: counterparty alias and CPF/CNPJ", () => {
+  it("normalizes a valid CPF/CNPJ and trims the alias", () => {
+    expect(
+      entrySchema.parse({
+        ...base,
+        counterparty: "Padaria",
+        counterpartyAlias: "  PAG*JOSE SILVA ",
+        counterpartyDocument: "12.abc.345/01de-35",
+      }),
+    ).toMatchObject({
+      counterpartyAlias: "PAG*JOSE SILVA",
+      counterpartyDocument: "12ABC34501DE35",
+    });
+  });
+
+  it("CA4: refuses an invalid CPF/CNPJ with a clear message", () => {
+    expect(
+      issues({ ...base, counterparty: "Padaria", counterpartyDocument: "529.982.247-24" }),
+    ).toEqual({
+      counterpartyDocument: "CPF inválido. Confira os números.",
+    });
+    expect(
+      issues({ ...base, counterparty: "Padaria", counterpartyDocument: "11.222.333/0001-80" }),
+    ).toEqual({
+      counterpartyDocument: "CNPJ inválido. Confira os caracteres.",
+    });
+    expect(issues({ ...base, counterparty: "Padaria", counterpartyDocument: "123" })).toEqual({
+      counterpartyDocument: "Informe um CPF (11 dígitos) ou um CNPJ (14 caracteres).",
+    });
+  });
+
+  it("asks for the counterparty when only the alias or the CPF/CNPJ comes", () => {
+    expect(issues({ ...base, counterpartyAlias: "PAG*JOSE" })).toEqual({
+      counterparty: "Informe o que foi para guardar o nome no extrato.",
+    });
+    expect(issues({ ...base, counterpartyDocument: "529.982.247-25" })).toEqual({
+      counterparty: "Informe o que foi para guardar o CPF/CNPJ.",
+    });
+  });
+
+  it("refuses an alias over 60 characters", () => {
+    expect(issues({ ...base, counterparty: "X", counterpartyAlias: "x".repeat(61) })).toEqual({
+      counterpartyAlias: "O nome no extrato pode ter no máximo 60 caracteres.",
     });
   });
 });

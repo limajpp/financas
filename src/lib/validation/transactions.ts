@@ -1,6 +1,8 @@
 import { z } from "zod";
 
+import { ALIAS_MAX } from "@/domain/counterparty-memory";
 import { isCalendarDate } from "@/domain/dates";
+import { DOCUMENT_ERROR_MESSAGES, parseDocument } from "@/domain/document";
 import { MAX_AMOUNT_CENTS } from "@/domain/money";
 import {
   COUNTERPARTY_NAME_MAX,
@@ -53,8 +55,34 @@ export const entrySchema = z
       DESCRIPTION_MAX,
       `A descrição pode ter no máximo ${DESCRIPTION_MAX} caracteres.`,
     ),
+    counterpartyAlias: optionalText(
+      ALIAS_MAX,
+      `O nome no extrato pode ter no máximo ${ALIAS_MAX} caracteres.`,
+    ),
+    counterpartyDocument: optionalText(40, DOCUMENT_ERROR_MESSAGES.INVALID_LENGTH).transform(
+      (text, ctx) => {
+        if (text === null) return null;
+        const parsed = parseDocument(text);
+        if (parsed.ok) return parsed.document;
+        ctx.addIssue({ code: "custom", message: DOCUMENT_ERROR_MESSAGES[parsed.error] });
+        return z.NEVER;
+      },
+    ),
   })
   .transform((entry, ctx): EntryInput => {
+    // The alias and the CPF/CNPJ belong to the counterparty: they need one.
+    if (
+      entry.counterparty === null &&
+      (entry.counterpartyAlias !== null || entry.counterpartyDocument !== null)
+    ) {
+      const what = entry.counterpartyAlias !== null ? "o nome no extrato" : "o CPF/CNPJ";
+      ctx.addIssue({
+        code: "custom",
+        path: ["counterparty"],
+        message: `Informe o que foi para guardar ${what}.`,
+      });
+      return z.NEVER;
+    }
     if (entry.method === "CREDIT") {
       if (!entry.cardId) {
         ctx.addIssue({ code: "custom", path: ["cardId"], message: "Escolha o cartão." });
