@@ -14,7 +14,7 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 
 1. **Despesa | Receita**, um seletor de dois botões no topo. Começa em Despesa. Trocar o tipo troca as categorias e a forma de pagamento lembrada.
 2. **Valor** em destaque: "R$ 0,00" até você digitar.
-3. **"O que foi?"**, um campo de texto opcional que vira o estabelecimento (`counterparty`) do lançamento. O autocomplete é da task 10.
+3. **"O que foi?"**, um campo de texto opcional que vira o estabelecimento (`counterparty`) do lançamento. A pergunta fica no placeholder (o rótulo existe só para leitor de tela), para economizar uma linha. O autocomplete é da task 10.
 4. **Categorias:** até 5 botões com as categorias mais usadas e um botão **"Mais"**, que abre uma folha com todas as categorias ativas do tipo (mães e subs). Tocar numa categoria a seleciona, e tocar de novo tira a seleção. Sem categoria, o lançamento vai como "Sem categoria". A categoria escolhida pelo "Mais" aparece no lugar do último botão, para você ver o que escolheu.
 5. **Conta e forma de pagamento**, uma linha só: "Banco Inter · Débito". Tocar abre uma folha com:
    - as formas de pagamento aceitas pelo tipo (despesa: Pix, Débito, Crédito, Dinheiro, Boleto, TED; receita: Pix, TED, Dinheiro, Boleto);
@@ -46,7 +46,7 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 - O servidor lê o lançamento mais recente (pela data de criação) de cada tipo: despesa e receita lembram em separado.
 - `defaultPayment(último, contas, cartões, tipo)` (puro, com testes) decide o que vem selecionado:
   - a mesma forma de pagamento e a mesma conta ou cartão do último lançamento, se ainda estiverem ativos;
-  - se o cartão do último crédito foi arquivado, o primeiro cartão ativo; sem cartão ativo, Pix na primeira conta;
+  - se o cartão do último crédito foi arquivado, o primeiro cartão ativo; sem cartão ativo, Pix na última conta usada;
   - se a conta foi arquivada, a primeira conta ativa com a mesma forma;
   - sem histórico: Pix na primeira conta ativa, em ordem alfabética.
 - Lembrar pelo servidor, e não pelo aparelho: o celular e o computador ficam iguais.
@@ -59,7 +59,7 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 - Durante o envio, o botão mostra "Salvando…" e não aceita outro toque.
 - Deu certo:
   - volta para o início (`/`);
-  - mostra uma confirmação discreta embaixo por 5 segundos, "Despesa de R$ 47,90 salva", com o botão **"Desfazer"**, que exclui o lançamento;
+  - mostra uma confirmação discreta no topo por 5 segundos, "Despesa de R$ 47,90 salva", com o botão **"Desfazer"**, que exclui o lançamento;
   - o componente de aviso é o `sonner` (via shadcn), montado no layout autenticado.
 - Deu errado: a mensagem aparece acima do botão Salvar (por exemplo, "Essa categoria está arquivada. Escolha outra."), e nada do que você preencheu se perde.
 - A action de criar passa a devolver o `id` do lançamento criado, para o "Desfazer".
@@ -102,6 +102,15 @@ De cima para baixo, numa coluna que cabe em 375 px sem rolagem horizontal:
 - **Uso das categorias nos últimos 90 dias**, contado no banco por agregação (`groupBy`), sem carregar os lançamentos.
 - **Só criação nesta task.** A edição usa o mesmo formulário e entra com a lista (task 14). Ela precisa reenviar a fatura escolhida à mão (revisão da task 8).
 - **`sonner` para o aviso**, o componente de toast do shadcn: acessível (região `aria-live`) e sobrevive à navegação para o início.
+
+### Mudanças durante a implementação
+
+- **Saldo no dia do saldo inicial (regra da task 8 ajustada).** Uma conta cadastrada hoje com o saldo de agora não contava as compras registradas hoje, porque só entravam os dias seguintes. Agora, no dia do saldo inicial, entram os lançamentos registrados **depois** que o saldo foi informado. A conta guarda esse momento em `initialBalanceSetAt`, que muda quando o valor ou a data do saldo inicial mudam (migration `initial_balance_set_at`). Os lançamentos daquele dia registrados antes, e os dos dias anteriores, já estão no saldo que o banco mostrava.
+- **O formulário volta em branco depois de salvar.** Com `cacheComponents`, o Next 16 mantém a rota anterior escondida (`<Activity>`), com o estado intacto. Sem limpar, a próxima visita mostraria o valor antigo e reusaria o `clientId`, e o servidor trataria o lançamento novo como repetição do anterior. O e2e cobre isso.
+- **Aviso no topo, não embaixo.** Embaixo, ele cobria o botão Salvar ao voltar para registrar outro lançamento.
+- **Criar não chama `refresh()`.** A tela sai para o início logo depois, e as páginas são dinâmicas.
+- **Tela compacta.** As teclas ficam menores em telas baixas. No PWA instalado, cabe tudo. No Safari, com as barras do navegador, a data fica logo abaixo e é preciso rolar.
+- **O e2e navega pelos links depois de salvar.** Um `page.goto` logo depois de uma navegação no cliente aborta a resposta ainda em streaming. O WebKit trata isso como erro de rede, e o Next recarrega a página inteira. No uso real, a navegação é pelos links.
 
 ## Fora do escopo
 
