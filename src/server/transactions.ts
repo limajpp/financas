@@ -658,6 +658,146 @@ async function updateInstallments(
   return { ok: true, transaction: toTransaction(row) };
 }
 
+/** Edits a transfer (its type stays): the same rules as creating one. */
+export async function updateTransfer(
+  spaceId: string,
+  id: string,
+  input: TransferInput,
+): Promise<TransactionResult> {
+  const current = await db.transaction.findFirst({
+    where: { id, spaceId },
+    select: { type: true, accountId: true, toAccountId: true },
+  });
+  if (!current) return { ok: false, error: "NOT_FOUND" };
+  if (current.type !== "TRANSFER") return { ok: false, error: "NOT_EDITABLE" };
+  const accounts = await db.account.findMany({
+    where: { spaceId, id: { in: [input.accountId, input.toAccountId] } },
+    select: { id: true, archivedAt: true },
+  });
+  const checked = validateTransfer(input, accounts, todayInSaoPaulo(), current);
+  if (!checked.ok) return checked;
+  const { count } = await db.transaction.updateMany({
+    where: { id, spaceId },
+    data: {
+      amountCents: input.amountCents,
+      date: calendarDateToDb(input.date),
+      method: input.method,
+      accountId: input.accountId,
+      toAccountId: input.toAccountId,
+      description: input.description,
+    },
+  });
+  if (count === 0) return { ok: false, error: "NOT_FOUND" };
+  return reloadTransaction(spaceId, id);
+}
+
+/** Edits an invoice payment (its type and card stay): the same rules as creating one. */
+export async function updateCardPayment(
+  spaceId: string,
+  id: string,
+  input: CardPaymentInput,
+): Promise<TransactionResult> {
+  const current = await db.transaction.findFirst({
+    where: { id, spaceId },
+    select: { type: true, accountId: true, cardId: true },
+  });
+  if (!current) return { ok: false, error: "NOT_FOUND" };
+  if (current.type !== "CARD_PAYMENT" || current.cardId !== input.cardId) {
+    return { ok: false, error: "NOT_EDITABLE" };
+  }
+  const [accounts, card] = await Promise.all([
+    db.account.findMany({
+      where: { spaceId, id: input.accountId },
+      select: { id: true, archivedAt: true },
+    }),
+    spaceCardWithCycles(spaceId, input.cardId),
+  ]);
+  const purchaseDueDates = card
+    ? (await cardAmounts(spaceId, [card.id]))(card.id).purchases.map((p) => p.invoiceDueDate)
+    : [];
+  const checked = validateCardPayment(
+    input,
+    { accounts, card, purchaseDueDates },
+    todayInSaoPaulo(),
+    current,
+  );
+  if (!checked.ok) return checked;
+  const { count } = await db.transaction.updateMany({
+    where: { id, spaceId },
+    data: {
+      amountCents: input.amountCents,
+      date: calendarDateToDb(input.date),
+      method: input.method,
+      accountId: input.accountId,
+      invoiceDueDate: calendarDateToDb(input.invoiceDueDate),
+      description: input.description,
+    },
+  });
+  if (count === 0) return { ok: false, error: "NOT_FOUND" };
+  return reloadTransaction(spaceId, id);
+}
+
+async function reloadTransaction(spaceId: string, id: string): Promise<TransactionResult> {
+  const row = await db.transaction.findFirst({ where: { id, spaceId }, select: transactionSelect });
+  return row ? { ok: true, transaction: toTransaction(row) } : { ok: false, error: "NOT_FOUND" };
+}
+
+class BulkMismatch extends Error {}
+
+/** The most entries one bulk categorization takes (a page of the list is 50). */
+export const BULK_MAX = 200;
+
+/**
+ * Sets one category (or none) on several expenses or incomes of the space at once: all of the
+ * same type, the category active and of that type. All or nothing. An installment changes alone:
+ * the selection already says what to change.
+ */
+export async function bulkSetCategory(
+  spaceId: string,
+  ids: readonly string[],
+  categoryId: string | null,
+): Promise<{ ok: true; count: number } | { ok: false; error: TransactionError | "NOT_FOUND" }> {
+  const unique = [...new Set(ids)];
+  const rows = await db.transaction.findMany({
+    where: { spaceId, id: { in: unique } },
+    select: { type: true },
+  });
+  if (unique.length === 0 || rows.length !== unique.length)
+    return { ok: false, error: "NOT_FOUND" };
+  if (rows.some((r) => r.type !== "EXPENSE" && r.type !== "INCOME")) {
+    return { ok: false, error: "NOT_CATEGORIZABLE" };
+  }
+  const type = rows[0]!.type as "EXPENSE" | "INCOME";
+  if (rows.some((r) => r.type !== type)) return { ok: false, error: "MIXED_TYPES" };
+
+  if (categoryId !== null) {
+    const category = await db.category.findFirst({
+      where: { id: categoryId, spaceId },
+      select: { type: true, archivedAt: true, parent: { select: { archivedAt: true } } },
+    });
+    if (!category) return { ok: false, error: "CATEGORY_NOT_FOUND" };
+    if (category.type !== type) return { ok: false, error: "CATEGORY_TYPE_MISMATCH" };
+    if (category.archivedAt !== null || (category.parent?.archivedAt ?? null) !== null) {
+      return { ok: false, error: "CATEGORY_ARCHIVED" };
+    }
+  }
+  // All or nothing: if any entry changed or went away since it was read, nothing changes.
+  try {
+    const count = await db.$transaction(async (tx) => {
+      const updated = await tx.transaction.updateMany({
+        where: { spaceId, id: { in: unique }, type },
+        data: { categoryId },
+      });
+      if (updated.count !== unique.length) throw new BulkMismatch();
+      return updated.count;
+    });
+    return { ok: true, count };
+  } catch (error) {
+    if (error instanceof BulkMismatch) return { ok: false, error: "NOT_FOUND" };
+    throw error;
+  }
+}
+
 /**
  * Deletes an entry. For an installment, scope "following" also deletes the next ones of its
  * purchase (the earlier ones stay); "this" deletes only it, and the others keep their numbers.
