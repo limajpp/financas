@@ -253,39 +253,47 @@ model Counterparty {
 /// invoice are set depends on the type and method (CHECK in the migration; see
 /// docs/specs/tasks/08-transactions.md). The balance rule is src/domain/balance.ts.
 model Transaction {
-  id                String          @id @default(uuid(7))
-  spaceId           String
-  space             Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id                 String          @id @default(uuid(7))
+  spaceId            String
+  space              Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   /// Given by the device, so a retried create (offline sync) doesn't duplicate.
-  clientId          String
-  createdById       String
-  createdBy         User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
-  type              TransactionType
+  clientId           String
+  createdById        String
+  createdBy          User            @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  type               TransactionType
   /// Always positive; the type gives the direction.
-  amountCents       Int
+  amountCents        Int
   /// The purchase (or competence) day, not an instant.
-  date              DateTime        @db.Date
-  method            PaymentMethod
-  accountId         String?
-  account           Account?        @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: NoAction)
+  date               DateTime        @db.Date
+  method             PaymentMethod
+  accountId          String?
+  account            Account?        @relation("AccountTransactions", fields: [accountId], references: [id], onDelete: NoAction)
   /// Transfer destination.
-  toAccountId       String?
-  toAccount         Account?        @relation("AccountTransfersIn", fields: [toAccountId], references: [id], onDelete: NoAction)
-  cardId            String?
-  card              Card?           @relation(fields: [cardId], references: [id], onDelete: NoAction)
+  toAccountId        String?
+  toAccount          Account?        @relation("AccountTransfersIn", fields: [toAccountId], references: [id], onDelete: NoAction)
+  cardId             String?
+  card               Card?           @relation(fields: [cardId], references: [id], onDelete: NoAction)
   /// The invoice (by due date) a credit purchase falls on, or the one a payment pays.
-  invoiceDueDate    DateTime?       @db.Date
+  invoiceDueDate     DateTime?       @db.Date
   /// True when the invoice was chosen by hand: cycle changes don't recompute it.
-  invoiceOverridden Boolean         @default(false)
-  categoryId        String?
-  category          Category?       @relation(fields: [categoryId], references: [id], onDelete: NoAction)
-  counterpartyId    String?
-  counterparty      Counterparty?   @relation(fields: [counterpartyId], references: [id], onDelete: NoAction)
-  description       String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  invoiceOverridden  Boolean         @default(false)
+  categoryId         String?
+  category           Category?       @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+  counterpartyId     String?
+  counterparty       Counterparty?   @relation(fields: [counterpartyId], references: [id], onDelete: NoAction)
+  description        String?
+  /// The installments of one credit purchase share this id (task 12); the three fields go
+  /// together (CHECK in the migration).
+  installmentGroupId String?
+  /// 1…installmentTotal.
+  installmentNumber  Int?
+  /// 2–24.
+  installmentTotal   Int?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@unique([spaceId, clientId])
+  @@index([installmentGroupId])
   @@index([spaceId, date])
   @@index([accountId])
   @@index([toAccountId])

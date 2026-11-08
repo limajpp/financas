@@ -53,7 +53,11 @@ export type TransactionError =
   | "INVALID_INVOICE"
   | "SAME_ACCOUNT"
   | "TO_ACCOUNT_NOT_FOUND"
-  | "TO_ACCOUNT_ARCHIVED";
+  | "TO_ACCOUNT_ARCHIVED"
+  | "TOO_SMALL_FOR_INSTALLMENTS"
+  | "INSTALLMENT_LOCKED"
+  | "INSTALLMENT_AMOUNT_SCOPE"
+  | "INSTALLMENTS_ON_EDIT";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
@@ -75,7 +79,16 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   SAME_ACCOUNT: "Escolha contas diferentes.",
   TO_ACCOUNT_NOT_FOUND: "Conta de destino não encontrada.",
   TO_ACCOUNT_ARCHIVED: "A conta de destino está arquivada. Escolha outra.",
+  TOO_SMALL_FOR_INSTALLMENTS: "O valor é pequeno demais para tantas parcelas.",
+  INSTALLMENT_LOCKED:
+    "Para mudar a data ou o cartão de uma compra parcelada, exclua e registre de novo.",
+  INSTALLMENT_AMOUNT_SCOPE: "O valor muda só na parcela escolhida: use “só esta”.",
+  INSTALLMENTS_ON_EDIT: "Para parcelar uma compra já registrada, exclua e registre de novo.",
 };
+
+/** Which installments an edit or deletion reaches: the chosen one, or it and the next ones. */
+export const INSTALLMENT_SCOPES = ["this", "following"] as const;
+export type InstallmentScope = (typeof INSTALLMENT_SCOPES)[number];
 
 /** Money moving between your own accounts: Pix, TED, or cash (withdrawal or deposit). */
 export const TRANSFER_METHODS = ["PIX", "TED", "CASH"] as const;
@@ -177,6 +190,8 @@ export type EntryInput = {
   /** The counterparty's CPF/CNPJ, normalized (task 10). */
   counterpartyDocument: string | null;
   description: string | null;
+  /** 2–24 for a credit purchase in installments (task 12); null otherwise. */
+  installments: number | null;
 };
 
 /** What the entry points to, looked up in the user's space (missing = not found). */
@@ -221,6 +236,9 @@ export function validateEntry(
   if (input.date < TRANSACTION_DATE_MIN) return { ok: false, error: "DATE_TOO_OLD" };
   if (!METHODS_BY_TYPE[input.type].includes(input.method)) {
     return { ok: false, error: "METHOD_NOT_ALLOWED" };
+  }
+  if (input.installments !== null && input.amountCents < input.installments) {
+    return { ok: false, error: "TOO_SMALL_FOR_INSTALLMENTS" };
   }
 
   let invoice: InvoiceChoice | null = null;
