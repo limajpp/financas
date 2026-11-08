@@ -2,7 +2,7 @@ import type { Suggestion } from "@/domain/counterparty-memory";
 import type { SearchableCounterparty } from "@/domain/counterparty-search";
 import type { CalendarDate } from "@/domain/dates";
 import type { CycleVersion } from "@/domain/invoice-cycle";
-import type { PaymentChoice } from "@/domain/register";
+import type { PaymentChoice, TransferChoice } from "@/domain/register";
 
 /** A category as the register screen shows it. */
 export type RegisterCategory = {
@@ -33,5 +33,7 @@ export type RegisterProps = {
   cards: RegisterCard[];
   EXPENSE: RegisterTypeData;
   INCOME: RegisterTypeData;
+  /** Null with fewer than two active accounts. */
+  transfer: TransferChoice | null;
   today: CalendarDate;
 };

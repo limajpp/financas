@@ -5,7 +5,7 @@ import { AccountManager } from "@/components/accounts/account-manager";
 import { listAccounts } from "@/server/accounts";
 import { listCards } from "@/server/cards";
 import { getCurrentSpace } from "@/server/session";
-import { accountBalances } from "@/server/transactions";
+import { accountBalances, cardsInvoices } from "@/server/transactions";
 
 export const metadata: Metadata = { title: "Contas · Finanças" };
 
@@ -30,6 +30,10 @@ async function Accounts() {
     listCards(space.id, { includeArchived: true }),
     accountBalances(space.id),
   ]);
+  const payments = await cardsInvoices(
+    space.id,
+    cards.map((card) => ({ id: card.id, accountId: card.account.id, cycles: card.cycles })),
+  );
   return (
     <AccountManager
       accounts={accounts.map(({ archivedAt, ...account }) => ({
@@ -48,6 +52,7 @@ async function Accounts() {
         closingDay: card.closingDay,
         dueDay: card.dueDay,
         openInvoice: card.openInvoice,
+        payment: payments.get(card.id)!,
       }))}
     />
   );

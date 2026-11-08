@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clientIdSchema, entrySchema } from "./transactions";
+import { cardPaymentSchema, clientIdSchema, entrySchema, transferSchema } from "./transactions";
 
 const accountId = "0190a1b2-0000-7000-8000-000000000001";
 const cardId = "0190a1b2-0000-7000-8000-000000000002";
@@ -159,5 +159,56 @@ describe("clientIdSchema", () => {
   it("takes a UUID only", () => {
     expect(clientIdSchema.safeParse(accountId).success).toBe(true);
     expect(clientIdSchema.safeParse("abc").success).toBe(false);
+  });
+});
+
+describe("transferSchema", () => {
+  const transfer = {
+    amountCents: 50_000,
+    date: "2026-10-20",
+    method: "PIX",
+    accountId,
+    toAccountId: cardId,
+  };
+
+  it("parses a transfer; the description is optional", () => {
+    expect(transferSchema.parse(transfer)).toEqual({ ...transfer, description: null });
+  });
+
+  it("CA3: refuses the same account on both sides", () => {
+    const result = transferSchema.safeParse({ ...transfer, toAccountId: accountId });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues).toMatchObject([
+      { path: ["toAccountId"], message: "Escolha contas diferentes." },
+    ]);
+  });
+
+  it("refuses credit, debit and boleto", () => {
+    for (const method of ["CREDIT", "DEBIT", "BOLETO"]) {
+      expect(transferSchema.safeParse({ ...transfer, method }).success).toBe(false);
+    }
+  });
+});
+
+describe("cardPaymentSchema", () => {
+  const payment = {
+    amountCents: 30_000,
+    date: "2026-10-25",
+    method: "BOLETO",
+    accountId,
+    cardId,
+    invoiceDueDate: "2026-11-12",
+  };
+
+  it("parses a payment", () => {
+    expect(cardPaymentSchema.parse(payment)).toEqual({ ...payment, description: null });
+  });
+
+  it("refuses credit and cash, and a missing invoice", () => {
+    expect(cardPaymentSchema.safeParse({ ...payment, method: "CREDIT" }).success).toBe(false);
+    expect(cardPaymentSchema.safeParse({ ...payment, method: "CASH" }).success).toBe(false);
+    expect(
+      cardPaymentSchema.safeParse({ ...payment, invoiceDueDate: "" }).error?.issues,
+    ).toMatchObject([{ path: ["invoiceDueDate"], message: "Escolha a fatura." }]);
   });
 });

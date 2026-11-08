@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { createTransactionAction, deleteTransactionAction } from "@/app/(app)/lancamentos/actions";
+import {
+  createTransactionAction,
+  createTransferAction,
+  deleteTransactionAction,
+} from "@/app/(app)/lancamentos/actions";
 import { CategoryIcon } from "@/components/categories/category-icon";
 import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
@@ -18,7 +22,7 @@ import { normalizeName } from "@/domain/names";
 import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
-import type { PaymentChoice } from "@/domain/register";
+import type { PaymentChoice, TransferChoice } from "@/domain/register";
 import {
   COUNTERPARTY_NAME_MAX,
   DESCRIPTION_MAX,
@@ -26,6 +30,7 @@ import {
   INVOICE_OVERRIDE_WINDOW,
   PAYMENT_METHOD_LABELS,
   TRANSACTION_DATE_MIN,
+  TRANSFER_METHODS,
 } from "@/domain/transactions";
 import { cn } from "@/lib/utils";
 
@@ -36,7 +41,14 @@ import { Keypad } from "./keypad";
 import { PaymentSheet } from "./payment-sheet";
 import type { CounterpartyOption, RegisterCard, RegisterProps } from "./types";
 
-const TYPE_LABELS: Record<EntryType, string> = { EXPENSE: "Despesa", INCOME: "Receita" };
+/** What the screen registers: an expense or income, or a transfer between accounts (task 11). */
+type Kind = EntryType | "TRANSFER";
+
+const KIND_LABELS: Record<Kind, string> = {
+  EXPENSE: "Despesa",
+  INCOME: "Receita",
+  TRANSFER: "Transferência",
+};
 
 /** The invoices a credit purchase on `date` can go to: the computed one ± the override window. */
 function invoiceOptions(card: RegisterCard, date: CalendarDate) {
@@ -71,9 +83,18 @@ function closeKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
 }
 
 /** The single register screen: amount on the keypad, a category, save. The rest comes filled. */
-export function RegisterForm({ accounts, cards, counterparties, today, ...byType }: RegisterProps) {
+export function RegisterForm({
+  accounts,
+  cards,
+  counterparties,
+  today,
+  transfer: transferDefault,
+  ...byType
+}: RegisterProps) {
   const router = useRouter();
-  const [type, setType] = useState<EntryType>("EXPENSE");
+  const [kind, setKind] = useState<Kind>("EXPENSE");
+  // The entry type behind the expense/income parts (hidden while on a transfer).
+  const type: EntryType = kind === "TRANSFER" ? "EXPENSE" : kind;
   const [cents, setCents] = useState(0);
   const [counterparty, setCounterparty] = useState("");
   const [categoryId, setCategoryId] = useState<string | null>(null);
@@ -84,11 +105,13 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
   });
   // Next keeps this route alive between visits (<Activity>), and the props are fetched again.
   // When the server's remembered payment changes (another device, "Desfazer"), follow it.
-  const seeded = JSON.stringify([byType.EXPENSE.payment, byType.INCOME.payment]);
+  const [transferState, setTransfer] = useState<TransferChoice | null>(transferDefault);
+  const seeded = JSON.stringify([byType.EXPENSE.payment, byType.INCOME.payment, transferDefault]);
   const [seed, setSeed] = useState(seeded);
   if (seed !== seeded) {
     setSeed(seeded);
     setPayments({ EXPENSE: byType.EXPENSE.payment!, INCOME: byType.INCOME.payment! });
+    setTransfer(transferDefault);
   }
   const [date, setDate] = useState<CalendarDate>(today);
   // A new day while the screen was kept: "Hoje" moves along.
@@ -112,6 +135,8 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
   const saved = useRef(false);
   const resetRef = useRef<() => void>(() => {});
   const ids = {
+    from: useId(),
+    to: useId(),
     date: useId(),
     invoice: useId(),
     description: useId(),
@@ -138,6 +163,17 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
     selected && !data.top.some((c) => c.id === selected.id)
       ? [...data.top.slice(0, -1), selected]
       : data.top;
+
+  // An account archived since falls back to the server's default transfer.
+  const transfer =
+    transferState &&
+    accounts.some((a) => a.id === transferState.accountId) &&
+    accounts.some((a) => a.id === transferState.toAccountId)
+      ? transferState
+      : transferDefault;
+  const sameAccount = transfer !== null && transfer.accountId === transfer.toAccountId;
+  const canSave =
+    cents > 0 && !pending && (kind !== "TRANSFER" || (transfer !== null && !sameAccount));
 
   const place =
     payment.method === "CREDIT"
@@ -226,9 +262,12 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
     }
   }
 
-  function switchType(next: EntryType) {
-    if (next === type) return;
-    setType(next);
+  function switchKind(next: Kind) {
+    if (next === kind) return;
+    // Another kind of entry: a retry after a network error must not reuse the previous one's id
+    // (the server would answer with the entry that may have arrived, of the other kind).
+    clientId.current = null;
+    setKind(next);
     setCategoryId(null);
     setError(null);
   }
@@ -252,7 +291,7 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
    */
   function reset() {
     clientId.current = null;
-    setType("EXPENSE");
+    setKind("EXPENSE");
     setCents(0);
     setCounterparty("");
     setCategoryId(null);
@@ -268,28 +307,38 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
 
   function save() {
     // Already saved: the screen is on its way home (the form resets once it's hidden).
-    if (cents === 0 || pending || saved.current) return;
+    if (!canSave || saved.current) return;
     setError(null);
     clientId.current ??= crypto.randomUUID();
     const amount = cents;
-    const label = TYPE_LABELS[type];
+    const label = KIND_LABELS[kind];
     startTransition(async () => {
       let result: Awaited<ReturnType<typeof createTransactionAction>>;
       try {
-        result = await createTransactionAction(clientId.current, {
-          type,
-          amountCents: amount,
-          date,
-          method: payment.method,
-          accountId: payment.accountId,
-          cardId: payment.cardId,
-          invoiceDueDate: chosenInvoice,
-          categoryId,
-          counterparty,
-          counterpartyAlias: alias,
-          counterpartyDocument: documentText,
-          description,
-        });
+        result =
+          kind === "TRANSFER"
+            ? await createTransferAction(clientId.current, {
+                amountCents: amount,
+                date,
+                method: transfer!.method,
+                accountId: transfer!.accountId,
+                toAccountId: transfer!.toAccountId,
+                description,
+              })
+            : await createTransactionAction(clientId.current, {
+                type,
+                amountCents: amount,
+                date,
+                method: payment.method,
+                accountId: payment.accountId,
+                cardId: payment.cardId,
+                invoiceDueDate: chosenInvoice,
+                categoryId,
+                counterparty,
+                counterpartyAlias: alias,
+                counterpartyDocument: documentText,
+                description,
+              });
       } catch {
         // Offline or a server error: keep everything (and the clientId, so a retry can't
         // duplicate if the first request did arrive).
@@ -342,16 +391,16 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
       className="flex flex-col gap-3"
       noValidate
     >
-      <div role="group" aria-label="Tipo" className="grid grid-cols-2 rounded-lg bg-muted p-1">
-        {(["EXPENSE", "INCOME"] as const).map((t) => (
+      <div role="group" aria-label="Tipo" className="grid grid-cols-3 rounded-lg bg-muted p-1">
+        {(["EXPENSE", "INCOME", "TRANSFER"] as const).map((k) => (
           <button
-            key={t}
+            key={k}
             type="button"
-            aria-pressed={type === t}
-            onClick={() => switchType(t)}
-            className="h-10 rounded-md text-sm font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
+            aria-pressed={kind === k}
+            onClick={() => switchKind(k)}
+            className="h-10 min-w-0 truncate rounded-md px-1 text-sm font-medium text-muted-foreground aria-pressed:bg-background aria-pressed:text-foreground aria-pressed:shadow-sm"
           >
-            {TYPE_LABELS[t]}
+            {KIND_LABELS[k]}
           </button>
         ))}
       </div>
@@ -362,62 +411,76 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
         className={cn(
           "block text-center text-4xl font-semibold tracking-tight tabular-nums",
           cents === 0 && "text-muted-foreground",
-          type === "INCOME" && cents > 0 && "text-emerald-700 dark:text-emerald-400",
+          kind === "INCOME" && cents > 0 && "text-emerald-700 dark:text-emerald-400",
         )}
       >
         {formatBRL(cents)}
       </output>
 
-      <CounterpartyCombobox
-        value={counterparty}
-        onChange={changeCounterparty}
-        onPick={pickCounterparty}
-        options={counterparties}
-        type={type}
-        categories={categoriesById}
-        maxLength={COUNTERPARTY_NAME_MAX}
-        placeholder={
-          type === "EXPENSE" ? "O que foi? Padaria, mercado…" : "O que foi? Salário, freela…"
-        }
-      />
+      {kind === "TRANSFER" ? (
+        <TransferFields
+          transfer={transfer}
+          accounts={accounts}
+          sameAccount={sameAccount}
+          ids={ids}
+          onChange={setTransfer}
+        />
+      ) : (
+        <>
+          <CounterpartyCombobox
+            value={counterparty}
+            onChange={changeCounterparty}
+            onPick={pickCounterparty}
+            options={counterparties}
+            type={type}
+            categories={categoriesById}
+            maxLength={COUNTERPARTY_NAME_MAX}
+            placeholder={
+              type === "EXPENSE" ? "O que foi? Padaria, mercado…" : "O que foi? Salário, freela…"
+            }
+          />
 
-      <div role="group" aria-label="Categoria" className="grid grid-cols-3 gap-2">
-        {buttons.map((category) => (
-          <button
-            key={category.id}
-            type="button"
-            aria-pressed={category.id === categoryId}
-            onClick={() => setCategoryId((id) => (id === category.id ? null : category.id))}
-            className="flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg border px-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/5 aria-pressed:font-medium"
-          >
-            <CategoryIcon icon={category.icon} color={category.color} className="size-6" />
-            <span className="w-full truncate text-center">{category.name}</span>
-          </button>
-        ))}
-        <button
-          type="button"
-          onClick={() => setSheet("categories")}
-          className="flex h-14 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed px-1 text-xs"
-        >
-          <LayoutGrid aria-hidden className="size-5 text-muted-foreground" />
-          Mais
-        </button>
-      </div>
+          <div role="group" aria-label="Categoria" className="grid grid-cols-3 gap-2">
+            {buttons.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                aria-pressed={category.id === categoryId}
+                onClick={() => setCategoryId((id) => (id === category.id ? null : category.id))}
+                className="flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg border px-1 text-xs aria-pressed:border-primary aria-pressed:bg-primary/5 aria-pressed:font-medium"
+              >
+                <CategoryIcon icon={category.icon} color={category.color} className="size-6" />
+                <span className="w-full truncate text-center">{category.name}</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setSheet("categories")}
+              className="flex h-14 flex-col items-center justify-center gap-0.5 rounded-lg border border-dashed px-1 text-xs"
+            >
+              <LayoutGrid aria-hidden className="size-5 text-muted-foreground" />
+              Mais
+            </button>
+          </div>
+        </>
+      )}
 
       <div className="grid grid-cols-1 gap-2">
-        <button
-          type="button"
-          onClick={() => setSheet("payment")}
-          aria-label={`Forma de pagamento: ${place} · ${PAYMENT_METHOD_LABELS[payment.method]}`}
-          className="flex h-11 items-center justify-between gap-2 rounded-lg border px-3 text-left"
-        >
-          <span className="truncate">
-            {place} · {PAYMENT_METHOD_LABELS[payment.method]}
-          </span>
-          <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-        </button>
+        {kind !== "TRANSFER" && (
+          <button
+            type="button"
+            onClick={() => setSheet("payment")}
+            aria-label={`Forma de pagamento: ${place} · ${PAYMENT_METHOD_LABELS[payment.method]}`}
+            className="flex h-11 items-center justify-between gap-2 rounded-lg border px-3 text-left"
+          >
+            <span className="truncate">
+              {place} · {PAYMENT_METHOD_LABELS[payment.method]}
+            </span>
+            <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          </button>
+        )}
 
-        {invoice && (
+        {kind !== "TRANSFER" && invoice && (
           <div className="grid gap-1">
             <Label htmlFor={ids.invoice} className="font-normal text-muted-foreground">
               Cai na fatura que vence em
@@ -475,7 +538,7 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
         >
           {showDetails
             ? "Menos detalhes"
-            : description || documentText || alias
+            : description || (kind !== "TRANSFER" && (documentText || alias))
               ? "Mais detalhes · preenchidos"
               : "Mais detalhes"}
         </button>
@@ -493,33 +556,37 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
                 onKeyDown={closeKeyboardOnEnter}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={ids.alias}>Nome no extrato</Label>
-              <Input
-                id={ids.alias}
-                value={alias}
-                onChange={(e) => setAlias(e.target.value)}
-                maxLength={ALIAS_MAX}
-                autoComplete="off"
-                autoCapitalize="characters"
-                enterKeyHint="done"
-                onKeyDown={closeKeyboardOnEnter}
-                placeholder="Como aparece no banco: PAG*JOSE…"
-              />
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor={ids.document}>CPF/CNPJ</Label>
-              <Input
-                id={ids.document}
-                value={documentText}
-                onChange={(e) => setDocumentText(e.target.value)}
-                maxLength={24}
-                autoComplete="off"
-                autoCapitalize="characters"
-                enterKeyHint="done"
-                onKeyDown={closeKeyboardOnEnter}
-              />
-            </div>
+            {kind !== "TRANSFER" && (
+              <>
+                <div className="grid gap-1.5">
+                  <Label htmlFor={ids.alias}>Nome no extrato</Label>
+                  <Input
+                    id={ids.alias}
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    maxLength={ALIAS_MAX}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    enterKeyHint="done"
+                    onKeyDown={closeKeyboardOnEnter}
+                    placeholder="Como aparece no banco: PAG*JOSE…"
+                  />
+                </div>
+                <div className="grid gap-1.5">
+                  <Label htmlFor={ids.document}>CPF/CNPJ</Label>
+                  <Input
+                    id={ids.document}
+                    value={documentText}
+                    onChange={(e) => setDocumentText(e.target.value)}
+                    maxLength={24}
+                    autoComplete="off"
+                    autoCapitalize="characters"
+                    enterKeyHint="done"
+                    onKeyDown={closeKeyboardOnEnter}
+                  />
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -531,8 +598,8 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
           </p>
         )}
         <Keypad onKey={press} />
-        <Button type="submit" className="h-11 text-base" disabled={cents === 0 || pending}>
-          {pending ? "Salvando…" : `Salvar ${TYPE_LABELS[type].toLowerCase()}`}
+        <Button type="submit" className="h-11 text-base" disabled={!canSave}>
+          {pending ? "Salvando…" : `Salvar ${KIND_LABELS[kind].toLowerCase()}`}
         </Button>
       </div>
 
@@ -556,5 +623,77 @@ export function RegisterForm({ accounts, cards, counterparties, today, ...byType
         cards={cards}
       />
     </form>
+  );
+}
+
+const TRANSFER_METHOD_LABELS: Record<TransferChoice["method"], string> = {
+  PIX: "Pix",
+  TED: "TED",
+  CASH: "Dinheiro",
+};
+
+/** Origin, destination and method of a transfer. Native selects: the iPhone opens its wheel. */
+function TransferFields({
+  transfer,
+  accounts,
+  sameAccount,
+  ids,
+  onChange,
+}: {
+  transfer: TransferChoice | null;
+  accounts: { id: string; name: string }[];
+  sameAccount: boolean;
+  ids: { from: string; to: string };
+  onChange: (transfer: TransferChoice) => void;
+}) {
+  if (!transfer) {
+    return (
+      <p className="rounded-lg border border-dashed px-3 py-4 text-center text-sm text-muted-foreground">
+        Cadastre outra conta para transferir.
+      </p>
+    );
+  }
+  const side = (label: string, id: string, field: "accountId" | "toAccountId") => (
+    <div className="grid grid-cols-[3rem_1fr] items-center gap-2">
+      <Label htmlFor={id}>{label}</Label>
+      <NativeSelect
+        id={id}
+        value={transfer[field]}
+        onChange={(e) => onChange({ ...transfer, [field]: e.target.value })}
+        aria-invalid={sameAccount || undefined}
+        aria-describedby={sameAccount ? `${ids.to}-hint` : undefined}
+      >
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </NativeSelect>
+    </div>
+  );
+  return (
+    <div className="grid gap-2">
+      {side("De", ids.from, "accountId")}
+      {side("Para", ids.to, "toAccountId")}
+      {sameAccount && (
+        <p id={`${ids.to}-hint`} className="text-sm text-destructive">
+          Escolha contas diferentes.
+        </p>
+      )}
+      <div role="group" aria-label="Forma da transferência" className="grid grid-cols-3 gap-2">
+        {TRANSFER_METHODS.map((method) => (
+          <Button
+            key={method}
+            type="button"
+            variant={transfer.method === method ? "default" : "outline"}
+            aria-pressed={transfer.method === method}
+            className="h-10"
+            onClick={() => onChange({ ...transfer, method })}
+          >
+            {TRANSFER_METHOD_LABELS[method]}
+          </Button>
+        ))}
+      </div>
+    </div>
   );
 }

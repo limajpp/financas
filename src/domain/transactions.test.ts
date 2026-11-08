@@ -6,7 +6,9 @@ import {
   type EntryRefs,
   recomputeInvoices,
   resolveInvoice,
+  validateCardPayment,
   validateEntry,
+  validateTransfer,
 } from "./transactions";
 
 // Closes on the 5th, due on the 12th.
@@ -297,5 +299,104 @@ describe("recomputeInvoices", () => {
       { id: "a", invoiceDueDate: "2026-11-05" },
       { id: "b", invoiceDueDate: "2026-12-05" },
     ]);
+  });
+});
+
+describe("validateTransfer", () => {
+  const accounts = [
+    { id: "azul", archivedAt: null },
+    { id: "verde", archivedAt: null },
+    { id: "antiga", archivedAt: archived },
+  ];
+  const transfer = (overrides = {}) => ({
+    amountCents: 50_000,
+    date: "2026-10-20",
+    method: "PIX" as const,
+    accountId: "azul",
+    toAccountId: "verde",
+    description: null,
+    ...overrides,
+  });
+
+  it("accepts two different active accounts", () => {
+    expect(validateTransfer(transfer(), accounts, today)).toEqual({ ok: true });
+  });
+
+  it("CA3: refuses the same account on both sides", () => {
+    expect(validateTransfer(transfer({ toAccountId: "azul" }), accounts, today)).toEqual({
+      ok: false,
+      error: "SAME_ACCOUNT",
+    });
+  });
+
+  it("refuses accounts outside the space or archived, telling origin from destination", () => {
+    const check = (overrides: object) => validateTransfer(transfer(overrides), accounts, today);
+    expect(check({ accountId: "outra" })).toEqual({ ok: false, error: "ACCOUNT_NOT_FOUND" });
+    expect(check({ accountId: "antiga" })).toEqual({ ok: false, error: "ACCOUNT_ARCHIVED" });
+    expect(check({ toAccountId: "outra" })).toEqual({ ok: false, error: "TO_ACCOUNT_NOT_FOUND" });
+    expect(check({ toAccountId: "antiga" })).toEqual({ ok: false, error: "TO_ACCOUNT_ARCHIVED" });
+  });
+
+  it("refuses a date in the future or before 2000", () => {
+    expect(validateTransfer(transfer({ date: "2026-11-01" }), accounts, today)).toEqual({
+      ok: false,
+      error: "FUTURE_DATE",
+    });
+    expect(validateTransfer(transfer({ date: "1999-12-31" }), accounts, today)).toEqual({
+      ok: false,
+      error: "DATE_TOO_OLD",
+    });
+  });
+});
+
+describe("validateCardPayment", () => {
+  const accounts = [
+    { id: "azul", archivedAt: null },
+    { id: "antiga", archivedAt: archived },
+  ];
+  const card = { id: "roxo", cycles }; // closes 5, due 12; today 2026-10-31 → open due 2026-11-12
+  const payment = (overrides = {}) => ({
+    amountCents: 30_000,
+    date: "2026-10-25",
+    method: "BOLETO" as const,
+    accountId: "azul",
+    cardId: "roxo",
+    invoiceDueDate: "2026-10-12",
+    description: null,
+    ...overrides,
+  });
+  const refs = { accounts, card, purchaseDueDates: ["2024-01-12"] };
+
+  it("accepts a recent invoice of the card, or an old one with purchases", () => {
+    expect(validateCardPayment(payment(), refs, today)).toEqual({ ok: true });
+    expect(validateCardPayment(payment({ invoiceDueDate: "2024-01-12" }), refs, today)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("refuses an invoice that isn't the card's", () => {
+    expect(validateCardPayment(payment({ invoiceDueDate: "2026-10-13" }), refs, today)).toEqual({
+      ok: false,
+      error: "INVALID_INVOICE",
+    });
+    expect(validateCardPayment(payment({ invoiceDueDate: "2024-02-12" }), refs, today)).toEqual({
+      ok: false,
+      error: "INVALID_INVOICE",
+    });
+  });
+
+  it("refuses a card or account outside the space, and an archived account", () => {
+    expect(validateCardPayment(payment(), { ...refs, card: null }, today)).toEqual({
+      ok: false,
+      error: "CARD_NOT_FOUND",
+    });
+    expect(validateCardPayment(payment({ accountId: "outra" }), refs, today)).toEqual({
+      ok: false,
+      error: "ACCOUNT_NOT_FOUND",
+    });
+    expect(validateCardPayment(payment({ accountId: "antiga" }), refs, today)).toEqual({
+      ok: false,
+      error: "ACCOUNT_ARCHIVED",
+    });
   });
 });

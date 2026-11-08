@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultPayment, topCategories } from "./register";
+import { defaultPayment, defaultTransfer, topCategories } from "./register";
 
 describe("topCategories", () => {
   // Selectable expense categories, flat (parents and children).
@@ -139,5 +139,37 @@ describe("defaultPayment", () => {
 
   it("no active account: nothing to register on", () => {
     expect(defaultPayment("EXPENSE", none, [], cards)).toBeNull();
+  });
+});
+
+describe("defaultTransfer", () => {
+  const accounts = [{ id: "azul" }, { id: "inter" }, { id: "verde" }];
+  const none = { accountId: null, toAccountId: null, method: null };
+
+  it("without history: the first two accounts, Pix", () => {
+    expect(defaultTransfer(none, accounts)).toEqual({
+      accountId: "azul",
+      toAccountId: "inter",
+      method: "PIX",
+    });
+  });
+
+  it("repeats the last origin, destination and method", () => {
+    expect(
+      defaultTransfer({ accountId: "verde", toAccountId: "azul", method: "TED" }, accounts),
+    ).toEqual({ accountId: "verde", toAccountId: "azul", method: "TED" });
+  });
+
+  it("an archived side falls back without repeating the other", () => {
+    expect(
+      defaultTransfer({ accountId: "velha", toAccountId: "azul", method: "CASH" }, accounts),
+    ).toEqual({ accountId: "azul", toAccountId: "inter", method: "CASH" });
+    expect(
+      defaultTransfer({ accountId: "inter", toAccountId: "velha", method: null }, accounts),
+    ).toEqual({ accountId: "inter", toAccountId: "azul", method: "PIX" });
+  });
+
+  it("fewer than two active accounts: no transfer", () => {
+    expect(defaultTransfer(none, [{ id: "azul" }])).toBeNull();
   });
 });
