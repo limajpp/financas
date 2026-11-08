@@ -77,6 +77,7 @@ export const entrySchema = z
         .min(INSTALLMENTS_MIN, { error: "Escolha de 2 a 24 parcelas." })
         .max(INSTALLMENTS_MAX, { error: "Escolha de 2 a 24 parcelas." }),
     ),
+    subscription: z.boolean({ error: "Dados inválidos." }).default(false),
     counterpartyDocument: optionalText(40, DOCUMENT_ERROR_MESSAGES.INVALID_LENGTH).transform(
       (text, ctx) => {
         if (text === null) return null;
@@ -98,6 +99,22 @@ export const entrySchema = z
         code: "custom",
         path: ["counterparty"],
         message: `Informe o que foi para guardar ${what}.`,
+      });
+      return z.NEVER;
+    }
+    if (entry.subscription && entry.type !== "EXPENSE") {
+      ctx.addIssue({
+        code: "custom",
+        path: ["subscription"],
+        message: "Só despesas podem ser assinaturas.",
+      });
+      return z.NEVER;
+    }
+    if (entry.subscription && entry.installments !== null) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["subscription"],
+        message: "Uma compra parcelada não pode ser assinatura.",
       });
       return z.NEVER;
     }

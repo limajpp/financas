@@ -12,17 +12,25 @@ import {
   defaultTransfer,
   topCategories,
 } from "@/domain/register";
+import { GENERATED_CLIENT_ID_PREFIX } from "@/domain/recurring";
 import type { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
 import { selectableAccounts } from "@/server/accounts";
 import { selectableCards } from "@/server/cards";
 
+/** Entries the generation made (subscription charges, task 13): nobody typed them. */
+const NOT_GENERATED = {
+  NOT: { clientId: { startsWith: GENERATED_CLIENT_ID_PREFIX } },
+} satisfies Prisma.TransactionWhereInput;
+
 /**
- * Usage counts a purchase in installments once (its 1st installment): otherwise a 10× purchase
- * would count 10 times, and its future dates would keep it on top for months.
+ * Usage counts what you typed: a purchase in installments once (its 1st installment), and no
+ * subscription charge the app made by itself. Otherwise a 10× purchase would count 10 times, and
+ * every subscription would climb to the top each month.
  */
 const ONCE_PER_PURCHASE = {
   OR: [{ installmentNumber: null }, { installmentNumber: 1 }],
+  ...NOT_GENERATED,
 } satisfies Prisma.TransactionWhereInput;
 
 /** How many entries of `type` used each category in the last USAGE_WINDOW_DAYS days. */
@@ -51,7 +59,8 @@ export async function categoryUsage(spaceId: string, type: CategoryType): Promis
 export async function paymentMemory(spaceId: string, type: CategoryType): Promise<PaymentMemory> {
   const latest = (where: Prisma.TransactionWhereInput) =>
     db.transaction.findFirst({
-      where: { spaceId, type, ...where },
+      // The method you last chose, not a subscription's monthly charge.
+      where: { spaceId, type, ...NOT_GENERATED, ...where },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { method: true, accountId: true, cardId: true },
     });
@@ -111,6 +120,7 @@ export async function counterpartyMemory(
         AND "description" IS NOT NULL
         AND "type" IN ('EXPENSE', 'INCOME')
         AND ("installmentNumber" IS NULL OR "installmentNumber" = 1)
+        AND "clientId" NOT LIKE ${`${GENERATED_CLIENT_ID_PREFIX}%`}
       ORDER BY "counterpartyId", "type", "createdAt" DESC, "id" DESC
     `,
   ]);

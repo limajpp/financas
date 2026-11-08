@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { AccountManager } from "@/components/accounts/account-manager";
 import { listAccounts } from "@/server/accounts";
 import { listCards } from "@/server/cards";
+import { generateRecurringSafely } from "@/server/recurring";
 import { getCurrentSpace } from "@/server/session";
 import { accountBalances, cardsInvoices } from "@/server/transactions";
 
@@ -25,6 +26,8 @@ export default function ContasPage() {
 
 async function Accounts() {
   const space = await getCurrentSpace();
+  // Subscriptions charged up to today first, so the balances include them (task 13).
+  await generateRecurringSafely(space.id);
   const [accounts, cards, balances] = await Promise.all([
     listAccounts(space.id, { includeArchived: true }),
     listCards(space.id, { includeArchived: true }),

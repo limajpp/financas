@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
+import { undoSubscriptionAction } from "@/app/(app)/assinaturas/actions";
 import {
   createTransactionAction,
   createTransferAction,
@@ -125,6 +126,8 @@ export function RegisterForm({
   const [chosenInvoice, setChosenInvoice] = useState<CalendarDate | null>(null);
   // "Parcelado": the number of installments, or null (task 12).
   const [installmentCount, setInstallmentCount] = useState<number | null>(null);
+  // "Assinatura": the expense repeats every month on its day (task 13).
+  const [subscriptionOn, setSubscription] = useState(false);
   const [description, setDescription] = useState("");
   const [alias, setAlias] = useState("");
   const [documentText, setDocumentText] = useState("");
@@ -140,6 +143,7 @@ export function RegisterForm({
   const resetRef = useRef<() => void>(() => {});
   const ids = {
     installments: useId(),
+    subscription: useId(),
     installmentCount: useId(),
     from: useId(),
     to: useId(),
@@ -165,6 +169,7 @@ export function RegisterForm({
   // Only a credit purchase can be in installments; anything else turns it off.
   const canSplit = kind === "EXPENSE" && payment.method === "CREDIT";
   const installments = canSplit ? installmentCount : null;
+  const subscription = kind === "EXPENSE" && subscriptionOn;
   const split =
     installments !== null && cents >= installments ? splitAmount(cents, installments) : null;
 
@@ -279,6 +284,7 @@ export function RegisterForm({
   function switchKind(next: Kind) {
     if (next === kind) return;
     setInstallmentCount(null);
+    setSubscription(false);
     // Another kind of entry: a retry after a network error must not reuse the previous one's id
     // (the server would answer with the entry that may have arrived, of the other kind).
     clientId.current = null;
@@ -315,6 +321,7 @@ export function RegisterForm({
     setDate(today);
     setChosenInvoice(null);
     setInstallmentCount(null);
+    setSubscription(false);
     setDescription("");
     setAlias("");
     setDocumentText("");
@@ -357,6 +364,7 @@ export function RegisterForm({
                 counterpartyDocument: documentText,
                 description,
                 installments,
+                subscription,
               });
       } catch {
         // Offline or a server error: keep everything (and the clientId, so a retry can't
@@ -370,14 +378,27 @@ export function RegisterForm({
       }
       const id = result.id;
       const count = kind === "TRANSFER" ? null : installments;
+      const isSubscription = subscription;
       saved.current = true;
-      toast(`${label} de ${formatBRL(amount)}${count ? ` em ${count}×` : ""} salva`, {
+      const message = isSubscription
+        ? `Assinatura de ${formatBRL(amount)} salva`
+        : `${label} de ${formatBRL(amount)}${count ? ` em ${count}×` : ""} salva`;
+      toast(message, {
         duration: 5_000,
         action: {
           label: "Desfazer",
           onClick: async () => {
-            // A purchase in installments goes whole: from the 1st on.
-            const undone = await deleteTransactionAction(id, count ? "following" : "this");
+            // A purchase in installments goes whole (from the 1st on); a new subscription goes
+            // with its rule.
+            let undone: Awaited<ReturnType<typeof deleteTransactionAction>>;
+            try {
+              undone = isSubscription
+                ? await undoSubscriptionAction(id)
+                : await deleteTransactionAction(id, count ? "following" : "this");
+            } catch {
+              toast.error("Não foi possível desfazer. Verifique a conexão.");
+              return;
+            }
             if (undone.ok) toast("Lançamento desfeito.");
             else toast.error(undone.error);
           },
@@ -516,7 +537,11 @@ export function RegisterForm({
               <Switch
                 id={ids.installments}
                 checked={installments !== null}
-                onCheckedChange={(on) => setInstallmentCount(on ? (installmentCount ?? 2) : null)}
+                onCheckedChange={(on) => {
+                  setInstallmentCount(on ? (installmentCount ?? 2) : null);
+                  // A purchase in installments isn't a subscription.
+                  if (on) setSubscription(false);
+                }}
               />
               <Label htmlFor={ids.installments}>Parcelado</Label>
             </div>
@@ -537,6 +562,28 @@ export function RegisterForm({
                   </option>
                 ))}
               </NativeSelect>
+            )}
+          </div>
+        )}
+
+        {kind === "EXPENSE" && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <div className="flex items-center gap-2">
+              <Switch
+                id={ids.subscription}
+                checked={subscription}
+                onCheckedChange={(on) => {
+                  setSubscription(on);
+                  if (on) setInstallmentCount(null);
+                }}
+              />
+              <Label htmlFor={ids.subscription}>Assinatura</Label>
+            </div>
+            {subscription && validDate && (
+              <p className="text-sm text-muted-foreground">
+                Repete todo dia {Number(date.slice(8, 10))}
+                {Number(date.slice(8, 10)) > 28 && " (nos meses mais curtos, no último dia)"}
+              </p>
             )}
           </div>
         )}

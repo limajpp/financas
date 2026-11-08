@@ -9,18 +9,19 @@ datasource db {
 
 // Fields match Better Auth's core user model, so task 3 only adds the session tables.
 model User {
-  id            String        @id @default(uuid(7))
-  name          String
-  email         String        @unique
-  emailVerified Boolean       @default(false)
-  image         String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  memberships   SpaceMember[]
-  personalSpace Space?        @relation("PersonalSpace")
-  sessions      Session[]
-  authAccounts  AuthAccount[]
-  transactions  Transaction[]
+  id             String          @id @default(uuid(7))
+  name           String
+  email          String          @unique
+  emailVerified  Boolean         @default(false)
+  image          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  memberships    SpaceMember[]
+  personalSpace  Space?          @relation("PersonalSpace")
+  sessions       Session[]
+  authAccounts   AuthAccount[]
+  transactions   Transaction[]
+  recurringRules RecurringRule[]
 }
 
 // Better Auth tables. Field names follow its core schema.
@@ -85,13 +86,13 @@ enum SpaceType {
 // Every piece of data belongs to a space. v1 only has the personal one.
 // personalOwnerId is set only on PERSONAL spaces (CHECK in the migration): one per user.
 model Space {
-  id                 String         @id @default(uuid(7))
+  id                 String          @id @default(uuid(7))
   type               SpaceType
   name               String
-  personalOwnerId    String?        @unique
-  personalOwner      User?          @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  personalOwnerId    String?         @unique
+  personalOwner      User?           @relation("PersonalSpace", fields: [personalOwnerId], references: [id], onDelete: Cascade)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   // Set once the default category list was created, so archived defaults never come back.
   categoriesSeededAt DateTime?
   members            SpaceMember[]
@@ -100,6 +101,7 @@ model Space {
   cards              Card[]
   counterparties     Counterparty[]
   transactions       Transaction[]
+  recurringRules     RecurringRule[]
 }
 
 enum SpaceRole {
@@ -128,22 +130,23 @@ enum CategoryType {
 /// Two-level tree (parent → children). Depth, sibling-name uniqueness and type inheritance are
 /// enforced by src/domain/categories.ts, not by the database.
 model Category {
-  id                     String         @id @default(uuid(7))
+  id                     String          @id @default(uuid(7))
   spaceId                String
-  space                  Space          @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space                  Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   parentId               String?
-  parent                 Category?      @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction)
-  children               Category[]     @relation("CategoryChildren")
+  parent                 Category?       @relation("CategoryChildren", fields: [parentId], references: [id], onDelete: NoAction)
+  children               Category[]      @relation("CategoryChildren")
   transactions           Transaction[]
   defaultForCounterparty Counterparty[]
   name                   String
   type                   CategoryType
   icon                   String
   color                  String
-  isFixed                Boolean        @default(false)
+  isFixed                Boolean         @default(false)
   archivedAt             DateTime?
-  createdAt              DateTime       @default(now())
-  updatedAt              DateTime       @updatedAt
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+  recurringRules         RecurringRule[]
 
   @@index([spaceId, type])
   @@index([parentId])
@@ -168,9 +171,10 @@ model Account {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  cards        Card[]
-  transactions Transaction[] @relation("AccountTransactions")
-  transfersIn  Transaction[] @relation("AccountTransfersIn")
+  cards          Card[]
+  transactions   Transaction[]   @relation("AccountTransactions")
+  transfersIn    Transaction[]   @relation("AccountTransfersIn")
+  recurringRules RecurringRule[]
 
   @@index([spaceId])
 }
@@ -178,19 +182,20 @@ model Account {
 /// A credit card. The invoice a purchase falls on comes from the cycle valid on the purchase date
 /// (src/domain/invoice-cycle.ts).
 model Card {
-  id           String        @id @default(uuid(7))
-  spaceId      String
-  space        Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  id             String          @id @default(uuid(7))
+  spaceId        String
+  space          Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   /// The account that pays the invoice.
-  accountId    String
-  account      Account       @relation(fields: [accountId], references: [id], onDelete: NoAction)
-  name         String
-  limitCents   Int?
-  archivedAt   DateTime?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  cycles       CardCycle[]
-  transactions Transaction[]
+  accountId      String
+  account        Account         @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  name           String
+  limitCents     Int?
+  archivedAt     DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  cycles         CardCycle[]
+  transactions   Transaction[]
+  recurringRules RecurringRule[]
 
   @@index([spaceId])
   @@index([accountId])
@@ -229,21 +234,22 @@ enum PaymentMethod {
 /// The memory per merchant/person: the name you typed, plus (task 10) the names and CPF/CNPJ the
 /// bank shows and the description and category to suggest.
 model Counterparty {
-  id                 String        @id @default(uuid(7))
+  id                 String          @id @default(uuid(7))
   spaceId            String
-  space              Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  space              Space           @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   name               String
   /// normalizeName(name): one counterparty per name, regardless of case and accents.
   nameKey            String
-  aliases            String[]      @default([])
+  aliases            String[]        @default([])
   /// CPF or CNPJ, normalized: digits and (alphanumeric CNPJ) uppercase letters.
   document           String?
   defaultDescription String?
   defaultCategoryId  String?
-  defaultCategory    Category?     @relation(fields: [defaultCategoryId], references: [id], onDelete: NoAction)
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  defaultCategory    Category?       @relation(fields: [defaultCategoryId], references: [id], onDelete: NoAction)
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
   transactions       Transaction[]
+  recurringRules     RecurringRule[]
 
   @@unique([spaceId, nameKey])
   @@index([defaultCategoryId])
@@ -289,10 +295,16 @@ model Transaction {
   installmentNumber  Int?
   /// 2–24.
   installmentTotal   Int?
+  /// The subscription that charged this (task 13), and for which month ("YYYY-MM"): one charge
+  /// per rule and month.
+  recurringRuleId    String?
+  recurringRule      RecurringRule?  @relation(fields: [recurringRuleId], references: [id], onDelete: NoAction)
+  recurringMonth     String?
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 
   @@unique([spaceId, clientId])
+  @@unique([recurringRuleId, recurringMonth])
   @@index([installmentGroupId])
   @@index([spaceId, date])
   @@index([accountId])
@@ -301,4 +313,64 @@ model Transaction {
   @@index([categoryId])
   @@index([counterpartyId])
   @@index([createdById])
+}
+
+enum RuleStatus {
+  ACTIVE
+  PAUSED
+  CANCELED
+}
+
+/// A subscription: a monthly expense the app charges by itself (task 13). Account, card and
+/// method follow an expense's combinations (CHECK in the migration).
+model RecurringRule {
+  id             String                @id @default(uuid(7))
+  spaceId        String
+  space          Space                 @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdById    String
+  createdBy      User                  @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  amountCents    Int
+  /// 1–31; a day the month lacks means its last day.
+  dayOfMonth     Int
+  method         PaymentMethod
+  accountId      String?
+  account        Account?              @relation(fields: [accountId], references: [id], onDelete: NoAction)
+  cardId         String?
+  card           Card?                 @relation(fields: [cardId], references: [id], onDelete: NoAction)
+  categoryId     String?
+  category       Category?             @relation(fields: [categoryId], references: [id], onDelete: NoAction)
+  counterpartyId String?
+  counterparty   Counterparty?         @relation(fields: [counterpartyId], references: [id], onDelete: NoAction)
+  description    String?
+  status         RuleStatus            @default(ACTIVE)
+  canceledAt     DateTime?
+  /// The month of the first charge ("YYYY-MM").
+  firstMonth     String
+  /// The first month the generation hasn't looked at yet (src/domain/recurring.ts).
+  nextMonth      String
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  transactions   Transaction[]
+  changes        RecurringRuleChange[]
+
+  @@index([spaceId, status, nextMonth])
+  @@index([accountId])
+  @@index([cardId])
+  @@index([categoryId])
+  @@index([counterpartyId])
+  @@index([createdById])
+}
+
+/// A change in a subscription's amount, for the "assinatura mudou de valor" insight (task 24).
+model RecurringRuleChange {
+  id            String        @id @default(uuid(7))
+  ruleId        String
+  rule          RecurringRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  previousCents Int
+  amountCents   Int
+  /// The day of the change, a calendar day.
+  changedOn     DateTime      @db.Date
+  createdAt     DateTime      @default(now())
+
+  @@index([ruleId, createdAt])
 }

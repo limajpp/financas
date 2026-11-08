@@ -6,6 +6,7 @@ import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
 import type { CycleVersion } from "@/domain/invoice-cycle";
 import { planInstallments } from "@/domain/installments";
+import { addMonthsToMonth, monthOf } from "@/domain/recurring";
 import { defaultInvoiceToPay, invoiceSummaries } from "@/domain/invoices";
 import {
   type CardPaymentInput,
@@ -21,6 +22,7 @@ import {
 } from "@/domain/transactions";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { updateRecurringRule } from "@/server/recurring";
 
 const transactionSelect = {
   id: true,
@@ -39,6 +41,8 @@ const transactionSelect = {
   installmentGroupId: true,
   installmentNumber: true,
   installmentTotal: true,
+  recurringRuleId: true,
+  recurringMonth: true,
   counterparty: { select: { id: true, name: true } },
 } as const;
 
@@ -208,6 +212,29 @@ export async function createTransaction(
       counterpartyId: await counterpartyIdFor(spaceId, input),
       ...entryData(input, checked.invoice),
     };
+    if (input.subscription) {
+      // A subscription: the rule and its 1st charge, in the month of the date (task 13).
+      const month = monthOf(input.date);
+      return {
+        ok: true,
+        data: {
+          rule: {
+            createdById: userId,
+            amountCents: input.amountCents,
+            dayOfMonth: Number(input.date.slice(8, 10)),
+            method: input.method,
+            accountId: input.accountId,
+            cardId: input.cardId,
+            categoryId: input.categoryId,
+            counterpartyId: row.counterpartyId,
+            description: input.description,
+            firstMonth: month,
+            nextMonth: addMonthsToMonth(month, 1),
+          },
+          charge: { ...row, recurringMonth: month },
+        },
+      };
+    }
     if (input.installments === null) return { ok: true, data: row };
 
     // A purchase in installments: one row per installment, one invoice after another.
@@ -231,6 +258,10 @@ export async function createTransaction(
 }
 
 type NewRow = Omit<Prisma.TransactionUncheckedCreateInput, "spaceId" | "clientId">;
+type NewSubscription = {
+  rule: Omit<Prisma.RecurringRuleUncheckedCreateInput, "spaceId">;
+  charge: Omit<NewRow, "recurringRuleId">;
+};
 
 /** The clientId of installment `number`: the device's id for the 1st, `id:N` for the others. */
 const installmentClientId = (clientId: string, number: number) =>
@@ -245,7 +276,7 @@ async function createIdempotent(
   spaceId: string,
   clientId: string,
   prepare: () => Promise<
-    { ok: true; data: NewRow | NewRow[] } | { ok: false; error: TransactionError }
+    { ok: true; data: NewRow | NewRow[] | NewSubscription } | { ok: false; error: TransactionError }
   >,
 ): Promise<CreateTransactionResult> {
   const existing = await findByClientId(spaceId, clientId);
@@ -255,6 +286,21 @@ async function createIdempotent(
   if (!prepared.ok) return prepared;
 
   try {
+    if ("rule" in prepared.data) {
+      // The rule and its 1st charge go together (and a clientId clash undoes both).
+      const { rule, charge } = prepared.data;
+      const row = await db.$transaction(async (tx) => {
+        const created = await tx.recurringRule.create({
+          data: { ...rule, spaceId },
+          select: { id: true },
+        });
+        return tx.transaction.create({
+          data: { ...charge, spaceId, clientId, recurringRuleId: created.id },
+          select: transactionSelect,
+        });
+      });
+      return { ok: true, transaction: toTransaction(row), created: true };
+    }
     if (Array.isArray(prepared.data)) {
       // Installments: all in one statement (all or none); the 1st carries the device's id.
       await db.transaction.createMany({
@@ -471,6 +517,7 @@ export async function updateTransaction(
   id: string,
   input: EntryInput,
   scope: InstallmentScope = "this",
+  { updateRule = false }: { updateRule?: boolean } = {},
 ): Promise<TransactionResult> {
   const current = await db.transaction.findFirst({
     where: { id, spaceId },
@@ -486,9 +533,17 @@ export async function updateTransaction(
       invoiceOverridden: true,
       installmentGroupId: true,
       installmentNumber: true,
+      recurringRuleId: true,
     },
   });
   if (!current) return { ok: false, error: "NOT_FOUND" };
+  if (input.subscription && current.recurringRuleId === null) {
+    return { ok: false, error: "SUBSCRIPTION_ON_EDIT" };
+  }
+  // A charge stays an expense (the database refuses otherwise).
+  if (current.recurringRuleId !== null && input.type !== "EXPENSE") {
+    return { ok: false, error: "SUBSCRIPTION_LOCKED" };
+  }
   if (current.type !== "EXPENSE" && current.type !== "INCOME") {
     return { ok: false, error: "NOT_EDITABLE" };
   }
@@ -523,6 +578,12 @@ export async function updateTransaction(
       },
       select: transactionSelect,
     });
+    // "Atualizar a assinatura?" — yes: the next charges use the new amount, and it's recorded.
+    if (updateRule && current.recurringRuleId !== null) {
+      await updateRecurringRule(spaceId, current.recurringRuleId, {
+        amountCents: input.amountCents,
+      });
+    }
     return { ok: true, transaction: toTransaction(row) };
   } catch (error) {
     // Deleted meanwhile (another tab or device).

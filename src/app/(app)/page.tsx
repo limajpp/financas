@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 
-import { getCurrentUser } from "@/server/session";
+import { generateRecurringSafely } from "@/server/recurring";
+import { getCurrentSpace, getCurrentUser } from "@/server/session";
 
 export default function HomePage() {
   return (
@@ -14,6 +15,8 @@ export default function HomePage() {
 }
 
 async function Greeting() {
-  const user = await getCurrentUser();
+  const [user, space] = await Promise.all([getCurrentUser(), getCurrentSpace()]);
+  // Opening the app charges the subscriptions due up to today (task 13).
+  await generateRecurringSafely(space.id);
   return <h1 className="text-2xl font-semibold tracking-tight">Olá, {user.name}</h1>;
 }
