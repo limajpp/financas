@@ -323,6 +323,42 @@ describe("compras parceladas", () => {
     ).toEqual(["2026-11-10", "2026-12-10", "2027-01-10", "2027-02-10"]);
   });
 
+  it("CA7: o fechamento é antecipado: a fatura antiga, aberta na mudança, mantém a parcela", async () => {
+    const s = await setup();
+    const card = await createCard(
+      s.spaceId,
+      cardSchema.parse({
+        name: "Cartão Verde",
+        accountId: s.accountId,
+        closingDay: 10,
+        dueDay: 17,
+      }),
+    );
+    if (!card.ok) throw new Error(card.error);
+    at("2026-05-20");
+    const first = await createTransaction(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      purchase(s, {
+        cardId: card.card.id,
+        date: "2026-05-20",
+        installments: 4,
+        amountCents: 40_000,
+      }),
+    );
+    if (!first.ok) throw new Error(first.error);
+    at("2026-07-07");
+    await updateCard(
+      s.spaceId,
+      card.card.id,
+      cardSchema.parse({ name: "Cartão Verde", accountId: s.accountId, closingDay: 5, dueDay: 12 }),
+    );
+    expect(
+      (await groupRows(first.transaction.installmentGroupId!)).map((r) => day(r.invoiceDueDate)),
+    ).toEqual(["2026-06-17", "2026-07-17", "2026-08-12", "2026-09-12"]);
+  });
+
   it("CA8: a sugestão de categoria do estabelecimento conta a compra parcelada uma vez", async () => {
     const s = await setup();
     await buy(s, { installments: null, amountCents: 1_000, categoryId: s.lazer.id });
