@@ -655,7 +655,7 @@ describe("lançamentos", () => {
     const verde = await account(ana.spaceId, "Banco Verde");
     const gasto = await create(ana, { method: "PIX", accountId: azul.id });
 
-    expect(await deleteTransaction(ana.spaceId, gasto.id)).toEqual({ ok: true });
+    expect(await deleteTransaction(ana.spaceId, gasto.id)).toEqual({ ok: true, count: 1 });
     expect(await deleteTransaction(ana.spaceId, gasto.id)).toEqual({
       ok: false,
       error: "NOT_FOUND",

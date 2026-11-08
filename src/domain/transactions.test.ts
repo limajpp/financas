@@ -50,6 +50,7 @@ function pix(overrides: Partial<EntryInput> = {}): EntryInput {
     counterpartyAlias: null,
     counterpartyDocument: null,
     description: null,
+    installments: null,
     ...overrides,
   };
 }
@@ -223,6 +224,18 @@ describe("validateEntry: a manual invoice on edit", () => {
         current: { ...current, invoiceOverridden: false },
       }),
     ).toEqual({ ok: false, error: "INVALID_INVOICE" });
+  });
+});
+
+describe("validateEntry: installments", () => {
+  it("needs at least a cent per installment", () => {
+    expect(validateEntry(credit({ amountCents: 5, installments: 10 }), refs, { today })).toEqual({
+      ok: false,
+      error: "TOO_SMALL_FOR_INSTALLMENTS",
+    });
+    expect(validateEntry(credit({ amountCents: 10, installments: 10 }), refs, { today }).ok).toBe(
+      true,
+    );
   });
 });
 

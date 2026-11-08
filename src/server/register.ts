@@ -17,12 +17,26 @@ import { db } from "@/lib/db";
 import { selectableAccounts } from "@/server/accounts";
 import { selectableCards } from "@/server/cards";
 
+/**
+ * Usage counts a purchase in installments once (its 1st installment): otherwise a 10× purchase
+ * would count 10 times, and its future dates would keep it on top for months.
+ */
+const ONCE_PER_PURCHASE = {
+  OR: [{ installmentNumber: null }, { installmentNumber: 1 }],
+} satisfies Prisma.TransactionWhereInput;
+
 /** How many entries of `type` used each category in the last USAGE_WINDOW_DAYS days. */
 export async function categoryUsage(spaceId: string, type: CategoryType): Promise<CategoryUsage[]> {
   const since = addDays(todayInSaoPaulo(), -USAGE_WINDOW_DAYS);
   const groups = await db.transaction.groupBy({
     by: ["categoryId"],
-    where: { spaceId, type, categoryId: { not: null }, date: { gte: calendarDateToDb(since) } },
+    where: {
+      spaceId,
+      type,
+      categoryId: { not: null },
+      date: { gte: calendarDateToDb(since) },
+      ...ONCE_PER_PURCHASE,
+    },
     _count: { _all: true },
     _max: { createdAt: true },
   });
@@ -67,7 +81,7 @@ export async function counterpartyMemory(
   limit = MEMORY_LIMIT,
 ) {
   const since = calendarDateToDb(addDays(todayInSaoPaulo(), -USAGE_WINDOW_DAYS));
-  const withCounterparty = { spaceId, counterpartyId: { not: null } };
+  const withCounterparty = { spaceId, counterpartyId: { not: null }, ...ONCE_PER_PURCHASE };
   const entryTypes = { in: ["EXPENSE", "INCOME"] as CategoryType[] };
   const [totals, recent, usage, descriptions] = await Promise.all([
     db.transaction.groupBy({
@@ -96,6 +110,7 @@ export async function counterpartyMemory(
         AND "counterpartyId" IS NOT NULL
         AND "description" IS NOT NULL
         AND "type" IN ('EXPENSE', 'INCOME')
+        AND ("installmentNumber" IS NULL OR "installmentNumber" = 1)
       ORDER BY "counterpartyId", "type", "createdAt" DESC, "id" DESC
     `,
   ]);

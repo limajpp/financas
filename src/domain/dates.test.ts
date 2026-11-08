@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   addDays,
+  addMonths,
   calendarDateToDb,
   dbToCalendarDate,
   formatCalendarDate,
@@ -63,5 +64,22 @@ describe("addDays", () => {
     expect(addDays("2028-02-28", 1)).toBe("2028-02-29");
     expect(addDays("2026-10-31", -90)).toBe("2026-08-02");
     expect(addDays("2026-10-31", 0)).toBe("2026-10-31");
+  });
+});
+
+describe("addMonths", () => {
+  it("CA2: keeps the day; a day the month lacks becomes its last day", () => {
+    expect(addMonths("2026-01-31", 1)).toBe("2026-02-28");
+    expect(addMonths("2028-01-31", 1)).toBe("2028-02-29");
+    expect(addMonths("2026-01-31", 2)).toBe("2026-03-31");
+    expect(addMonths("2026-01-31", 3)).toBe("2026-04-30");
+    expect(addMonths("2026-10-15", 0)).toBe("2026-10-15");
+  });
+
+  it("crosses years both ways", () => {
+    expect(addMonths("2026-11-30", 3)).toBe("2027-02-28");
+    expect(addMonths("2028-02-29", 12)).toBe("2029-02-28");
+    expect(addMonths("2026-03-31", -1)).toBe("2026-02-28");
+    expect(addMonths("2026-01-15", -13)).toBe("2024-12-15");
   });
 });

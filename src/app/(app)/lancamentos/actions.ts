@@ -2,7 +2,9 @@
 
 import { refresh } from "next/cache";
 
-import { TRANSACTION_ERROR_MESSAGES } from "@/domain/transactions";
+import { z } from "zod";
+
+import { INSTALLMENT_SCOPES, TRANSACTION_ERROR_MESSAGES } from "@/domain/transactions";
 import { type ActionFailure, type ActionResult, zodFailure } from "@/lib/action-result";
 import {
   cardPaymentSchema,
@@ -37,7 +39,12 @@ const FIELD_OF_ERROR: Partial<Record<ErrorCode, string>> = {
   SAME_ACCOUNT: "toAccountId",
   TO_ACCOUNT_NOT_FOUND: "toAccountId",
   TO_ACCOUNT_ARCHIVED: "toAccountId",
+  TOO_SMALL_FOR_INSTALLMENTS: "amountCents",
+  INSTALLMENT_AMOUNT_SCOPE: "amountCents",
+  INSTALLMENTS_ON_EDIT: "installments",
 };
+
+const scopeSchema = z.enum(INSTALLMENT_SCOPES).default("this");
 
 function failure(code: ErrorCode): ActionFailure {
   const error = TRANSACTION_ERROR_MESSAGES[code];
@@ -106,18 +113,31 @@ export async function createCardPaymentAction(
   return { ok: true, id: result.transaction.id };
 }
 
-export async function updateTransactionAction(id: unknown, input: unknown): Promise<ActionResult> {
+/** Edits an entry; for an installment, `scope` says whether the next ones change too. */
+export async function updateTransactionAction(
+  id: unknown,
+  input: unknown,
+  scope?: unknown,
+): Promise<ActionResult> {
   const space = await getCurrentSpace();
   const parsedId = transactionIdSchema.safeParse(id);
   if (!parsedId.success) return failure("NOT_FOUND");
+  const parsedScope = scopeSchema.safeParse(scope);
+  if (!parsedScope.success) return { ok: false, error: "Dados inválidos." };
   const parsed = entrySchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  return done(await updateTransaction(space.id, parsedId.data, parsed.data));
+  return done(await updateTransaction(space.id, parsedId.data, parsed.data, parsedScope.data));
 }
 
-export async function deleteTransactionAction(id: unknown): Promise<ActionResult> {
+/**
+ * Deletes an entry; for an installment, scope "following" also deletes the next ones of its
+ * purchase (the "Desfazer" of a purchase in installments sends it from the 1st).
+ */
+export async function deleteTransactionAction(id: unknown, scope?: unknown): Promise<ActionResult> {
   const space = await getCurrentSpace();
   const parsedId = transactionIdSchema.safeParse(id);
   if (!parsedId.success) return failure("NOT_FOUND");
-  return done(await deleteTransaction(space.id, parsedId.data));
+  const parsedScope = scopeSchema.safeParse(scope);
+  if (!parsedScope.success) return { ok: false, error: "Dados inválidos." };
+  return done(await deleteTransaction(space.id, parsedId.data, parsedScope.data));
 }

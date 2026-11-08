@@ -54,3 +54,18 @@ export function formatCalendarDate(date: CalendarDate): string {
 export function addDays(date: CalendarDate, n: number): CalendarDate {
   return dbToCalendarDate(new Date(calendarDateToDb(date).getTime() + n * 86_400_000));
 }
+
+/**
+ * The calendar day `n` months after `date`, on the same day of the month; a day the month lacks
+ * becomes its last day (2026-01-31 + 1 month = 2026-02-28). Always from the original day, so
+ * 2026-01-31 + 2 months is 2026-03-31, not 2026-03-28.
+ */
+export function addMonths(date: CalendarDate, n: number): CalendarDate {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  const month = y * 12 + (m - 1) + n;
+  const year = Math.floor(month / 12);
+  const monthIndex = month - year * 12;
+  const lastDay = new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+  const day = Math.min(d, lastDay);
+  return `${String(year).padStart(4, "0")}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}

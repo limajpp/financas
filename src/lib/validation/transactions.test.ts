@@ -31,6 +31,7 @@ describe("entrySchema", () => {
       counterpartyAlias: null,
       counterpartyDocument: null,
       description: null,
+      installments: null,
     });
   });
 
@@ -151,6 +152,36 @@ describe("entrySchema: counterparty alias and CPF/CNPJ", () => {
   it("refuses an alias over 60 characters", () => {
     expect(issues({ ...base, counterparty: "X", counterpartyAlias: "x".repeat(61) })).toEqual({
       counterpartyAlias: "O nome no extrato pode ter no máximo 60 caracteres.",
+    });
+  });
+});
+
+describe("entrySchema: installments", () => {
+  const credit = { ...base, method: "CREDIT", accountId: undefined, cardId };
+
+  it("takes 2 to 24 installments on a credit purchase and drops a manual invoice", () => {
+    expect(
+      entrySchema.parse({ ...credit, installments: 3, invoiceDueDate: "2026-11-12" }),
+    ).toMatchObject({ installments: 3, invoiceDueDate: null });
+    expect(entrySchema.parse({ ...credit, installments: "" })).toMatchObject({
+      installments: null,
+    });
+  });
+
+  it("refuses a count outside 2–24", () => {
+    for (const installments of [1, 25, 2.5]) {
+      expect(issues({ ...credit, installments })).toEqual({
+        installments: "Escolha de 2 a 24 parcelas.",
+      });
+    }
+  });
+
+  it("refuses installments off credit or on an income", () => {
+    expect(issues({ ...base, installments: 3 })).toEqual({
+      installments: "Só compras no crédito podem ser parceladas.",
+    });
+    expect(issues({ ...credit, type: "INCOME", installments: 3 })).toEqual({
+      installments: "Só compras no crédito podem ser parceladas.",
     });
   });
 });

@@ -3,6 +3,7 @@ import "server-only";
 import { type CardError, cycleChange, sortCards, validateCard } from "@/domain/cards";
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { CYCLE_EPOCH, cycleOn, invoiceFor } from "@/domain/invoice-cycle";
+import { replanGroupInvoices } from "@/domain/installments";
 import { recomputeInvoices } from "@/domain/transactions";
 import { db } from "@/lib/db";
 import type { CardInput } from "@/lib/validation/cards";
@@ -137,6 +138,7 @@ export async function updateCard(
           type: "EXPENSE",
           method: "CREDIT",
           invoiceOverridden: false,
+          installmentGroupId: null,
           date: { gte: validFrom },
         },
         select: { id: true, date: true, invoiceDueDate: true },
@@ -150,6 +152,54 @@ export async function updateCard(
           invoiceDueDate: p.invoiceDueDate && dbToCalendarDate(p.invoiceDueDate),
         })),
       );
+
+      // Installments (task 12): the groups with an installment whose invoice is due from the
+      // change on get their sequence redone; installments due before it stay.
+      const touched = await tx.transaction.findMany({
+        where: {
+          cardId: id,
+          installmentGroupId: { not: null },
+          invoiceDueDate: { gte: validFrom },
+        },
+        distinct: ["installmentGroupId"],
+        select: { installmentGroupId: true },
+      });
+      const groups = await tx.transaction.findMany({
+        where: {
+          cardId: id,
+          installmentGroupId: { in: touched.map((t) => t.installmentGroupId!) },
+        },
+        select: {
+          id: true,
+          installmentGroupId: true,
+          installmentNumber: true,
+          date: true,
+          invoiceDueDate: true,
+        },
+      });
+      const byGroup = new Map<string, typeof groups>();
+      for (const row of groups) {
+        byGroup.set(row.installmentGroupId!, [
+          ...(byGroup.get(row.installmentGroupId!) ?? []),
+          row,
+        ]);
+      }
+      for (const rows of byGroup.values()) {
+        const replanned = replanGroupInvoices(
+          rows.map((r) => ({
+            id: r.id,
+            number: r.installmentNumber!,
+            date: dbToCalendarDate(r.date),
+            invoiceDueDate: dbToCalendarDate(r.invoiceDueDate!),
+          })),
+          versions,
+        );
+        const dueFromChange = new Set(
+          rows.filter((r) => r.invoiceDueDate! >= validFrom).map((r) => r.id),
+        );
+        updates.push(...replanned.filter((u) => dueFromChange.has(u.id)));
+      }
+
       for (const update of updates) {
         await tx.transaction.update({
           where: { id: update.id },

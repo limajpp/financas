@@ -5,12 +5,14 @@ import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/da
 import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
 import type { CycleVersion } from "@/domain/invoice-cycle";
+import { planInstallments } from "@/domain/installments";
 import { defaultInvoiceToPay, invoiceSummaries } from "@/domain/invoices";
 import {
   type CardPaymentInput,
   type CurrentRefs,
   type EntryInput,
   type EntryRefs,
+  type InstallmentScope,
   type TransactionError,
   type TransferInput,
   validateCardPayment,
@@ -34,6 +36,9 @@ const transactionSelect = {
   invoiceOverridden: true,
   categoryId: true,
   description: true,
+  installmentGroupId: true,
+  installmentNumber: true,
+  installmentTotal: true,
   counterparty: { select: { id: true, name: true } },
 } as const;
 
@@ -195,22 +200,41 @@ export async function createTransaction(
   input: EntryInput,
 ): Promise<CreateTransactionResult> {
   return createIdempotent(spaceId, clientId, async () => {
-    const checked = validateEntry(input, await refsFor(spaceId, input), {
-      today: todayInSaoPaulo(),
-    });
+    const refs = await refsFor(spaceId, input);
+    const checked = validateEntry(input, refs, { today: todayInSaoPaulo() });
     if (!checked.ok) return checked;
+    const row = {
+      createdById: userId,
+      counterpartyId: await counterpartyIdFor(spaceId, input),
+      ...entryData(input, checked.invoice),
+    };
+    if (input.installments === null) return { ok: true, data: row };
+
+    // A purchase in installments: one row per installment, one invoice after another.
+    const cycles = refs.cards.find((c) => c.id === input.cardId)!.cycles;
+    const installmentGroupId = crypto.randomUUID();
+    const plan = planInstallments(input, input.installments, cycles);
     return {
       ok: true,
-      data: {
-        createdById: userId,
-        counterpartyId: await counterpartyIdFor(spaceId, input),
-        ...entryData(input, checked.invoice),
-      },
+      data: plan.map((installment) => ({
+        ...row,
+        amountCents: installment.amountCents,
+        date: calendarDateToDb(installment.date),
+        invoiceDueDate: calendarDateToDb(installment.invoiceDueDate),
+        invoiceOverridden: false,
+        installmentGroupId,
+        installmentNumber: installment.number,
+        installmentTotal: plan.length,
+      })),
     };
   });
 }
 
 type NewRow = Omit<Prisma.TransactionUncheckedCreateInput, "spaceId" | "clientId">;
+
+/** The clientId of installment `number`: the device's id for the 1st, `id:N` for the others. */
+const installmentClientId = (clientId: string, number: number) =>
+  number === 1 ? clientId : `${clientId}:${number}`;
 
 /**
  * Creates a transaction once per `clientId`: if the space already has it, returns that one
@@ -220,7 +244,9 @@ type NewRow = Omit<Prisma.TransactionUncheckedCreateInput, "spaceId" | "clientId
 async function createIdempotent(
   spaceId: string,
   clientId: string,
-  prepare: () => Promise<{ ok: true; data: NewRow } | { ok: false; error: TransactionError }>,
+  prepare: () => Promise<
+    { ok: true; data: NewRow | NewRow[] } | { ok: false; error: TransactionError }
+  >,
 ): Promise<CreateTransactionResult> {
   const existing = await findByClientId(spaceId, clientId);
   if (existing) return { ok: true, transaction: existing, created: false };
@@ -229,6 +255,18 @@ async function createIdempotent(
   if (!prepared.ok) return prepared;
 
   try {
+    if (Array.isArray(prepared.data)) {
+      // Installments: all in one statement (all or none); the 1st carries the device's id.
+      await db.transaction.createMany({
+        data: prepared.data.map((row, i) => ({
+          ...row,
+          spaceId,
+          clientId: installmentClientId(clientId, i + 1),
+        })),
+      });
+      const first = await findByClientId(spaceId, clientId);
+      return { ok: true, transaction: first!, created: true };
+    }
     const row = await db.transaction.create({
       data: { ...prepared.data, spaceId, clientId },
       select: transactionSelect,
@@ -238,6 +276,21 @@ async function createIdempotent(
     if (isUniqueViolation(error)) {
       const winner = await findByClientId(spaceId, clientId);
       if (winner) return { ok: true, transaction: winner, created: false };
+      // A purchase in installments whose 1st was deleted ("só esta"): the next ones still hold
+      // the derived ids, and a resend must not fail.
+      if (Array.isArray(prepared.data)) {
+        const sibling = await db.transaction.findFirst({
+          where: {
+            spaceId,
+            clientId: {
+              in: prepared.data.map((_, i) => installmentClientId(clientId, i + 1)),
+            },
+          },
+          orderBy: { installmentNumber: "asc" },
+          select: transactionSelect,
+        });
+        if (sibling) return { ok: true, transaction: toTransaction(sibling), created: false };
+      }
     }
     throw error;
   }
@@ -408,22 +461,31 @@ export async function cardInvoices(spaceId: string, cardId: string) {
 /**
  * Edits an expense or income: everything but `clientId` and the author. A credit purchase's
  * invoice is recomputed unless the input brings a manual choice again.
+ *
+ * An installment (task 12) keeps its date, card, method and type; with scope "following" the
+ * category, counterparty and description also change on the next installments, and the amount
+ * only changes with scope "this".
  */
 export async function updateTransaction(
   spaceId: string,
   id: string,
   input: EntryInput,
+  scope: InstallmentScope = "this",
 ): Promise<TransactionResult> {
   const current = await db.transaction.findFirst({
     where: { id, spaceId },
     select: {
       type: true,
+      method: true,
+      amountCents: true,
       accountId: true,
       cardId: true,
       categoryId: true,
       date: true,
       invoiceDueDate: true,
       invoiceOverridden: true,
+      installmentGroupId: true,
+      installmentNumber: true,
     },
   });
   if (!current) return { ok: false, error: "NOT_FOUND" };
@@ -436,6 +498,16 @@ export async function updateTransaction(
     date: dbToCalendarDate(current.date),
     invoiceDueDate: current.invoiceDueDate && dbToCalendarDate(current.invoiceDueDate),
   };
+
+  if (current.installmentGroupId !== null) {
+    return updateInstallments(spaceId, id, input, scope, {
+      ...current,
+      date: dbToCalendarDate(current.date),
+      invoiceDueDate: refs.invoiceDueDate ?? null,
+    });
+  }
+
+  if (input.installments !== null) return { ok: false, error: "INSTALLMENTS_ON_EDIT" };
   const checked = validateEntry(input, await refsFor(spaceId, input), {
     today: todayInSaoPaulo(),
     current: refs,
@@ -461,12 +533,94 @@ export async function updateTransaction(
   }
 }
 
+async function updateInstallments(
+  spaceId: string,
+  id: string,
+  input: EntryInput,
+  scope: InstallmentScope,
+  current: CurrentRefs & {
+    type: string;
+    method: string;
+    amountCents: number;
+    date: string;
+    invoiceDueDate: string | null;
+    installmentGroupId: string | null;
+    installmentNumber: number | null;
+  },
+): Promise<TransactionResult> {
+  const locked =
+    input.type !== current.type ||
+    input.method !== current.method ||
+    input.cardId !== current.cardId ||
+    input.date !== current.date ||
+    input.installments !== null;
+  if (locked) return { ok: false, error: "INSTALLMENT_LOCKED" };
+  if (scope === "following" && input.amountCents !== current.amountCents) {
+    return { ok: false, error: "INSTALLMENT_AMOUNT_SCOPE" };
+  }
+  // The invoice stays: installments follow the card's invoices, not a manual choice.
+  // The date is locked (checked above), and later installments are dated in the future by
+  // design: the "not in the future" rule doesn't apply to them.
+  const today = todayInSaoPaulo();
+  const checked = validateEntry(
+    { ...input, invoiceDueDate: null, installments: null },
+    await refsFor(spaceId, input),
+    { today: current.date > today ? current.date : today, current },
+  );
+  if (!checked.ok) return checked;
+
+  const counterpartyId = await counterpartyIdFor(spaceId, input);
+  const shared = { categoryId: input.categoryId, counterpartyId, description: input.description };
+  // All or nothing: "esta e as próximas" never ends half applied.
+  const count = await db.$transaction(async (tx) => {
+    const updated = await tx.transaction.updateMany({
+      where: { id, spaceId },
+      data: { ...shared, amountCents: input.amountCents },
+    });
+    if (updated.count > 0 && scope === "following") {
+      await tx.transaction.updateMany({
+        where: {
+          spaceId,
+          installmentGroupId: current.installmentGroupId,
+          installmentNumber: { gt: current.installmentNumber! },
+        },
+        data: shared,
+      });
+    }
+    return updated.count;
+  });
+  if (count === 0) return { ok: false, error: "NOT_FOUND" };
+  const row = await db.transaction.findFirstOrThrow({
+    where: { id, spaceId },
+    select: transactionSelect,
+  });
+  return { ok: true, transaction: toTransaction(row) };
+}
+
+/**
+ * Deletes an entry. For an installment, scope "following" also deletes the next ones of its
+ * purchase (the earlier ones stay); "this" deletes only it, and the others keep their numbers.
+ */
 export async function deleteTransaction(
   spaceId: string,
   id: string,
-): Promise<{ ok: true } | { ok: false; error: "NOT_FOUND" }> {
-  const { count } = await db.transaction.deleteMany({ where: { id, spaceId } });
-  return count === 1 ? { ok: true } : { ok: false, error: "NOT_FOUND" };
+  scope: InstallmentScope = "this",
+): Promise<{ ok: true; count: number } | { ok: false; error: "NOT_FOUND" }> {
+  const row = await db.transaction.findFirst({
+    where: { id, spaceId },
+    select: { installmentGroupId: true, installmentNumber: true },
+  });
+  if (!row) return { ok: false, error: "NOT_FOUND" };
+  const where =
+    scope === "following" && row.installmentGroupId !== null
+      ? {
+          spaceId,
+          installmentGroupId: row.installmentGroupId,
+          installmentNumber: { gte: row.installmentNumber! },
+        }
+      : { id, spaceId };
+  const { count } = await db.transaction.deleteMany({ where });
+  return count > 0 ? { ok: true, count } : { ok: false, error: "NOT_FOUND" };
 }
 
 /** Today's balance (end of day in São Paulo) of every account in the space, by account id. */

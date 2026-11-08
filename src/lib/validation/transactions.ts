@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ALIAS_MAX } from "@/domain/counterparty-memory";
 import { isCalendarDate } from "@/domain/dates";
 import { DOCUMENT_ERROR_MESSAGES, parseDocument } from "@/domain/document";
+import { INSTALLMENTS_MAX, INSTALLMENTS_MIN } from "@/domain/installments";
 import { MAX_AMOUNT_CENTS } from "@/domain/money";
 import {
   COUNTERPARTY_NAME_MAX,
@@ -69,6 +70,13 @@ export const entrySchema = z
       ALIAS_MAX,
       `O nome no extrato pode ter no máximo ${ALIAS_MAX} caracteres.`,
     ),
+    installments: optional(
+      z
+        .number({ error: "Escolha de 2 a 24 parcelas." })
+        .int({ error: "Escolha de 2 a 24 parcelas." })
+        .min(INSTALLMENTS_MIN, { error: "Escolha de 2 a 24 parcelas." })
+        .max(INSTALLMENTS_MAX, { error: "Escolha de 2 a 24 parcelas." }),
+    ),
     counterpartyDocument: optionalText(40, DOCUMENT_ERROR_MESSAGES.INVALID_LENGTH).transform(
       (text, ctx) => {
         if (text === null) return null;
@@ -93,12 +101,25 @@ export const entrySchema = z
       });
       return z.NEVER;
     }
+    if (entry.installments !== null && (entry.type !== "EXPENSE" || entry.method !== "CREDIT")) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["installments"],
+        message: "Só compras no crédito podem ser parceladas.",
+      });
+      return z.NEVER;
+    }
     if (entry.method === "CREDIT") {
       if (!entry.cardId) {
         ctx.addIssue({ code: "custom", path: ["cardId"], message: "Escolha o cartão." });
         return z.NEVER;
       }
-      return { ...entry, accountId: null };
+      // Installments follow the card's invoices: no manual invoice choice.
+      return {
+        ...entry,
+        accountId: null,
+        invoiceDueDate: entry.installments !== null ? null : entry.invoiceDueDate,
+      };
     }
     if (!entry.accountId) {
       ctx.addIssue({ code: "custom", path: ["accountId"], message: "Escolha a conta." });

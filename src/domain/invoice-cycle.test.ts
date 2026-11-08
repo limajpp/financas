@@ -7,6 +7,7 @@ import {
   invoiceFor,
   invoiceForDueDate,
   isCycleDay,
+  nextInvoice,
   shiftInvoice,
 } from "./invoice-cycle";
 
@@ -260,6 +261,118 @@ describe("invoiceForDueDate", () => {
 
   it("a date that isn't a due date of the cycle gives another due date", () => {
     expect(invoiceForDueDate(cycle(3, 10), "2026-11-11").dueDate).toBe("2026-11-10");
+  });
+});
+
+describe("nextInvoice", () => {
+  it("CA4: with a single cycle, it's the next invoice (shiftInvoice + 1), for every cycle", () => {
+    for (let closingDay = 1; closingDay <= 31; closingDay++) {
+      for (let dueDay = 1; dueDay <= 31; dueDay++) {
+        const c = cycle(closingDay, dueDay);
+        const versions = [{ ...c, validFrom: CYCLE_EPOCH }];
+        let invoice = invoiceFor(c, "2026-01-01");
+        for (let n = 0; n < 30; n++) {
+          const next = nextInvoice(versions, invoice);
+          expect(next).toEqual(shiftInvoice(c, invoice, 1));
+          invoice = next;
+        }
+      }
+    }
+  });
+
+  it("CA4: after a cycle change, follows the new cycle from the day it started", () => {
+    // 3/10, then 20/27 from 2026-11-10.
+    const versions = [
+      { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH },
+      { closingDay: 20, dueDay: 27, validFrom: "2026-11-10" },
+    ];
+    const first = invoiceFor(cycle(3, 10), "2026-10-20");
+    expect(first).toEqual({ closingDate: "2026-11-03", dueDate: "2026-11-10" });
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-11-20", dueDate: "2026-11-27" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
+  });
+
+  it("a change that starts after the next invoice closes waits for it", () => {
+    const versions = [
+      { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH },
+      { closingDay: 20, dueDay: 27, validFrom: "2026-12-05" },
+    ];
+    const first = invoiceFor(cycle(3, 10), "2026-10-20"); // closes 11-03
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-03", dueDate: "2026-12-10" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
+  });
+});
+
+describe("nextInvoice: cycle changes (review of task 12)", () => {
+  const base = { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH };
+  const first = invoiceFor(cycle(3, 10), "2026-10-20"); // closes 11-03, due 11-10
+
+  it("the closing moves and the due day stays: no invoice is repeated", () => {
+    const versions = [base, { closingDay: 5, dueDay: 10, validFrom: "2026-11-04" }];
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-05", dueDate: "2026-12-10" });
+  });
+
+  it("a change on a closing day doesn't reach the invoice that closed that day", () => {
+    const versions = [base, { closingDay: 20, dueDay: 27, validFrom: "2026-12-03" }];
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-03", dueDate: "2026-12-10" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
+  });
+
+  it("the closing moves earlier: the old invoice, still open at the change, keeps its turn", () => {
+    // 10/17, then 5/12 from 2026-07-07 (the 17/07 invoice closes 07-10, after the change).
+    const versions = [
+      { closingDay: 10, dueDay: 17, validFrom: CYCLE_EPOCH },
+      { closingDay: 5, dueDay: 12, validFrom: "2026-07-07" },
+    ];
+    let invoice = invoiceFor(cycle(10, 17), "2026-05-20");
+    const dues = [invoice.dueDate];
+    for (let i = 0; i < 3; i++) dues.push((invoice = nextInvoice(versions, invoice)).dueDate);
+    expect(dues).toEqual(["2026-06-17", "2026-07-17", "2026-08-12", "2026-09-12"]);
+  });
+
+  it("CA4: due dates always go forward, one invoice at a time, for random histories", () => {
+    let seed = 11;
+    const random = (n: number) => (seed = (seed * 48271) % 2147483647) % n;
+    for (let k = 0; k < 3_000; k++) {
+      const versions = [
+        { closingDay: 1 + random(31), dueDay: 1 + random(31), validFrom: CYCLE_EPOCH },
+        {
+          closingDay: 1 + random(31),
+          dueDay: 1 + random(31),
+          validFrom: `2026-${String(1 + random(12)).padStart(2, "0")}-${String(1 + random(28)).padStart(2, "0")}`,
+        },
+      ];
+      let invoice = invoiceFor(cycleOn(versions, "2025-11-15"), "2025-11-15");
+      for (let i = 0; i < 24; i++) {
+        const next = nextInvoice(versions, invoice);
+        expect(next.dueDate > invoice.dueDate).toBe(true);
+        expect(next.closingDate > invoice.closingDate).toBe(true);
+        // No invoice skipped: never 2+ months ahead in both the closing and the due date.
+        const months = (a: string, b: string) =>
+          (Number(b.slice(0, 4)) - Number(a.slice(0, 4))) * 12 +
+          Number(b.slice(5, 7)) -
+          Number(a.slice(5, 7));
+        expect(
+          months(invoice.closingDate, next.closingDate) >= 2 &&
+            months(invoice.dueDate, next.dueDate) >= 2,
+          JSON.stringify({ versions, invoice, next }),
+        ).toBe(false);
+        invoice = next;
+      }
+    }
   });
 });
 
