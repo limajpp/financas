@@ -58,8 +58,8 @@ export function InstallHint() {
       </h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Toque em Compartilhar{" "}
-        <Share aria-label="(ícone de compartilhar)" className="inline size-4" /> e depois em
-        Adicionar à Tela de Início. Ele abre em tela cheia, direto do ícone.
+        <Share role="img" aria-label="(ícone de compartilhar)" className="inline size-4" /> e depois
+        em Adicionar à Tela de Início. Ele abre em tela cheia, direto do ícone.
       </p>
       <Button variant="outline" size="sm" className="mt-3" onClick={dismiss}>
         Agora não

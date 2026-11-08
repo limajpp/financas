@@ -19,7 +19,8 @@ export const metadata: Metadata = {
   title: "Finanças",
   description: "Registre cada gasto na hora e entenda o seu mês.",
   applicationName: "Finanças",
-  // Opened from the iPhone's home screen: full screen, the status bar over the app's background.
+  // Opened from the iPhone's home screen: full screen, without Safari's bars. The "default" status
+  // bar sits above the page, so the content never goes under the clock.
   appleWebApp: { capable: true, title: "Finanças", statusBarStyle: "default" },
   formatDetection: { telephone: false },
 };
@@ -28,10 +29,8 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
-  ],
+  // The app has no dark mode yet: the browser's bars stay white too.
+  themeColor: "#ffffff",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

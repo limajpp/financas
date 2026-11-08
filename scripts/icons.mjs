@@ -1,5 +1,6 @@
 // Generates the app icons from assets/icon.svg: `node scripts/icons.mjs`. The PNGs are committed;
-// run it again only when the SVG changes. Uses sharp, which comes with Next.
+// run it again only when the SVG changes. Uses sharp, which Next installs as an optional
+// dependency (no need to declare it: the script only runs by hand).
 import { copyFile, mkdir } from "node:fs/promises";
 
 import sharp from "sharp";
