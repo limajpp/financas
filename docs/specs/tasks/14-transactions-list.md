@@ -135,6 +135,34 @@ Uma folha (ou diálogo, no computador) com os campos do tipo do lançamento:
 - **Categorizar em massa não segue o escopo das parcelas.** A seleção já diz exatamente o que mudar.
 - **Busca no banco:** a busca no nome do estabelecimento usa o nome sem acentos (`nameKey`). Nas observações, ela ignora maiúsculas, mas não acentos, porque o Postgres do projeto não tem a extensão `unaccent`.
 
+### Revisão
+
+O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já corrigidos.
+
+- **O período livre não existia no computador.** Os campos "De" e "Até" só estavam na folha de filtros do celular. Agora também ficam na barra de filtros do desktop.
+- **A busca podia perder letras:** se você continuasse digitando enquanto a página carregava, a resposta da busca anterior apagava o que tinha sido digitado depois. Os seletores tinham o mesmo problema, com duas mudanças rápidas seguidas. A barra agora guarda uma cópia própria dos filtros e só aceita a URL quando a mudança veio de fora (voltar, "Limpar filtros").
+- **Também corrigido:**
+  - `%` e `_` na busca eram curingas e passaram a ser caracteres;
+  - um lançamento excluído em outro aparelho e editado aqui mostra "Lançamento não encontrado." e a lista atualiza;
+  - "50 selecionados nesta lista", quando há mais páginas;
+  - a categoria escolhida na ação em massa é limpa quando a seleção muda de tipo, e com tipos misturados o seletor fica desativado, com a dica;
+  - o carregamento automático funciona mesmo quando a lista começa vazia;
+  - a coluna "Forma" aparece separada na tabela;
+  - as faturas oferecidas na edição de um pagamento são as que o servidor aceita, e um pagamento antigo pode ter a observação editada mantendo a fatura e a conta arquivada que já tinha;
+  - os filtros de categoria arquivada e de estabelecimento antigo aparecem selecionados;
+  - um cursor adulterado é recusado.
+- **Testes novos:**
+  - empate na hora de registro, com o id desempatando;
+  - o total do dia segue os filtros;
+  - o filtro por subcategoria;
+  - a conta inclui o pagamento de fatura que sai dela;
+  - os curingas da busca;
+  - editar como transferência ou como pagamento um lançamento de outro tipo;
+  - o pagamento antigo com conta arquivada.
+- **Aceito:**
+  - **Depois de editar ou categorizar, a lista volta para a primeira página.** As páginas carregadas a mais somem, e a posição da rolagem muda. Manter as páginas exigiria recarregar todas elas.
+  - **A página pesa um pouco mais:** cada filtro carrega as opções completas (categorias, estabelecimentos e a memória), e a busca lê os estabelecimentos do espaço. No volume de uma pessoa, é rápido.
+
 ## Fora do escopo
 
 - Exportar CSV.
