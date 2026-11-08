@@ -30,7 +30,7 @@ Registrar uma compra parcelada no crédito de uma vez. Uma compra de 10× vira 1
   - a parcela _i_ cai na (_i_ − 1)-ésima fatura depois da fatura da compra, seguindo a sequência de faturas do cartão: cada fatura vem logo depois do fechamento da anterior;
   - com um ciclo só, é o `shiftInvoice` da task 7;
   - **depois de uma mudança de ciclo,** a sequência passa a usar o ciclo novo a partir do dia em que ele começou a valer. É o que o banco faz: as parcelas que faltam caem nas faturas novas, uma por fatura.
-  - O cálculo é a função pura `nextInvoice(ciclos, fatura)`: a fatura que recebe as compras do dia seguinte ao fechamento. Se uma versão nova do ciclo começar antes de essa fatura fechar, ela passa a valer a partir do dia em que começou. A fatura fecha no início do dia do fechamento, então uma mudança feita nesse dia não alcança a fatura que fechou. Os vencimentos só andam para a frente: se a mudança muda o fechamento e mantém o vencimento, a fatura com o mesmo vencimento da anterior é pulada, e cada parcela fica numa fatura.
+  - O cálculo é a função pura `nextInvoice(ciclos, fatura)`: a fatura que recebe as compras do dia seguinte ao fechamento. Se uma versão nova do ciclo começar antes de essa fatura fechar, ela passa a valer a partir do dia em que começou, mas só assume se a fatura dela fechar antes da antiga: a antiga ainda guarda os dias anteriores à mudança. A fatura fecha no início do dia do fechamento, então uma mudança feita nesse dia não alcança a fatura que fechou. Os vencimentos só andam para a frente: se a mudança muda o fechamento e mantém o vencimento, a fatura com o mesmo vencimento da anterior é pulada, e cada parcela fica numa fatura.
 - A fatura de cada parcela fica gravada no `invoiceDueDate`, como nas compras à vista.
 
 ### Registro
@@ -112,6 +112,11 @@ O revisor (Opus, effort high) pediu mudanças por um problema grave, já corrigi
   - **Mudança no dia do fechamento:** a parcela saía da fatura que tinha fechado naquele dia.
   - **Correção:** a fatura fecha no início do dia do fechamento, e os vencimentos só andam para a frente.
   - **Testes novos:** os dois cenários, em unitário e em integração, e uma propriedade com 3.000 históricos aleatórios de duas versões e 24 faturas cada, em que vencimento e fechamento sempre crescem. O revisor mediu, no código antigo, 88 repetições e 703 vencimentos voltando para trás em 20.000 planos.
+- **Segunda rodada: pediu mudanças de novo, por outro problema grave que já existia no código original.**
+  - **O problema:** quando o fechamento é antecipado (10/17 para 5/12 em 07/07), a parcela pulava a fatura antiga, que ainda estava aberta na mudança e ainda guardava as compras até a véspera. Um mês ficava sem parcela, e a compra terminava um mês depois.
+  - **A correção:** a versão nova só assume se a fatura dela fechar antes da antiga. No caso típico, agora dá 17/06, 17/07, 12/08, 12/09.
+  - **Testes:** unitário e integração do caso típico, e uma propriedade de que nenhuma parcela salta 2 meses ou mais ao mesmo tempo no fechamento e no vencimento. Os dois testes falham com o código anterior.
+  - **O que resta:** o revisor mediu, no fuzz, um caso de borda que sobra com 2 versões (fechamento no dia 1 com a mudança no dia 1) em 720 mil passos. Fica aceito.
 - Também corrigido:
   - **Reenvio depois de excluir a 1ª parcela:** a fila offline reenviando a mesma compra dava erro 500 em toda tentativa. Agora devolve a compra que já existe;
   - **"Parcelado" desliga de verdade:** ao sair do crédito ou trocar de tipo, ele desliga. Antes só ficava escondido e voltava ligado;
