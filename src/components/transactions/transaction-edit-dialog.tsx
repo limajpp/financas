@@ -18,7 +18,8 @@ import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/componen
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type CalendarDate, formatCalendarDate } from "@/domain/dates";
-import { cycleOn, invoiceFor, invoiceForDueDate, shiftInvoice } from "@/domain/invoice-cycle";
+import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
+import { PAYABLE_PAST_INVOICES } from "@/domain/invoices";
 import { formatBRL, formatBRLInput, parseBRL } from "@/domain/money";
 import {
   CARD_PAYMENT_METHODS,
@@ -142,20 +143,26 @@ function EditForm({
       ? invoiceFor(cycleOn(card.cycles, date), date).dueDate
       : null;
   const invoiceChoices = (() => {
-    if (!card || !(method === "CREDIT" || type === "CARD_PAYMENT") || date < TRANSACTION_DATE_MIN) {
-      return [];
+    if (!card || date < TRANSACTION_DATE_MIN) return [];
+    const dues: string[] = [];
+    if (type === "CARD_PAYMENT") {
+      // What the server accepts (task 11): the open invoice, the next one and the 12 before;
+      // plus the one the payment already has.
+      const cycle = cycleOn(card.cycles, today);
+      const open = invoiceFor(cycle, today);
+      for (let n = -PAYABLE_PAST_INVOICES; n <= 1; n++)
+        dues.push(shiftInvoice(cycle, open, n).dueDate);
+      if (item.invoiceDueDate) dues.push(item.invoiceDueDate);
+    } else if (method === "CREDIT") {
+      // A purchase's manual choice: the computed invoice ± the window (task 8).
+      const cycle = cycleOn(card.cycles, date);
+      const base = invoiceFor(cycle, date);
+      for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {
+        dues.push(shiftInvoice(cycle, base, n).dueDate);
+      }
+      if (invoiceDueDate) dues.push(invoiceDueDate);
     }
-    const cycle = cycleOn(card.cycles, type === "CARD_PAYMENT" ? invoiceDueDate || date : date);
-    const base =
-      type === "CARD_PAYMENT" && invoiceDueDate
-        ? invoiceForDueDate(cycle, invoiceDueDate)
-        : invoiceFor(cycle, date);
-    const dues = [];
-    for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {
-      dues.push(shiftInvoice(cycle, base, n).dueDate);
-    }
-    if (invoiceDueDate && !dues.includes(invoiceDueDate)) dues.push(invoiceDueDate);
-    return dues.sort();
+    return [...new Set(dues)].sort();
   })();
 
   async function run(action: () => Promise<ActionResult>, message: string) {
@@ -215,7 +222,13 @@ function EditForm({
             counterparty,
           },
           scope,
-          { updateRule: subscription && amountChanged && updateRule },
+          {
+            updateRule:
+              subscription &&
+              amountChanged &&
+              updateRule &&
+              item.recurringRule?.status !== "CANCELED",
+          },
         ),
       "Lançamento atualizado",
     );
@@ -331,11 +344,7 @@ function EditForm({
         </>
       )}
 
-      <FormField
-        id={ids.method}
-        label="Forma"
-        hint={installment ? "Para mudar a data ou o cartão, exclua e registre de novo." : undefined}
-      >
+      <FormField id={ids.method} label="Forma">
         <NativeSelect
           id={ids.method}
           value={method}
@@ -432,7 +441,15 @@ function EditForm({
         </FormField>
       )}
 
-      <FormField id={ids.date} label="Data">
+      <FormField
+        id={ids.date}
+        label="Data"
+        hint={
+          installment
+            ? "A data, o cartão e a forma de uma parcela não mudam. Para mudar, exclua e registre de novo."
+            : undefined
+        }
+      >
         <Input
           id={ids.date}
           type="date"

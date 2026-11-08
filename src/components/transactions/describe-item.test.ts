@@ -44,6 +44,8 @@ describe("describeItem", () => {
     ).toEqual({
       title: "Loja de Móveis",
       line: "Cartão Roxo · 3/10",
+      place: "Cartão Roxo · 3/10",
+      method: "Crédito",
       amount: `−${formatBRL(10_000)}`,
     });
   });

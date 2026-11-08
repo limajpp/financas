@@ -3,9 +3,11 @@ import { Suspense } from "react";
 
 import { TransactionFiltersBar, TransactionList } from "@/components/transactions/transaction-list";
 import { todayInSaoPaulo } from "@/domain/dates";
+import { db } from "@/lib/db";
 import { filtersToParams, parseFilters } from "@/lib/validation/transaction-filters";
 import { listAccounts } from "@/server/accounts";
 import { listCards } from "@/server/cards";
+import { listCategories } from "@/server/categories";
 import { generateRecurringSafely } from "@/server/recurring";
 import { registerData } from "@/server/register";
 import { getCurrentSpace } from "@/server/session";
@@ -32,11 +34,18 @@ async function Transactions({ searchParams }: { searchParams: Promise<Params> })
   await generateRecurringSafely(space.id);
   const today = todayInSaoPaulo();
   const filters = parseFilters(params, today);
-  const [page, accounts, cards, register] = await Promise.all([
+  const [page, accounts, cards, register, categories, filterCounterparty] = await Promise.all([
     listTransactions(space.id, filters),
     listAccounts(space.id, { includeArchived: true }),
     listCards(space.id, { includeArchived: true }),
     registerData(space.id),
+    listCategories(space.id, { includeArchived: true }),
+    filters.counterpartyId
+      ? db.counterparty.findFirst({
+          where: { id: filters.counterpartyId, spaceId: space.id },
+          select: { id: true, name: true },
+        })
+      : null,
   ]);
   const query = filtersToParams(filters).toString();
   const options = {
@@ -49,6 +58,20 @@ async function Transactions({ searchParams }: { searchParams: Promise<Params> })
     })),
     categories: { EXPENSE: register.EXPENSE.tree, INCOME: register.INCOME.tree },
     counterparties: register.counterparties,
+    filterCategories: categories.map((parent) => ({
+      id: parent.id,
+      name: parent.name,
+      archived: parent.archivedAt !== null,
+      children: parent.children.map((child) => ({
+        id: child.id,
+        name: child.name,
+        archived: child.archivedAt !== null || parent.archivedAt !== null,
+      })),
+    })),
+    filterCounterparty:
+      filterCounterparty && !register.counterparties.some((c) => c.id === filterCounterparty.id)
+        ? filterCounterparty
+        : null,
   };
   return (
     <div className="mt-4 grid gap-4">

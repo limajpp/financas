@@ -33,5 +33,18 @@ export function describeItem(item: ListItemView) {
   }
   if (item.recurringRuleId) line += " · Assinatura";
   const sign = item.type === "EXPENSE" ? "−" : item.type === "INCOME" ? "+" : "";
-  return { title, line, amount: `${sign}${formatBRL(item.amountCents)}` };
+  // The table splits the line: where the money is, and how it moved.
+  const place =
+    item.type === "TRANSFER"
+      ? `${item.account?.name} → ${item.toAccount?.name}`
+      : item.card
+        ? `${item.card.name}${item.installmentNumber ? ` · ${item.installmentNumber}/${item.installmentTotal}` : ""}`
+        : (item.account?.name ?? "");
+  return {
+    title,
+    line,
+    place,
+    method: PAYMENT_METHOD_LABELS[item.method],
+    amount: `${sign}${formatBRL(item.amountCents)}`,
+  };
 }

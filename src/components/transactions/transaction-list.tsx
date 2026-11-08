@@ -98,21 +98,20 @@ export function TransactionList({
     });
   }
 
-  // More entries load by themselves at the end of the list.
-  const sentinel = useRef<HTMLDivElement>(null);
+  // More entries load by themselves at the end of the list. A ref callback: the sentinel only
+  // exists while there are entries, and they may arrive after the first render.
   const loadMoreRef = useRef(loadMore);
   useEffect(() => {
     loadMoreRef.current = loadMore;
   });
-  useEffect(() => {
-    const element = sentinel.current;
+  const sentinel = (element: HTMLDivElement | null) => {
     if (!element) return;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) loadMoreRef.current();
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  };
 
   function toggle(id: string) {
     setSelected((current) => {
@@ -203,12 +202,13 @@ export function TransactionList({
                   <th className="px-3 py-2 font-medium">Descrição</th>
                   <th className="px-3 py-2 font-medium">Categoria</th>
                   <th className="px-3 py-2 font-medium">Conta ou cartão</th>
+                  <th className="px-3 py-2 font-medium">Forma</th>
                   <th className="px-3 py-2 text-right font-medium">Valor</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {items.map((item) => {
-                  const { title, line, amount } = describeItem(item);
+                  const { title, place, method, amount } = describeItem(item);
                   return (
                     <tr
                       key={item.id}
@@ -241,7 +241,11 @@ export function TransactionList({
                         </button>
                       </td>
                       <td className="px-3 py-2">{categoryName(item)}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{line}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {place}
+                        {item.recurringRuleId && " · Assinatura"}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{method}</td>
                       <td
                         className={cn(
                           "px-3 py-2 text-right whitespace-nowrap tabular-nums",
@@ -273,6 +277,7 @@ export function TransactionList({
 
       {selected.size > 0 && (
         <BulkBar
+          hasMore={cursor !== null}
           items={items.filter((i) => selected.has(i.id))}
           options={options}
           onDone={(ids, category) => {
@@ -381,21 +386,38 @@ function useApplyFilters() {
  * lose the focus) when the URL changes.
  */
 export function TransactionFiltersBar({
-  filters,
+  filters: fromUrl,
   options,
 }: {
   filters: TransactionFilters;
   options: ListOptions;
 }) {
-  const onApply = useApplyFilters();
+  const navigate = useApplyFilters();
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [q, setQ] = useState(filters.q ?? "");
-  // The URL changed elsewhere ("Limpar filtros", back button): follow it.
-  const [seenQ, setSeenQ] = useState(filters.q);
-  if (seenQ !== filters.q) {
-    setSeenQ(filters.q);
-    if ((q.trim() || undefined) !== filters.q) setQ(filters.q ?? "");
+  // The filters as the bar last set them. A navigation takes a moment to come back as props, and
+  // a change made meanwhile (another select, more letters in the search) must build on this, not
+  // on the props, or it would undo the previous one.
+  const [filters, setFilters] = useState(fromUrl);
+  const [q, setQ] = useState(fromUrl.q ?? "");
+  const [pushed, setPushed] = useState(() => filtersToParams(fromUrl).toString());
+  const [seen, setSeen] = useState(fromUrl);
+  if (seen !== fromUrl) {
+    setSeen(fromUrl);
+    // The URL changed elsewhere ("Limpar filtros", back button): follow it.
+    if (filtersToParams(fromUrl).toString() !== pushed) {
+      setPushed(filtersToParams(fromUrl).toString());
+      setFilters(fromUrl);
+      setQ(fromUrl.q ?? "");
+    }
   }
+
+  const onApply = (next: TransactionFilters) => {
+    setPushed(filtersToParams(next).toString());
+    setFilters(next);
+    navigate(next);
+  };
+  const set = (patch: Partial<TransactionFilters>) => onApply({ ...filters, ...patch });
+
   // The search goes to the URL a moment after typing stops.
   const latest = useRef({ filters, onApply });
   useEffect(() => {
@@ -414,7 +436,7 @@ export function TransactionFiltersBar({
   const month = filters.from.slice(0, 7);
   const shift = (n: number) => {
     const next = addMonthsToMonth(month, n);
-    onApply({ ...filters, ...monthRange(`${next}-01`) });
+    set(monthRange(`${next}-01`));
   };
   const count = activeFilterCount(filters);
 
@@ -450,7 +472,7 @@ export function TransactionFiltersBar({
         </Button>
       </div>
       <div className="hidden md:block">
-        <FilterFields filters={filters} options={options} onApply={onApply} inline />
+        <FilterFields filters={filters} options={options} onApply={set} inline />
       </div>
 
       <Dialog open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -461,7 +483,7 @@ export function TransactionFiltersBar({
               Escolha o que mostrar na lista.
             </DialogDescription>
           </DialogHeader>
-          <FilterFields filters={filters} options={options} onApply={onApply} />
+          <FilterFields filters={filters} options={options} onApply={set} />
           <Button
             variant="outline"
             onClick={() => onApply({ from: filters.from, to: filters.to, q: filters.q })}
@@ -477,15 +499,15 @@ export function TransactionFiltersBar({
 function FilterFields({
   filters,
   options,
-  onApply,
+  onApply: set,
   inline = false,
 }: {
   filters: TransactionFilters;
   options: ListOptions;
-  onApply: (filters: TransactionFilters) => void;
+  /** Applies a change on top of the bar's latest filters. */
+  onApply: (patch: Partial<TransactionFilters>) => void;
   inline?: boolean;
 }) {
-  const set = (patch: Partial<TransactionFilters>) => onApply({ ...filters, ...patch });
   const value = (v: string) => (v === "" ? undefined : v);
   const field = (label: string, control: React.ReactNode) => (
     <label className="grid gap-1 text-sm">
@@ -493,9 +515,10 @@ function FilterFields({
       {control}
     </label>
   );
-  const allCategories = [...options.categories.EXPENSE, ...options.categories.INCOME];
+  const archived = (name: string, isArchived: boolean) =>
+    isArchived ? `${name} (arquivada)` : name;
   return (
-    <div className={cn("grid gap-3", inline ? "grid-cols-3 lg:grid-cols-6" : "grid-cols-1")}>
+    <div className={cn("grid gap-3", inline ? "grid-cols-3 lg:grid-cols-4" : "grid-cols-1")}>
       {field(
         "Conta",
         <NativeSelect
@@ -550,12 +573,12 @@ function FilterFields({
         >
           <option value="">Todas as categorias</option>
           <option value="none">Sem categoria</option>
-          {allCategories.map((parent) => (
-            <optgroup key={parent.id} label={parent.name}>
-              <option value={parent.id}>{parent.name} (todas)</option>
+          {options.filterCategories.map((parent) => (
+            <optgroup key={parent.id} label={archived(parent.name, parent.archived)}>
+              <option value={parent.id}>{archived(parent.name, parent.archived)} (todas)</option>
               {parent.children.map((child) => (
                 <option key={child.id} value={child.id}>
-                  {child.name}
+                  {archived(child.name, child.archived)}
                 </option>
               ))}
             </optgroup>
@@ -570,6 +593,9 @@ function FilterFields({
           onChange={(e) => set({ counterpartyId: value(e.target.value) })}
         >
           <option value="">Todos os estabelecimentos</option>
+          {options.filterCounterparty && (
+            <option value={options.filterCounterparty.id}>{options.filterCounterparty.name}</option>
+          )}
           {[...options.counterparties]
             .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"))
             .map((c) => (
@@ -594,36 +620,38 @@ function FilterFields({
           ))}
         </NativeSelect>,
       )}
-      {!inline && (
-        <div className="grid grid-cols-2 gap-3">
-          {field(
-            "De",
-            <Input
-              type="date"
-              value={filters.from}
-              onChange={(e) => e.target.value && set({ from: e.target.value })}
-            />,
-          )}
-          {field(
-            "Até",
-            <Input
-              type="date"
-              value={filters.to}
-              onChange={(e) => e.target.value && set({ to: e.target.value })}
-            />,
-          )}
-        </div>
-      )}
+      <div className={cn("grid grid-cols-2 gap-3", inline && "col-span-3 lg:col-span-2")}>
+        {field(
+          "De",
+          <Input
+            type="date"
+            aria-label="De"
+            value={filters.from}
+            onChange={(e) => e.target.value && set({ from: e.target.value })}
+          />,
+        )}
+        {field(
+          "Até",
+          <Input
+            type="date"
+            aria-label="Até"
+            value={filters.to}
+            onChange={(e) => e.target.value && set({ to: e.target.value })}
+          />,
+        )}
+      </div>
     </div>
   );
 }
 
 function BulkBar({
+  hasMore,
   items,
   options,
   onDone,
   onCancel,
 }: {
+  hasMore: boolean;
   items: ListItemView[];
   options: ListOptions;
   onDone: (ids: string[], category: ListItemView["category"]) => void;
@@ -632,6 +660,12 @@ function BulkBar({
   const types = new Set(items.map((i) => i.type));
   const type = types.size === 1 ? ([...types][0] as "EXPENSE" | "INCOME") : null;
   const [categoryId, setCategoryId] = useState("none");
+  // Another type of selection: a category chosen for the previous one doesn't fit.
+  const [seenType, setSeenType] = useState(type);
+  if (seenType !== type) {
+    setSeenType(type);
+    setCategoryId("none");
+  }
   const [pending, startTransition] = useTransition();
 
   function applyCategory() {
@@ -670,33 +704,34 @@ function BulkBar({
     >
       <p className="text-sm font-medium">
         {items.length} {items.length === 1 ? "selecionado" : "selecionados"}
+        {hasMore && " nesta lista"}
       </p>
-      {type ? (
-        <>
-          <NativeSelect
-            aria-label="Nova categoria"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value)}
-            className="min-w-0 flex-1 md:max-w-64"
-          >
-            <option value="none">Sem categoria</option>
-            {options.categories[type].map((parent) => (
-              <optgroup key={parent.id} label={parent.name}>
-                <option value={parent.id}>{parent.name}</option>
-                {parent.children.map((child) => (
-                  <option key={child.id} value={child.id}>
-                    {child.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </NativeSelect>
-          <Button disabled={pending} onClick={applyCategory}>
-            {pending ? "Aplicando…" : "Aplicar"}
-          </Button>
-        </>
-      ) : (
-        <p className="flex-1 text-sm text-muted-foreground">
+      <NativeSelect
+        aria-label="Nova categoria"
+        value={categoryId}
+        disabled={!type}
+        aria-describedby={type ? undefined : "bulk-mixed"}
+        onChange={(e) => setCategoryId(e.target.value)}
+        className="min-w-0 flex-1 md:max-w-64"
+      >
+        <option value="none">Sem categoria</option>
+        {type &&
+          options.categories[type].map((parent) => (
+            <optgroup key={parent.id} label={parent.name}>
+              <option value={parent.id}>{parent.name}</option>
+              {parent.children.map((child) => (
+                <option key={child.id} value={child.id}>
+                  {child.name}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+      </NativeSelect>
+      <Button disabled={pending || !type} onClick={applyCategory}>
+        {pending ? "Aplicando…" : "Aplicar"}
+      </Button>
+      {!type && (
+        <p id="bulk-mixed" className="w-full text-sm text-muted-foreground">
           Selecione só despesas ou só receitas.
         </p>
       )}
