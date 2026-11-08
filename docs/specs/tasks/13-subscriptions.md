@@ -61,7 +61,7 @@ Registrar uma assinatura (streaming, academia, plano de celular) uma vez, e o ap
   - Pode ser uma data passada: você registra hoje a assinatura que cobrou no dia 5.
   - Dia 31 vira o dia da regra, e nos meses curtos cai no último dia.
 - **Idempotência:** a primeira cobrança leva o `clientId` do aparelho. Repetir o envio devolve o que já existe, sem criar uma segunda regra.
-- **Aviso:** "Assinatura de R$ 39,90 salva". O "Desfazer" apaga a cobrança e a regra, se ela ainda não tiver outras cobranças.
+- **Aviso:** "Assinatura de R$ 39,90 salva". O "Desfazer" desfaz a assinatura inteira: a regra e todas as cobranças dela. Com uma data passada, a tela inicial já gera os meses seguintes logo depois de salvar, e o "Desfazer" leva esses também. Desfazer uma cobrança gerada depois (task 14) apaga só ela.
 
 ### Mudanças e status
 
@@ -105,7 +105,7 @@ Registrar uma assinatura (streaming, academia, plano de celular) uma vez, e o ap
 - **Geração no dia 10 com cobrança no dia 15:** o mês atual ainda não gera. Gera na primeira abertura a partir do dia 15.
 - **Cobrança gerada excluída (task 14):** não volta. Se você quiser de novo, registra à mão.
 - **Valor alterado no mesmo dia duas vezes:** ficam duas mudanças no histórico, na ordem em que foram feitas.
-- **Desfazer depois de já existir a cobrança de outro mês:** apaga só a cobrança do aviso. A regra continua; cancelar é na tela de assinaturas (task 19).
+- **Desfazer uma assinatura com data passada:** a tela inicial gera os meses desde então logo depois de salvar, e o "Desfazer" apaga a regra e todas essas cobranças.
 
 ## Decisões
 
@@ -115,6 +115,23 @@ Registrar uma assinatura (streaming, academia, plano de celular) uma vez, e o ap
 - **Nunca gerar cobrança futura.** O saldo e as faturas mostram o que já aconteceu. O comprometido futuro (task 23) calcula os próximos meses a partir das regras, sem criar lançamentos.
 - **Só despesa.** "Assinatura" é o caso do design. Uma receita recorrente, como o salário, é outra conversa: o valor varia e não é cobrado. Fica para depois, se fizer falta.
 - **O histórico de valor é uma tabela própria,** e não um campo, porque o alerta da task 24 precisa da sequência de mudanças com as datas.
+
+### Revisão
+
+O revisor (Opus, effort high) pediu mudanças por um problema grave, já corrigido.
+
+- **Editar uma cobrança de assinatura para receita** dava erro 500: o banco recusa pelo `CHECK`, e o servidor não tratava. Agora a resposta é "Uma cobrança de assinatura é sempre uma despesa.", com teste.
+- **Cancelar não era definitivo numa corrida:** cancelar e retomar ao mesmo tempo podia terminar "ativa", com data de cancelamento. As mudanças de status agora são escritas sob condição, então o cancelamento sempre ganha. Há teste.
+- **"Desfazer" de uma assinatura com data passada** deixava a regra e a cobrança do mês seguinte, que a tela inicial gera logo depois de salvar, e só apagava a primeira. Agora o "Desfazer" da 1ª cobrança desfaz a assinatura inteira. Há teste. É uma mudança em relação à spec aprovada, registrada em Comportamento.
+- **Geração com cursor velho:** uma geração que leu um cursor antigo podia trazer de volta uma cobrança excluída no meio do caminho, ou falhar depois de um "Desfazer". Agora a geração toma o cursor antes de inserir, numa transação, e só insere se conseguiu tomá-lo. O "Desfazer" cancela a regra antes de apagar.
+- **Uma falha na geração derrubava a tela** inicial, a de contas ou a de registro. Agora ela é registrada no log, e a tela abre.
+- **Testes novos:** a observação sugerida ignora as cobranças geradas (a consulta SQL), e a geração passa o cursor de uma assinatura pausada sem cobrar.
+- **O "Desfazer" do aviso** mostra um erro se a rede falhar, em vez de uma rejeição silenciosa.
+- **Aceito:**
+  - **Gravar no banco ao abrir a tela.** A documentação do Next desaconselha efeitos na renderização. A geração é idempotente, só grava quando há cobrança vencida e roda depois da sessão (nada roda no build). O cron (task 17) é o caminho limpo, e a geração nas telas fica como garantia.
+  - **Faturas e lançamentos ainda não geram:** as telas deles são das tasks 14 e 18, que chamam a mesma função.
+  - **O "Atualizar a assinatura?"** ignora uma assinatura cancelada e não é atômico com a edição da cobrança. A task 14 decide o que mostrar.
+  - **"Load failed" no log do WebKit:** é o aborto de requisição na troca de página, já visto na task 9. Rodando sem paralelismo, não aparece.
 
 ## Fora do escopo
 
