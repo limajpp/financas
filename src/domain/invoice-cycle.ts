@@ -87,6 +87,31 @@ export function invoiceForDueDate(cycle: InvoiceCycle, dueDate: CalendarDate): I
   return invoiceClosingIn(cycle, month - (cycle.dueDay > cycle.closingDay ? 0 : 1));
 }
 
+/**
+ * The invoice after `invoice` in the card's sequence: the one that takes the purchases of the day
+ * after it closes. When a newer cycle version starts before that invoice would close, the
+ * sequence follows the new cycle from the day it started (what the bank does with the
+ * installments left). With a single cycle this is shiftInvoice(cycle, invoice, 1).
+ */
+export function nextInvoice(versions: readonly CycleVersion[], invoice: Invoice): Invoice {
+  let from = addOneDay(invoice.closingDate);
+  let next = invoiceFor(cycleOn(versions, from), from);
+  for (;;) {
+    const newer = versions
+      .filter((v) => v.validFrom > from && v.validFrom <= next.closingDate)
+      .sort((a, b) => (a.validFrom < b.validFrom ? -1 : 1))[0];
+    if (!newer) return next;
+    from = newer.validFrom;
+    next = invoiceFor(newer, from);
+  }
+}
+
+function addOneDay(date: CalendarDate): CalendarDate {
+  const next = new Date(`${date}T00:00:00.000Z`);
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+
 /** The cycle version valid on `date`: the latest one with validFrom ≤ date. */
 export function cycleOn<T extends CycleVersion>(versions: readonly T[], date: CalendarDate): T {
   let found: T | undefined;

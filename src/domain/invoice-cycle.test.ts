@@ -7,6 +7,7 @@ import {
   invoiceFor,
   invoiceForDueDate,
   isCycleDay,
+  nextInvoice,
   shiftInvoice,
 } from "./invoice-cycle";
 
@@ -260,6 +261,53 @@ describe("invoiceForDueDate", () => {
 
   it("a date that isn't a due date of the cycle gives another due date", () => {
     expect(invoiceForDueDate(cycle(3, 10), "2026-11-11").dueDate).toBe("2026-11-10");
+  });
+});
+
+describe("nextInvoice", () => {
+  it("CA4: with a single cycle, it's the next invoice (shiftInvoice + 1), for every cycle", () => {
+    for (let closingDay = 1; closingDay <= 31; closingDay++) {
+      for (let dueDay = 1; dueDay <= 31; dueDay++) {
+        const c = cycle(closingDay, dueDay);
+        const versions = [{ ...c, validFrom: CYCLE_EPOCH }];
+        let invoice = invoiceFor(c, "2026-01-01");
+        for (let n = 0; n < 30; n++) {
+          const next = nextInvoice(versions, invoice);
+          expect(next).toEqual(shiftInvoice(c, invoice, 1));
+          invoice = next;
+        }
+      }
+    }
+  });
+
+  it("CA4: after a cycle change, follows the new cycle from the day it started", () => {
+    // 3/10, then 20/27 from 2026-11-10.
+    const versions = [
+      { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH },
+      { closingDay: 20, dueDay: 27, validFrom: "2026-11-10" },
+    ];
+    const first = invoiceFor(cycle(3, 10), "2026-10-20");
+    expect(first).toEqual({ closingDate: "2026-11-03", dueDate: "2026-11-10" });
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-11-20", dueDate: "2026-11-27" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
+  });
+
+  it("a change that starts after the next invoice closes waits for it", () => {
+    const versions = [
+      { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH },
+      { closingDay: 20, dueDay: 27, validFrom: "2026-12-05" },
+    ];
+    const first = invoiceFor(cycle(3, 10), "2026-10-20"); // closes 11-03
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-03", dueDate: "2026-12-10" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
   });
 });
 

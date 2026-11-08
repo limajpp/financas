@@ -34,7 +34,10 @@ export const PAYABLE_PAST_INVOICES = 12;
  * The closing date of the invoice due on `dueDate`: from the cycle version that produces that due
  * date (the latest one valid by its closing), else the version valid on the due date.
  */
-function closingDateFor(cycles: readonly CycleVersion[], dueDate: CalendarDate): CalendarDate {
+export function closingDateFor(
+  cycles: readonly CycleVersion[],
+  dueDate: CalendarDate,
+): CalendarDate {
   let best: { validFrom: CalendarDate; closingDate: CalendarDate } | null = null;
   for (const version of cycles) {
     const invoice = invoiceForDueDate(version, dueDate);
