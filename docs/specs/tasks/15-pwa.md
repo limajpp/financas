@@ -90,6 +90,11 @@ O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já cor
   - o id do precache da página offline muda a cada build;
   - as folhas de baixo respeitam as laterais do iPhone deitado;
   - o ícone de compartilhar é anunciado pelo leitor de tela.
+- **Segunda rodada: aprovado com nits, todos aplicados.**
+  - A proteção da limpeza fica só nos caches de telas e API. Nos de arquivos estáticos ela desligava a regra que guarda só respostas 200.
+  - A limpeza apaga só os caches com dados, e também os registros de validade de cada um deles.
+  - As folhas voltam ao espaçamento lateral de antes, com a área segura só onde ela é maior.
+  - A página também apaga os caches, caso a mensagem chegue a um service worker recém-substituído.
 - **Aceito e documentado:** depois de um deploy, uma tela guardada antes pode abrir sem estilo quando não há rede (ver casos de borda). Guardar de novo todas as telas a cada deploy custaria uma renderização por tela.
 
 ## Fora do escopo

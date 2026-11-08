@@ -2,7 +2,7 @@
 /// <reference lib="webworker" />
 import { defaultCache } from "@serwist/turbopack/worker";
 import type { PrecacheEntry, RuntimeCaching, SerwistGlobalConfig, SerwistPlugin } from "serwist";
-import { ExpirationPlugin, NetworkFirst, Serwist, Strategy } from "serwist";
+import { CacheExpiration, ExpirationPlugin, NetworkFirst, Serwist, Strategy } from "serwist";
 
 import { CLEAR_PRIVATE_CACHES, isPrivateCache, OFFLINE_URL, PAGES_CACHE } from "@/lib/pwa";
 
@@ -55,9 +55,13 @@ const pages: RuntimeCaching = {
 };
 
 const runtimeCaching = [pages, ...defaultCache];
-for (const { handler } of runtimeCaching) {
-  if (handler instanceof Strategy) handler.plugins.push(signOutGuard);
-}
+/** The strategies whose caches may hold the user's data (all NetworkFirst). */
+const privateStrategies = runtimeCaching.flatMap(({ handler }) =>
+  handler instanceof Strategy && isPrivateCache(handler.cacheName) ? [handler] : [],
+);
+// Only these: on a CacheFirst strategy, any cacheWillUpdate plugin turns off its own "200 only"
+// check, and the static files never needed the guard.
+for (const strategy of privateStrategies) strategy.plugins.push(signOutGuard);
 
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
@@ -76,14 +80,14 @@ const serwist = new Serwist({
  */
 async function clearPrivateCaches() {
   generation++;
-  for (const { handler } of runtimeCaching) {
-    if (!(handler instanceof Strategy)) continue;
-    for (const plugin of handler.plugins) {
-      if (plugin instanceof ExpirationPlugin) await plugin.deleteCacheAndMetadata();
-    }
-  }
-  const names = await caches.keys();
-  await Promise.all(names.filter(isPrivateCache).map((name) => caches.delete(name)));
+  const names = (await caches.keys()).filter(isPrivateCache);
+  await Promise.all(
+    names.map(async (name) => {
+      // The expiration records live in IndexedDB, apart from the cache.
+      await new CacheExpiration(name, { maxEntries: 1 }).delete();
+      await caches.delete(name);
+    }),
+  );
 }
 
 self.addEventListener("message", (event) => {

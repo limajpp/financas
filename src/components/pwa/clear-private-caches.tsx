@@ -11,11 +11,9 @@ import { CLEAR_PRIVATE_CACHES, isPrivateCache } from "@/lib/pwa";
  */
 export function ClearPrivateCaches() {
   useEffect(() => {
-    const worker = navigator.serviceWorker?.controller;
-    if (worker) {
-      worker.postMessage({ type: CLEAR_PRIVATE_CACHES });
-      return;
-    }
+    // The worker also drops what was still loading. The page deletes too, in case the message
+    // reaches a worker that a new deploy has just replaced.
+    navigator.serviceWorker?.controller?.postMessage({ type: CLEAR_PRIVATE_CACHES });
     if (!("caches" in window)) return;
     void caches
       .keys()
