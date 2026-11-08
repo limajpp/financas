@@ -24,13 +24,13 @@ Registrar uma compra parcelada no crédito de uma vez. Uma compra de 10× vira 1
 - **Valor:**
   - cada parcela recebe o total dividido por N, arredondado para baixo no centavo, e o que sobrar vai para a 1ª;
   - **a soma é sempre exatamente o total;**
-  - o total precisa dar pelo menos R$ 0,01 por parcela. Senão: "O valor é pequeno demais para N parcelas.".
+  - o total precisa dar pelo menos R$ 0,01 por parcela. Senão, o servidor responde "O valor é pequeno demais para tantas parcelas." e a tela mostra "Valor pequeno demais para N×." antes de salvar.
 - **Data (competência):** a parcela _i_ tem a data da compra + (_i_ − 1) meses, contada sempre a partir do dia original, e o dia que o mês não tem vira o último dia do mês. Uma compra em 31/01 gera 28/02 (ou 29/02 no ano bissexto), 31/03, 30/04, 31/05…
 - **Fatura:**
   - a parcela _i_ cai na (_i_ − 1)-ésima fatura depois da fatura da compra, seguindo a sequência de faturas do cartão: cada fatura vem logo depois do fechamento da anterior;
   - com um ciclo só, é o `shiftInvoice` da task 7;
   - **depois de uma mudança de ciclo,** a sequência passa a usar o ciclo novo a partir do dia em que ele começou a valer. É o que o banco faz: as parcelas que faltam caem nas faturas novas, uma por fatura.
-  - O cálculo é a função pura `nextInvoice(ciclos, fatura)`: a fatura que recebe as compras do dia seguinte ao fechamento. Se uma versão nova do ciclo começar antes de essa fatura fechar, ela passa a valer a partir do dia em que começou.
+  - O cálculo é a função pura `nextInvoice(ciclos, fatura)`: a fatura que recebe as compras do dia seguinte ao fechamento. Se uma versão nova do ciclo começar antes de essa fatura fechar, ela passa a valer a partir do dia em que começou. A fatura fecha no início do dia do fechamento, então uma mudança feita nesse dia não alcança a fatura que fechou. Os vencimentos só andam para a frente: se a mudança muda o fechamento e mantém o vencimento, a fatura com o mesmo vencimento da anterior é pulada, e cada parcela fica numa fatura.
 - A fatura de cada parcela fica gravada no `invoiceDueDate`, como nas compras à vista.
 
 ### Registro
@@ -100,7 +100,24 @@ Registrar uma compra parcelada no crédito de uma vez. Uma compra de 10× vira 1
 - **Cada parcela é um lançamento,** sem tabela de grupo. A fatura, o saldo e as somas já funcionam por lançamento. O grupo só serve para editar e excluir juntas e para mostrar "3/10".
 - **`clientId` derivado (`clientId:N`)** para as parcelas seguintes. O índice único continua garantindo que um reenvio não duplique, sem mudar a fila offline (task 16), que só conhece um id por registro.
 - **Sem troca manual de fatura no parcelado.** É raro, e a fatura de uma parcela já pode ser corrigida pela edição "só esta" (task 14).
+- **Limitação aceita no recálculo:** quando a 1ª parcela foi excluída ("só esta"), a sequência recomeça da parcela de número mais baixo que sobrou, e ela mantém a fatura que tinha, mesmo aberta. Refazer a partir da data dela teria erros de arredondamento nos dias 29 a 31. É preciso a combinação rara de uma parcela estornada com uma mudança de ciclo.
 - **"Só esta" não renumera.** A parcela 3 de 10 continua sendo a 3 de 10 depois de excluir a 2, porque é assim que o extrato mostra.
+
+### Revisão
+
+O revisor (Opus, effort high) pediu mudanças por um problema grave, já corrigido.
+
+- **`nextInvoice` repetia ou pulava faturas numa mudança de ciclo,** tanto na criação quanto no recálculo.
+  - **Fechamento muda, vencimento fica** (3/10 para 5/10): duas parcelas caíam no mesmo vencimento, e a última fatura sumia.
+  - **Mudança no dia do fechamento:** a parcela saía da fatura que tinha fechado naquele dia.
+  - **Correção:** a fatura fecha no início do dia do fechamento, e os vencimentos só andam para a frente.
+  - **Testes novos:** os dois cenários, em unitário e em integração, e uma propriedade com 3.000 históricos aleatórios de duas versões e 24 faturas cada, em que vencimento e fechamento sempre crescem. O revisor mediu, no código antigo, 88 repetições e 703 vencimentos voltando para trás em 20.000 planos.
+- Também corrigido:
+  - **Reenvio depois de excluir a 1ª parcela:** a fila offline reenviando a mesma compra dava erro 500 em toda tentativa. Agora devolve a compra que já existe;
+  - **"Parcelado" desliga de verdade:** ao sair do crédito ou trocar de tipo, ele desliga. Antes só ficava escondido e voltava ligado;
+  - **"Esta e as próximas" é atômico:** numa transação só, sem ficar aplicado pela metade;
+  - **CA8 provado também na sugestão de categoria do estabelecimento:** duas compras à vista em Lazer vencem uma compra em 10× em Mercado.
+- Aceito: o grupo sem a 1ª parcela recomeça da parcela mais baixa que sobrou (ver Decisões).
 
 ## Fora do escopo
 
