@@ -59,7 +59,7 @@ Registrar o dinheiro que muda de lugar sem ser gasto: passar de uma conta para o
   - salva como "Salvar transferência", e o aviso diz "Transferência de R$ 500,00 salva", com o "Desfazer".
 - **Padrões da transferência:** a última origem e o último destino usados. Sem histórico, a primeira e a segunda conta ativas, em ordem alfabética. Com menos de duas contas ativas, a opção mostra "Cadastre outra conta para transferir." no lugar do formulário.
 - **Contas (`/contas`):** cada cartão ganha o botão **"Pagar fatura"**. Ele abre um diálogo com:
-  - **Fatura:** um seletor nativo com as faturas que têm saldo em aberto, mais a aberta. Cada opção mostra "vence 10/11 · R$ 1.234,56 em aberto" e, para a aberta, "(aberta)". O padrão é a fechada mais antiga com saldo em aberto; sem nenhuma, a aberta;
+  - **Fatura:** um seletor nativo com as faturas que têm saldo em aberto, mais a aberta. Cada opção mostra o vencimento e quanto falta, curto o bastante para o celular: "10/11 · R$ 1.234,56 a pagar", ou "10/12 (aberta) · R$ 300,00 a pagar". O padrão é a fechada mais antiga com saldo em aberto; sem nenhuma, a aberta;
   - **Valor:** já preenchido com o saldo em aberto da fatura escolhida, e atualizado quando você troca de fatura, se ainda não tiver mexido no valor;
   - **Conta que paga:** a conta do cartão como padrão;
   - **Forma:** a última usada num pagamento de fatura; sem histórico, Pix;
@@ -95,7 +95,7 @@ Registrar o dinheiro que muda de lugar sem ser gasto: passar de uma conta para o
 - Transferência com origem e destino iguais na tela: o botão Salvar fica desativado, com a dica "Escolha contas diferentes.".
 - A conta de destino é arquivada entre abrir a tela e salvar: aparece o erro da task 8 ("Essa conta está arquivada. Escolha outra.").
 - Fatura sem compras e sem pagamentos (a aberta, recém-começada): aparece com R$ 0,00 em aberto. O valor fica vazio, para você digitar.
-- Pagamento a mais: a fatura aparece com o valor em aberto negativo ("R$ 50,00 a favor").
+- Pagamento a mais: a fatura aparece com o crédito ("R$ 50,00 a favor").
 - "Desfazer" depois de pagar: o saldo da conta e o em aberto da fatura voltam.
 
 ## Decisões

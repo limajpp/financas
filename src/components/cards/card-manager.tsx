@@ -10,6 +10,7 @@ import { formatBRL } from "@/domain/money";
 import { cn } from "@/lib/utils";
 
 import { CardDialog, type CardDialogState } from "./card-dialog";
+import { CardPaymentDialog } from "./card-payment-dialog";
 import type { CardView, PayerOption } from "./types";
 
 /** The "Cartões de crédito" section of the accounts screen. */
@@ -23,6 +24,7 @@ export function CardManager({
   showArchived: boolean;
 }) {
   const [dialog, setDialog] = useState<CardDialogState | null>(null);
+  const [paying, setPaying] = useState<CardView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -94,6 +96,15 @@ export function CardManager({
                     </>
                   )}
                 </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  aria-label={`Pagar fatura ${card.name}`}
+                  onClick={() => setPaying(card)}
+                >
+                  Pagar fatura
+                </Button>
               </div>
               <div className="flex shrink-0 items-center">
                 <Button
@@ -120,6 +131,7 @@ export function CardManager({
       )}
 
       <CardDialog state={dialog} accounts={accounts} onClose={() => setDialog(null)} />
+      <CardPaymentDialog card={paying} accounts={accounts} onClose={() => setPaying(null)} />
     </section>
   );
 }
