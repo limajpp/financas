@@ -266,7 +266,7 @@ describe("compras parceladas", () => {
     );
   });
 
-  it("CA7: mudar o ciclo refaz as faturas das parcelas que ainda não venceram e mantém as anteriores", async () => {
+  it("CA7: mudar o ciclo refaz as faturas das parcelas que ainda não fecharam e mantém as anteriores", async () => {
     const s = await setup();
     at("2026-09-15");
     const first = await createTransaction(
@@ -286,6 +286,51 @@ describe("compras parceladas", () => {
     expect(
       (await groupRows(first.transaction.installmentGroupId!)).map((r) => day(r.invoiceDueDate)),
     ).toEqual(["2026-10-10", "2026-11-10", "2026-11-27", "2026-12-27"]);
+  });
+
+  it("o reenvio depois de excluir a 1ª parcela não falha nem duplica", async () => {
+    const s = await setup();
+    const clientId = randomUUID();
+    const first = await buy(s, {}, clientId);
+    await deleteTransaction(s.spaceId, first.id, "this");
+    const again = await createTransaction(s.spaceId, s.userId, clientId, purchase(s));
+    expect(again).toMatchObject({
+      ok: true,
+      created: false,
+      transaction: { installmentNumber: 2 },
+    });
+    expect(await db.transaction.count()).toBe(2);
+  });
+
+  it("CA7: o fechamento muda e o vencimento fica: nenhuma fatura repete", async () => {
+    const s = await setup();
+    at("2026-10-20");
+    const first = await createTransaction(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      purchase(s, { date: "2026-10-20", installments: 4, amountCents: 40_000 }),
+    );
+    if (!first.ok) throw new Error(first.error);
+    at("2026-11-04");
+    await updateCard(
+      s.spaceId,
+      s.card.id,
+      cardSchema.parse({ name: "Cartão Roxo", accountId: s.accountId, closingDay: 5, dueDay: 10 }),
+    );
+    expect(
+      (await groupRows(first.transaction.installmentGroupId!)).map((r) => day(r.invoiceDueDate)),
+    ).toEqual(["2026-11-10", "2026-12-10", "2027-01-10", "2027-02-10"]);
+  });
+
+  it("CA8: a sugestão de categoria do estabelecimento conta a compra parcelada uma vez", async () => {
+    const s = await setup();
+    await buy(s, { installments: null, amountCents: 1_000, categoryId: s.lazer.id });
+    await buy(s, { installments: null, amountCents: 1_000, categoryId: s.lazer.id });
+    await buy(s, { installments: 10, amountCents: 100_000, description: "Estante" });
+    const [memory] = (await registerData(s.spaceId)).counterparties;
+    expect(memory?.suggestions.EXPENSE.categoryId).toBe(s.lazer.id);
+    expect(memory?.useCount).toBe(3);
   });
 
   it("CA8: uma compra de 10× conta uma vez nas categorias mais usadas e na memória", async () => {

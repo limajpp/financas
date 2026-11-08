@@ -278,6 +278,7 @@ export function RegisterForm({
 
   function switchKind(next: Kind) {
     if (next === kind) return;
+    setInstallmentCount(null);
     // Another kind of entry: a retry after a network error must not reuse the previous one's id
     // (the server would answer with the entry that may have arrived, of the other kind).
     clientId.current = null;
@@ -293,6 +294,8 @@ export function RegisterForm({
   }
 
   function changePayment(next: PaymentChoice) {
+    // "Parcelado" is only for credit: leaving credit turns it off.
+    if (next.method !== "CREDIT") setInstallmentCount(null);
     if (next.cardId !== payment.cardId || next.method !== payment.method) setChosenInvoice(null);
     setPayments((current) => ({ ...current, [type]: next }));
   }

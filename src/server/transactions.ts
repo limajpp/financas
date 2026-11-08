@@ -276,6 +276,21 @@ async function createIdempotent(
     if (isUniqueViolation(error)) {
       const winner = await findByClientId(spaceId, clientId);
       if (winner) return { ok: true, transaction: winner, created: false };
+      // A purchase in installments whose 1st was deleted ("só esta"): the next ones still hold
+      // the derived ids, and a resend must not fail.
+      if (Array.isArray(prepared.data)) {
+        const sibling = await db.transaction.findFirst({
+          where: {
+            spaceId,
+            clientId: {
+              in: prepared.data.map((_, i) => installmentClientId(clientId, i + 1)),
+            },
+          },
+          orderBy: { installmentNumber: "asc" },
+          select: transactionSelect,
+        });
+        if (sibling) return { ok: true, transaction: toTransaction(sibling), created: false };
+      }
     }
     throw error;
   }
@@ -556,21 +571,25 @@ async function updateInstallments(
 
   const counterpartyId = await counterpartyIdFor(spaceId, input);
   const shared = { categoryId: input.categoryId, counterpartyId, description: input.description };
-  const { count } = await db.transaction.updateMany({
-    where: { id, spaceId },
-    data: { ...shared, amountCents: input.amountCents },
+  // All or nothing: "esta e as próximas" never ends half applied.
+  const count = await db.$transaction(async (tx) => {
+    const updated = await tx.transaction.updateMany({
+      where: { id, spaceId },
+      data: { ...shared, amountCents: input.amountCents },
+    });
+    if (updated.count > 0 && scope === "following") {
+      await tx.transaction.updateMany({
+        where: {
+          spaceId,
+          installmentGroupId: current.installmentGroupId,
+          installmentNumber: { gt: current.installmentNumber! },
+        },
+        data: shared,
+      });
+    }
+    return updated.count;
   });
   if (count === 0) return { ok: false, error: "NOT_FOUND" };
-  if (scope === "following") {
-    await db.transaction.updateMany({
-      where: {
-        spaceId,
-        installmentGroupId: current.installmentGroupId,
-        installmentNumber: { gt: current.installmentNumber! },
-      },
-      data: shared,
-    });
-  }
   const row = await db.transaction.findFirstOrThrow({
     where: { id, spaceId },
     select: transactionSelect,
