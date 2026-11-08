@@ -76,6 +76,17 @@ export function shiftInvoice(cycle: InvoiceCycle, invoice: Invoice, n: number): 
   return invoiceClosingIn(cycle, parse(invoice.closingDate).month + n);
 }
 
+/**
+ * The invoice due on `dueDate`: the inverse of the due-date rule. When dueDay ≤ closingDay the
+ * invoice closed in the month before the due month. `dueDate` should be a due date of this cycle;
+ * callers check with `invoiceForDueDate(cycle, d).dueDate === d`.
+ */
+export function invoiceForDueDate(cycle: InvoiceCycle, dueDate: CalendarDate): Invoice {
+  assertCycle(cycle);
+  const { month } = parse(dueDate);
+  return invoiceClosingIn(cycle, month - (cycle.dueDay > cycle.closingDay ? 0 : 1));
+}
+
 /** The cycle version valid on `date`: the latest one with validFrom ≤ date. */
 export function cycleOn<T extends CycleVersion>(versions: readonly T[], date: CalendarDate): T {
   let found: T | undefined;

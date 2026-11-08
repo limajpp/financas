@@ -5,6 +5,7 @@ import {
   cycleOn,
   type InvoiceCycle,
   invoiceFor,
+  invoiceForDueDate,
   isCycleDay,
   shiftInvoice,
 } from "./invoice-cycle";
@@ -214,6 +215,52 @@ describe("propriedades (todas as combinações de dias, 2026–2028)", () => {
     }
     expect(failures.slice(0, 5)).toEqual([]);
   }, 30_000);
+});
+
+describe("invoiceForDueDate", () => {
+  it("finds the closing from the due date, in the same month or the month before", () => {
+    expect(invoiceForDueDate(cycle(3, 10), "2026-11-10")).toEqual({
+      closingDate: "2026-11-03",
+      dueDate: "2026-11-10",
+    });
+    // dueDay ≤ closingDay: closed the month before.
+    expect(invoiceForDueDate(cycle(25, 5), "2026-11-05")).toEqual({
+      closingDate: "2026-10-25",
+      dueDate: "2026-11-05",
+    });
+    expect(invoiceForDueDate(cycle(10, 10), "2027-01-10")).toEqual({
+      closingDate: "2026-12-10",
+      dueDate: "2027-01-10",
+    });
+  });
+
+  it("clamps short months: closing on the 31st, due on the 7th", () => {
+    expect(invoiceForDueDate(cycle(31, 7), "2026-03-07")).toEqual({
+      closingDate: "2026-02-28",
+      dueDate: "2026-03-07",
+    });
+    expect(invoiceForDueDate(cycle(5, 31), "2028-02-29")).toEqual({
+      closingDate: "2028-02-05",
+      dueDate: "2028-02-29",
+    });
+  });
+
+  it("inverts the due-date rule for every cycle (36 invoices each)", () => {
+    for (let closingDay = 1; closingDay <= 31; closingDay++) {
+      for (let dueDay = 1; dueDay <= 31; dueDay++) {
+        const c = cycle(closingDay, dueDay);
+        const first = invoiceFor(c, "2026-01-01");
+        for (let n = 0; n < 36; n++) {
+          const invoice = shiftInvoice(c, first, n);
+          expect(invoiceForDueDate(c, invoice.dueDate)).toEqual(invoice);
+        }
+      }
+    }
+  });
+
+  it("a date that isn't a due date of the cycle gives another due date", () => {
+    expect(invoiceForDueDate(cycle(3, 10), "2026-11-11").dueDate).toBe("2026-11-10");
+  });
 });
 
 describe("shiftInvoice", () => {
