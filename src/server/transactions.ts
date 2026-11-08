@@ -540,6 +540,10 @@ export async function updateTransaction(
   if (input.subscription && current.recurringRuleId === null) {
     return { ok: false, error: "SUBSCRIPTION_ON_EDIT" };
   }
+  // A charge stays an expense (the database refuses otherwise).
+  if (current.recurringRuleId !== null && input.type !== "EXPENSE") {
+    return { ok: false, error: "SUBSCRIPTION_LOCKED" };
+  }
   if (current.type !== "EXPENSE" && current.type !== "INCOME") {
     return { ok: false, error: "NOT_EDITABLE" };
   }

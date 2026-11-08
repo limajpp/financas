@@ -43,6 +43,7 @@ const FIELD_OF_ERROR: Partial<Record<ErrorCode, string>> = {
   INSTALLMENT_AMOUNT_SCOPE: "amountCents",
   INSTALLMENTS_ON_EDIT: "installments",
   SUBSCRIPTION_ON_EDIT: "subscription",
+  SUBSCRIPTION_LOCKED: "type",
 };
 
 const scopeSchema = z.enum(INSTALLMENT_SCOPES).default("this");

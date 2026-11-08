@@ -78,8 +78,9 @@ async function subscribe(
   date: string,
   fields: Record<string, unknown> = {},
   clientId = randomUUID(),
+  today = date,
 ) {
-  on(date);
+  on(today);
   const result = await createTransaction(
     s.spaceId,
     s.userId,
@@ -301,19 +302,109 @@ describe("assinaturas", () => {
     expect(await db.transaction.count({ where: { spaceId: bia.spaceId } })).toBe(0);
   });
 
-  it("Desfazer: apaga a cobrança e a regra; com outras cobranças, só a do aviso", async () => {
+  it("Desfazer na 1ª cobrança desfaz a assinatura inteira, mesmo com data passada", async () => {
     const s = await setup();
     const first = await subscribe(s, "2026-09-08");
     expect(await undoSubscription(s.spaceId, first.id)).toEqual({ ok: true });
     expect(await db.recurringRule.count()).toBe(0);
     expect(await db.transaction.count()).toBe(0);
 
-    const again = await subscribe(s, "2026-09-08");
+    // Backdated: registered on 11-08 with the date 10-05; the home render charges November.
+    const backdated = await subscribe(s, "2026-10-05", {}, randomUUID(), "2026-11-08");
+    await generateRecurring(s.spaceId);
+    expect(await db.transaction.count()).toBe(2);
+    expect(await undoSubscription(s.spaceId, backdated.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(0);
+    expect(await db.transaction.count()).toBe(0);
+  });
+
+  it("Desfazer numa cobrança gerada apaga só ela", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
     on("2026-10-09");
     await generateRecurring(s.spaceId);
-    expect(await undoSubscription(s.spaceId, again.id)).toEqual({ ok: true });
+    const october = await db.transaction.findFirstOrThrow({
+      where: { recurringRuleId: first.recurringRuleId, recurringMonth: "2026-10" },
+    });
+    expect(await undoSubscription(s.spaceId, october.id)).toEqual({ ok: true });
     expect(await db.recurringRule.count()).toBe(1);
-    expect(await db.transaction.count()).toBe(1);
+    expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("uma cobrança de assinatura não vira receita", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const salario = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Salário" },
+    });
+    on("2026-09-09");
+    expect(
+      await updateTransaction(
+        s.spaceId,
+        first.id,
+        entrySchema.parse({
+          type: "INCOME",
+          amountCents: 3_990,
+          date: "2026-09-08",
+          method: "PIX",
+          accountId: s.accountId,
+          categoryId: salario.id,
+        }),
+      ),
+    ).toEqual({ ok: false, error: "SUBSCRIPTION_LOCKED" });
+  });
+
+  it("CA4: cancelar ao mesmo tempo que retomar termina cancelada", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    await setRecurringRuleStatus(s.spaceId, ruleId, "PAUSED");
+    const results = await Promise.all([
+      setRecurringRuleStatus(s.spaceId, ruleId, "CANCELED"),
+      setRecurringRuleStatus(s.spaceId, ruleId, "ACTIVE"),
+    ]);
+    expect(results[0]).toEqual({ ok: true });
+    const rule = await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } });
+    expect(rule.status).toBe("CANCELED");
+    expect(rule.canceledAt).not.toBeNull();
+  });
+
+  it("CA4: a geração passa o cursor de uma pausada sem cobrar", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    await setRecurringRuleStatus(s.spaceId, ruleId, "PAUSED");
+    on("2026-11-20");
+    await generateRecurring(s.spaceId);
+    const rule = await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } });
+    expect(rule.nextMonth).toBe("2026-12");
+    expect((await charges(ruleId)).map((c) => c.recurringMonth)).toEqual(["2026-09"]);
+  });
+
+  it("CA6: a observação sugerida ignora as cobranças geradas", async () => {
+    const s = await setup();
+    await subscribe(s, "2026-09-08", { description: "Plano básico" });
+    on("2026-09-10");
+    await createTransaction(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 5_990,
+        date: "2026-09-10",
+        method: "PIX",
+        accountId: s.accountId,
+        counterparty: "Streaming",
+        description: "Plano família",
+      }),
+    );
+    on("2026-10-09");
+    await generateRecurring(s.spaceId);
+    const [memory] = (await registerData(s.spaceId)).counterparties;
+    expect(memory?.suggestions.EXPENSE.description).toBe("Plano família");
   });
 
   it("CA6: as cobranças geradas não contam nas sugestões nem lembram a forma de pagamento", async () => {

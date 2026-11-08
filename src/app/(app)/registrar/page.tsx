@@ -6,7 +6,7 @@ import { RegisterForm } from "@/components/register/register-form";
 import { Button } from "@/components/ui/button";
 import { todayInSaoPaulo } from "@/domain/dates";
 import { registerData } from "@/server/register";
-import { generateRecurring } from "@/server/recurring";
+import { generateRecurringSafely } from "@/server/recurring";
 import { getCurrentSpace } from "@/server/session";
 
 export const metadata: Metadata = { title: "Registrar · Finanças" };
@@ -25,7 +25,7 @@ export default function RegistrarPage() {
 async function Register() {
   const space = await getCurrentSpace();
   // Subscriptions charged up to today first (task 13).
-  await generateRecurring(space.id);
+  await generateRecurringSafely(space.id);
   const data = await registerData(space.id);
   if (data.accounts.length === 0) {
     return (

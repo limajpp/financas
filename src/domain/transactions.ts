@@ -58,7 +58,8 @@ export type TransactionError =
   | "INSTALLMENT_LOCKED"
   | "INSTALLMENT_AMOUNT_SCOPE"
   | "INSTALLMENTS_ON_EDIT"
-  | "SUBSCRIPTION_ON_EDIT";
+  | "SUBSCRIPTION_ON_EDIT"
+  | "SUBSCRIPTION_LOCKED";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
@@ -87,6 +88,7 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   INSTALLMENTS_ON_EDIT: "Para parcelar uma compra já registrada, exclua e registre de novo.",
   SUBSCRIPTION_ON_EDIT:
     "Para tornar um gasto já registrado uma assinatura, exclua e registre de novo.",
+  SUBSCRIPTION_LOCKED: "Uma cobrança de assinatura é sempre uma despesa.",
 };
 
 /** Which installments an edit or deletion reaches: the chosen one, or it and the next ones. */

@@ -390,9 +390,15 @@ export function RegisterForm({
           onClick: async () => {
             // A purchase in installments goes whole (from the 1st on); a new subscription goes
             // with its rule.
-            const undone = isSubscription
-              ? await undoSubscriptionAction(id)
-              : await deleteTransactionAction(id, count ? "following" : "this");
+            let undone: Awaited<ReturnType<typeof deleteTransactionAction>>;
+            try {
+              undone = isSubscription
+                ? await undoSubscriptionAction(id)
+                : await deleteTransactionAction(id, count ? "following" : "this");
+            } catch {
+              toast.error("Não foi possível desfazer. Verifique a conexão.");
+              return;
+            }
             if (undone.ok) toast("Lançamento desfeito.");
             else toast.error(undone.error);
           },
