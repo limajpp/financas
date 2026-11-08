@@ -6,6 +6,7 @@ import { isArchivedEffective } from "./categories";
 import type { CategoryType } from "./categories";
 import type { CalendarDate } from "./dates";
 import { type CycleVersion, cycleOn, invoiceFor, shiftInvoice } from "./invoice-cycle";
+import { isPayableInvoice } from "./invoices";
 
 export const TRANSACTION_TYPES = ["EXPENSE", "INCOME", "TRANSFER", "CARD_PAYMENT"] as const;
 export type TransactionType = (typeof TRANSACTION_TYPES)[number];
@@ -49,14 +50,17 @@ export type TransactionError =
   | "CATEGORY_NOT_FOUND"
   | "CATEGORY_ARCHIVED"
   | "CATEGORY_TYPE_MISMATCH"
-  | "INVALID_INVOICE";
+  | "INVALID_INVOICE"
+  | "SAME_ACCOUNT"
+  | "TO_ACCOUNT_NOT_FOUND"
+  | "TO_ACCOUNT_ARCHIVED";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
   string
 > = {
   NOT_FOUND: "Lançamento não encontrado.",
-  NOT_EDITABLE: "Transferências e pagamentos de fatura são editados na tela própria.",
+  NOT_EDITABLE: "Transferências e pagamentos de fatura ainda não podem ser editados.",
   FUTURE_DATE: "A data não pode estar no futuro.",
   DATE_TOO_OLD: "A data precisa ser de 2000 em diante.",
   METHOD_NOT_ALLOWED: "Uma receita entra por Pix, TED, dinheiro ou boleto.",
@@ -68,7 +72,91 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   CATEGORY_ARCHIVED: "Essa categoria está arquivada. Escolha outra.",
   CATEGORY_TYPE_MISMATCH: "Essa categoria não é do mesmo tipo do lançamento.",
   INVALID_INVOICE: "Essa fatura não é deste cartão.",
+  SAME_ACCOUNT: "Escolha contas diferentes.",
+  TO_ACCOUNT_NOT_FOUND: "Conta de destino não encontrada.",
+  TO_ACCOUNT_ARCHIVED: "A conta de destino está arquivada. Escolha outra.",
 };
+
+/** Money moving between your own accounts: Pix, TED, or cash (withdrawal or deposit). */
+export const TRANSFER_METHODS = ["PIX", "TED", "CASH"] as const;
+/** How an invoice is paid; DEBIT is the automatic debit. */
+export const CARD_PAYMENT_METHODS = ["PIX", "BOLETO", "DEBIT", "TED"] as const;
+
+export type TransferInput = {
+  amountCents: number;
+  date: CalendarDate;
+  method: (typeof TRANSFER_METHODS)[number];
+  accountId: string;
+  toAccountId: string;
+  description: string | null;
+};
+
+export type CardPaymentInput = {
+  amountCents: number;
+  date: CalendarDate;
+  method: (typeof CARD_PAYMENT_METHODS)[number];
+  accountId: string;
+  cardId: string;
+  invoiceDueDate: CalendarDate;
+  description: string | null;
+};
+
+type DateError = "FUTURE_DATE" | "DATE_TOO_OLD";
+
+function checkDate(date: CalendarDate, today: CalendarDate): DateError | null {
+  // "YYYY-MM-DD" strings compare in calendar order.
+  if (date > today) return "FUTURE_DATE";
+  if (date < TRANSACTION_DATE_MIN) return "DATE_TOO_OLD";
+  return null;
+}
+
+type AccountRef = { id: string; archivedAt: Date | null };
+
+/**
+ * A transfer between two active accounts of the space. The method comes already checked by Zod
+ * (TRANSFER_METHODS).
+ */
+export function validateTransfer(
+  input: TransferInput,
+  accounts: readonly AccountRef[],
+  today: CalendarDate,
+): { ok: true } | { ok: false; error: TransactionError } {
+  const dateError = checkDate(input.date, today);
+  if (dateError) return { ok: false, error: dateError };
+  if (input.accountId === input.toAccountId) return { ok: false, error: "SAME_ACCOUNT" };
+  const from = accounts.find((a) => a.id === input.accountId);
+  if (!from) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
+  if (from.archivedAt !== null) return { ok: false, error: "ACCOUNT_ARCHIVED" };
+  const to = accounts.find((a) => a.id === input.toAccountId);
+  if (!to) return { ok: false, error: "TO_ACCOUNT_NOT_FOUND" };
+  if (to.archivedAt !== null) return { ok: false, error: "TO_ACCOUNT_ARCHIVED" };
+  return { ok: true };
+}
+
+/**
+ * An invoice payment from an active account. The card may be archived (its last invoice is still
+ * paid); the invoice must be one of the card's (see isPayableInvoice).
+ */
+export function validateCardPayment(
+  input: CardPaymentInput,
+  refs: {
+    accounts: readonly AccountRef[];
+    card: { id: string; cycles: readonly CycleVersion[] } | null;
+    purchaseDueDates: readonly CalendarDate[];
+  },
+  today: CalendarDate,
+): { ok: true } | { ok: false; error: TransactionError } {
+  const dateError = checkDate(input.date, today);
+  if (dateError) return { ok: false, error: dateError };
+  const account = refs.accounts.find((a) => a.id === input.accountId);
+  if (!account) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
+  if (account.archivedAt !== null) return { ok: false, error: "ACCOUNT_ARCHIVED" };
+  if (!refs.card || refs.card.id !== input.cardId) return { ok: false, error: "CARD_NOT_FOUND" };
+  if (!isPayableInvoice(input.invoiceDueDate, refs.purchaseDueDates, refs.card.cycles, today)) {
+    return { ok: false, error: "INVALID_INVOICE" };
+  }
+  return { ok: true };
+}
 
 /**
  * An expense or income, as validated by Zod: `accountId` is set unless the method is credit, and

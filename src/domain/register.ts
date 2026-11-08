@@ -3,7 +3,12 @@
  * Pure functions only. Spec: docs/specs/tasks/09-register.md.
  */
 import { normalizeName } from "./names";
-import { type EntryType, METHODS_BY_TYPE, type PaymentMethod } from "./transactions";
+import {
+  type EntryType,
+  METHODS_BY_TYPE,
+  type PaymentMethod,
+  TRANSFER_METHODS,
+} from "./transactions";
 
 export const TOP_CATEGORIES = 5;
 /** How far back the category usage goes, so the buttons follow changes in habits. */
@@ -74,4 +79,38 @@ export function defaultPayment(
     accountId: account.id,
     cardId: card?.id ?? null,
   };
+}
+
+export type TransferMemory = {
+  accountId: string | null;
+  toAccountId: string | null;
+  method: PaymentMethod | null;
+};
+
+export type TransferChoice = {
+  accountId: string;
+  toAccountId: string;
+  method: (typeof TRANSFER_METHODS)[number];
+};
+
+/**
+ * The transfer the screen starts with: the last origin and destination while active (and
+ * different), else the first active accounts (sorted by the caller); Pix unless the last method
+ * was another transfer method. Null with fewer than two active accounts.
+ */
+export function defaultTransfer(
+  memory: TransferMemory,
+  accounts: readonly { id: string }[],
+): TransferChoice | null {
+  if (accounts.length < 2) return null;
+  const active = (id: string | null) => accounts.some((a) => a.id === id);
+  const from = active(memory.accountId) ? memory.accountId! : accounts[0]!.id;
+  const to =
+    active(memory.toAccountId) && memory.toAccountId !== from
+      ? memory.toAccountId!
+      : accounts.find((a) => a.id !== from)!.id;
+  const method = (TRANSFER_METHODS as readonly string[]).includes(memory.method ?? "")
+    ? (memory.method as TransferChoice["method"])
+    : "PIX";
+  return { accountId: from, toAccountId: to, method };
 }

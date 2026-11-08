@@ -7,9 +7,13 @@ import { MAX_AMOUNT_CENTS } from "@/domain/money";
 import {
   COUNTERPARTY_NAME_MAX,
   DESCRIPTION_MAX,
+  CARD_PAYMENT_METHODS,
+  type CardPaymentInput,
   ENTRY_TYPES,
   type EntryInput,
   PAYMENT_METHODS,
+  TRANSFER_METHODS,
+  type TransferInput,
 } from "@/domain/transactions";
 
 /** A blank value (an empty select or field) counts as absent. */
@@ -26,6 +30,22 @@ const optionalText = (max: number, message: string) =>
     .nullish()
     .transform((v) => (v ? v : null));
 
+const amountCents = z
+  .number({ error: "Informe o valor." })
+  .int({ error: "Valor inválido." })
+  .min(1, { error: "O valor precisa ser maior que zero." })
+  .max(MAX_AMOUNT_CENTS, { error: "O valor pode ser no máximo R$ 20.000.000,00." });
+
+const date = z
+  .string({ error: "Informe a data." })
+  .min(1, { error: "Informe a data.", abort: true })
+  .refine(isCalendarDate, { error: "Data inválida." });
+
+const description = optionalText(
+  DESCRIPTION_MAX,
+  `A descrição pode ter no máximo ${DESCRIPTION_MAX} caracteres.`,
+);
+
 /**
  * An expense or income. The amount comes in cents (the keypad builds it). Credit purchases point
  * to a card, every other method to an account: the field the method doesn't use is dropped.
@@ -33,15 +53,8 @@ const optionalText = (max: number, message: string) =>
 export const entrySchema = z
   .object({
     type: z.enum(ENTRY_TYPES, { error: "Tipo inválido." }),
-    amountCents: z
-      .number({ error: "Informe o valor." })
-      .int({ error: "Valor inválido." })
-      .min(1, { error: "O valor precisa ser maior que zero." })
-      .max(MAX_AMOUNT_CENTS, { error: "O valor pode ser no máximo R$ 20.000.000,00." }),
-    date: z
-      .string({ error: "Informe a data." })
-      .min(1, { error: "Informe a data.", abort: true })
-      .refine(isCalendarDate, { error: "Data inválida." }),
+    amountCents,
+    date,
     method: z.enum(PAYMENT_METHODS, { error: "Escolha a forma de pagamento." }),
     accountId: optional(z.uuid({ error: "Conta não encontrada." })),
     cardId: optional(z.uuid({ error: "Cartão não encontrado." })),
@@ -51,10 +64,7 @@ export const entrySchema = z
       COUNTERPARTY_NAME_MAX,
       `O estabelecimento pode ter no máximo ${COUNTERPARTY_NAME_MAX} caracteres.`,
     ),
-    description: optionalText(
-      DESCRIPTION_MAX,
-      `A descrição pode ter no máximo ${DESCRIPTION_MAX} caracteres.`,
-    ),
+    description,
     counterpartyAlias: optionalText(
       ALIAS_MAX,
       `O nome no extrato pode ter no máximo ${ALIAS_MAX} caracteres.`,
@@ -103,3 +113,31 @@ export const clientIdSchema = z.uuid({ error: "Identificador do lançamento inv�
 export const transactionIdSchema = z.uuid({ error: "Lançamento não encontrado." });
 
 export type EntryFormInput = z.input<typeof entrySchema>;
+
+/** Money between two of your accounts. */
+export const transferSchema = z
+  .object({
+    amountCents,
+    date,
+    method: z.enum(TRANSFER_METHODS, { error: "Escolha Pix, TED ou dinheiro." }),
+    accountId: z.uuid({ error: "Escolha a conta de origem." }),
+    toAccountId: z.uuid({ error: "Escolha a conta de destino." }),
+    description,
+  })
+  .refine((t) => t.accountId !== t.toAccountId, {
+    path: ["toAccountId"],
+    error: "Escolha contas diferentes.",
+  }) satisfies z.ZodType<TransferInput>;
+
+/** Paying a card's invoice (identified by its due date) from an account. */
+export const cardPaymentSchema = z.object({
+  amountCents,
+  date,
+  method: z.enum(CARD_PAYMENT_METHODS, { error: "Escolha Pix, boleto, débito ou TED." }),
+  accountId: z.uuid({ error: "Escolha a conta que paga." }),
+  cardId: z.uuid({ error: "Cartão não encontrado." }),
+  invoiceDueDate: z
+    .string({ error: "Escolha a fatura." })
+    .refine(isCalendarDate, { error: "Escolha a fatura." }),
+  description,
+}) satisfies z.ZodType<CardPaymentInput>;
