@@ -61,7 +61,7 @@ Registrar uma assinatura (streaming, academia, plano de celular) uma vez, e o ap
   - Pode ser uma data passada: você registra hoje a assinatura que cobrou no dia 5.
   - Dia 31 vira o dia da regra, e nos meses curtos cai no último dia.
 - **Idempotência:** a primeira cobrança leva o `clientId` do aparelho. Repetir o envio devolve o que já existe, sem criar uma segunda regra.
-- **Aviso:** "Assinatura de R$ 39,90 salva". O "Desfazer" desfaz a assinatura inteira: a regra e todas as cobranças dela. Com uma data passada, a tela inicial já gera os meses seguintes logo depois de salvar, e o "Desfazer" leva esses também. Desfazer uma cobrança gerada depois (task 14) apaga só ela.
+- **Aviso:** "Assinatura de R$ 39,90 salva". O "Desfazer" desfaz a assinatura inteira, a regra e todas as cobranças dela, nos primeiros 10 minutos depois de salvar. Depois disso, apagar a 1ª cobrança apaga só ela, para que nunca se perca o histórico de uma assinatura antiga. Com uma data passada, a tela inicial já gera os meses seguintes logo depois de salvar, e o "Desfazer" leva esses também. Desfazer uma cobrança gerada depois (task 14) apaga só ela.
 
 ### Mudanças e status
 
@@ -127,6 +127,9 @@ O revisor (Opus, effort high) pediu mudanças por um problema grave, já corrigi
 - **Uma falha na geração derrubava a tela** inicial, a de contas ou a de registro. Agora ela é registrada no log, e a tela abre.
 - **Testes novos:** a observação sugerida ignora as cobranças geradas (a consulta SQL), e a geração passa o cursor de uma assinatura pausada sem cobrar.
 - **O "Desfazer" do aviso** mostra um erro se a rede falhar, em vez de uma rejeição silenciosa.
+- **Segunda rodada: aprovado com nits.**
+  - **Testes de concorrência:** os testes que o revisor montou no rascunho foram trazidos para o repositório. São três casos: uma geração com o cursor velho depois de uma exclusão, uma depois de um cancelamento e uma depois de um "Desfazer", e 25 rodadas do "Desfazer" correndo com duas gerações. Cada um falha se a proteção correspondente for retirada.
+  - **"Desfazer" da assinatura inteira:** só vale nos primeiros 10 minutos. Depois, apagar a 1ª cobrança (pela task 14, por exemplo) apaga só ela.
 - **Aceito:**
   - **Gravar no banco ao abrir a tela.** A documentação do Next desaconselha efeitos na renderização. A geração é idempotente, só grava quando há cobrança vencida e roda depois da sessão (nada roda no build). O cron (task 17) é o caminho limpo, e a geração nas telas fica como garantia.
   - **Faturas e lançamentos ainda não geram:** as telas deles são das tasks 14 e 18, que chamam a mesma função.
