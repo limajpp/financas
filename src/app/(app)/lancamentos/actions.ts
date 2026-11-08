@@ -42,6 +42,7 @@ const FIELD_OF_ERROR: Partial<Record<ErrorCode, string>> = {
   TOO_SMALL_FOR_INSTALLMENTS: "amountCents",
   INSTALLMENT_AMOUNT_SCOPE: "amountCents",
   INSTALLMENTS_ON_EDIT: "installments",
+  SUBSCRIPTION_ON_EDIT: "subscription",
 };
 
 const scopeSchema = z.enum(INSTALLMENT_SCOPES).default("this");
@@ -113,20 +114,37 @@ export async function createCardPaymentAction(
   return { ok: true, id: result.transaction.id };
 }
 
-/** Edits an entry; for an installment, `scope` says whether the next ones change too. */
+/**
+ * Edits an entry; for an installment, `scope` says whether the next ones change too. For a
+ * subscription charge, `updateRule: true` is the "yes" to "Atualizar a assinatura?".
+ */
 export async function updateTransactionAction(
   id: unknown,
   input: unknown,
   scope?: unknown,
+  options?: unknown,
 ): Promise<ActionResult> {
   const space = await getCurrentSpace();
   const parsedId = transactionIdSchema.safeParse(id);
   if (!parsedId.success) return failure("NOT_FOUND");
   const parsedScope = scopeSchema.safeParse(scope);
   if (!parsedScope.success) return { ok: false, error: "Dados inválidos." };
+  const parsedOptions = z
+    .object({ updateRule: z.boolean().default(false) })
+    .default({ updateRule: false })
+    .safeParse(options);
+  if (!parsedOptions.success) return { ok: false, error: "Dados inválidos." };
   const parsed = entrySchema.safeParse(input);
   if (!parsed.success) return zodFailure(parsed.error);
-  return done(await updateTransaction(space.id, parsedId.data, parsed.data, parsedScope.data));
+  return done(
+    await updateTransaction(
+      space.id,
+      parsedId.data,
+      parsed.data,
+      parsedScope.data,
+      parsedOptions.data,
+    ),
+  );
 }
 
 /**
