@@ -4,12 +4,17 @@ import { type BalanceEntry, accountBalance } from "@/domain/balance";
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
+import { defaultInvoiceToPay, invoiceSummaries } from "@/domain/invoices";
 import {
+  type CardPaymentInput,
   type CurrentRefs,
   type EntryInput,
   type EntryRefs,
   type TransactionError,
+  type TransferInput,
+  validateCardPayment,
   validateEntry,
+  validateTransfer,
 } from "@/domain/transactions";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
@@ -188,23 +193,43 @@ export async function createTransaction(
   clientId: string,
   input: EntryInput,
 ): Promise<CreateTransactionResult> {
-  const existing = await findByClientId(spaceId, clientId);
-  if (existing) return { ok: true, transaction: existing, created: false };
-
-  const checked = validateEntry(input, await refsFor(spaceId, input), {
-    today: todayInSaoPaulo(),
-  });
-  if (!checked.ok) return checked;
-
-  try {
-    const row = await db.transaction.create({
+  return createIdempotent(spaceId, clientId, async () => {
+    const checked = validateEntry(input, await refsFor(spaceId, input), {
+      today: todayInSaoPaulo(),
+    });
+    if (!checked.ok) return checked;
+    return {
+      ok: true,
       data: {
-        spaceId,
-        clientId,
         createdById: userId,
         counterpartyId: await counterpartyIdFor(spaceId, input),
         ...entryData(input, checked.invoice),
       },
+    };
+  });
+}
+
+type NewRow = Omit<Prisma.TransactionUncheckedCreateInput, "spaceId" | "clientId">;
+
+/**
+ * Creates a transaction once per `clientId`: if the space already has it, returns that one
+ * unchanged (`created: false`), including when two calls race (the unique index decides).
+ * `prepare` validates and builds the row; it runs only when the entry is new.
+ */
+async function createIdempotent(
+  spaceId: string,
+  clientId: string,
+  prepare: () => Promise<{ ok: true; data: NewRow } | { ok: false; error: TransactionError }>,
+): Promise<CreateTransactionResult> {
+  const existing = await findByClientId(spaceId, clientId);
+  if (existing) return { ok: true, transaction: existing, created: false };
+
+  const prepared = await prepare();
+  if (!prepared.ok) return prepared;
+
+  try {
+    const row = await db.transaction.create({
+      data: { ...prepared.data, spaceId, clientId },
       select: transactionSelect,
     });
     return { ok: true, transaction: toTransaction(row), created: true };
@@ -215,6 +240,139 @@ export async function createTransaction(
     }
     throw error;
   }
+}
+
+/** Creates a transfer between two of the space's accounts (idempotent by `clientId`). */
+export async function createTransfer(
+  spaceId: string,
+  userId: string,
+  clientId: string,
+  input: TransferInput,
+): Promise<CreateTransactionResult> {
+  return createIdempotent(spaceId, clientId, async () => {
+    const accounts = await db.account.findMany({
+      where: { spaceId, id: { in: [input.accountId, input.toAccountId] } },
+      select: { id: true, archivedAt: true },
+    });
+    const checked = validateTransfer(input, accounts, todayInSaoPaulo());
+    if (!checked.ok) return checked;
+    return {
+      ok: true,
+      data: {
+        createdById: userId,
+        type: "TRANSFER",
+        amountCents: input.amountCents,
+        date: calendarDateToDb(input.date),
+        method: input.method,
+        accountId: input.accountId,
+        toAccountId: input.toAccountId,
+        description: input.description,
+      },
+    };
+  });
+}
+
+/** The card's credit purchases and invoice payments, as (due date, amount). */
+async function cardAmounts(cardId: string) {
+  const rows = await db.transaction.findMany({
+    where: {
+      cardId,
+      invoiceDueDate: { not: null },
+      OR: [{ type: "EXPENSE", method: "CREDIT" }, { type: "CARD_PAYMENT" }],
+    },
+    select: { type: true, amountCents: true, invoiceDueDate: true },
+  });
+  const amount = (r: (typeof rows)[number]) => ({
+    invoiceDueDate: dbToCalendarDate(r.invoiceDueDate!),
+    amountCents: r.amountCents,
+  });
+  return {
+    purchases: rows.filter((r) => r.type === "EXPENSE").map(amount),
+    payments: rows.filter((r) => r.type === "CARD_PAYMENT").map(amount),
+  };
+}
+
+async function spaceCardWithCycles(spaceId: string, cardId: string) {
+  const card = await db.card.findFirst({
+    where: { id: cardId, spaceId },
+    select: {
+      id: true,
+      accountId: true,
+      cycles: { select: { closingDay: true, dueDay: true, validFrom: true } },
+    },
+  });
+  return (
+    card && {
+      ...card,
+      cycles: card.cycles.map((c) => ({ ...c, validFrom: dbToCalendarDate(c.validFrom) })),
+    }
+  );
+}
+
+/** Pays a card's invoice from an account (idempotent by `clientId`). */
+export async function createCardPayment(
+  spaceId: string,
+  userId: string,
+  clientId: string,
+  input: CardPaymentInput,
+): Promise<CreateTransactionResult> {
+  return createIdempotent(spaceId, clientId, async () => {
+    const [accounts, card] = await Promise.all([
+      db.account.findMany({
+        where: { spaceId, id: input.accountId },
+        select: { id: true, archivedAt: true },
+      }),
+      spaceCardWithCycles(spaceId, input.cardId),
+    ]);
+    const purchaseDueDates = card
+      ? (await cardAmounts(card.id)).purchases.map((p) => p.invoiceDueDate)
+      : [];
+    const checked = validateCardPayment(
+      input,
+      { accounts, card, purchaseDueDates },
+      todayInSaoPaulo(),
+    );
+    if (!checked.ok) return checked;
+    return {
+      ok: true,
+      data: {
+        createdById: userId,
+        type: "CARD_PAYMENT",
+        amountCents: input.amountCents,
+        date: calendarDateToDb(input.date),
+        method: input.method,
+        accountId: input.accountId,
+        cardId: input.cardId,
+        invoiceDueDate: calendarDateToDb(input.invoiceDueDate),
+        description: input.description,
+      },
+    };
+  });
+}
+
+/**
+ * What the "Pagar fatura" dialog needs for a card of the space: its invoices (total, paid,
+ * remaining), the one to start on, the account that pays it and the last payment method used.
+ * Null when the card isn't in the space.
+ */
+export async function cardInvoices(spaceId: string, cardId: string) {
+  const card = await spaceCardWithCycles(spaceId, cardId);
+  if (!card) return null;
+  const [{ purchases, payments }, lastPayment] = await Promise.all([
+    cardAmounts(card.id),
+    db.transaction.findFirst({
+      where: { spaceId, type: "CARD_PAYMENT" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { method: true },
+    }),
+  ]);
+  const invoices = invoiceSummaries(purchases, payments, card.cycles, todayInSaoPaulo());
+  return {
+    invoices,
+    defaultDueDate: defaultInvoiceToPay(invoices),
+    accountId: card.accountId,
+    method: lastPayment?.method ?? "PIX",
+  };
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   type PaymentMemory,
   USAGE_WINDOW_DAYS,
   defaultPayment,
+  defaultTransfer,
   topCategories,
 } from "@/domain/register";
 import type { Prisma } from "@/generated/prisma/client";
@@ -211,12 +212,17 @@ export async function registerData(spaceId: string) {
     new Set(
       selectableTree(categories, type).flatMap((p) => [p.id, ...p.children.map((c) => c.id)]),
     );
-  const [expense, income, memory] = await Promise.all([
+  const [expense, income, memory, lastTransfer] = await Promise.all([
     forType("EXPENSE"),
     forType("INCOME"),
     counterpartyMemory(spaceId, {
       EXPENSE: selectableIds("EXPENSE"),
       INCOME: selectableIds("INCOME"),
+    }),
+    db.transaction.findFirst({
+      where: { spaceId, type: "TRANSFER" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      select: { accountId: true, toAccountId: true, method: true },
     }),
   ]);
   return {
@@ -225,6 +231,10 @@ export async function registerData(spaceId: string) {
     cards: cards.map((c) => ({ id: c.id, name: c.name, cycles: c.cycles })),
     EXPENSE: expense,
     INCOME: income,
+    transfer: defaultTransfer(
+      lastTransfer ?? { accountId: null, toAccountId: null, method: null },
+      accounts,
+    ),
   };
 }
 
