@@ -1,7 +1,8 @@
 import { getSessionCookie } from "better-auth/cookies";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = ["/entrar", "/cadastro"];
+// The offline page is precached by the service worker, which has no session when it installs.
+const PUBLIC_PATHS = ["/entrar", "/cadastro", "/~offline"];
 
 // Optimistic check only (cookie present?): it runs on every navigation and prefetch, so no
 // database. The real check is getCurrentUser() in src/server/session.ts.
