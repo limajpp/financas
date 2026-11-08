@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { bulkSetCategoryAction, listMoreTransactionsAction } from "@/app/(app)/lancamentos/actions";
@@ -16,7 +16,11 @@ import { Label } from "@/components/ui/label";
 import { type CalendarDate, formatCalendarDate } from "@/domain/dates";
 import { formatBRL } from "@/domain/money";
 import { addMonthsToMonth } from "@/domain/recurring";
-import { PAYMENT_METHOD_LABELS, PAYMENT_METHODS } from "@/domain/transactions";
+import {
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_METHODS,
+  TRANSACTION_DATE_MIN,
+} from "@/domain/transactions";
 import {
   type TransactionFilters,
   activeFilterCount,
@@ -104,14 +108,14 @@ export function TransactionList({
   useEffect(() => {
     loadMoreRef.current = loadMore;
   });
-  const sentinel = (element: HTMLDivElement | null) => {
+  const sentinel = useCallback((element: HTMLDivElement | null) => {
     if (!element) return;
     const observer = new IntersectionObserver((entries) => {
       if (entries.some((e) => e.isIntersecting)) loadMoreRef.current();
     });
     observer.observe(element);
     return () => observer.disconnect();
-  };
+  }, []);
 
   function toggle(id: string) {
     setSelected((current) => {
@@ -496,6 +500,14 @@ export function TransactionFiltersBar({
   );
 }
 
+/**
+ * A date input's value once the year is complete: while a year is typed the input reports
+ * values like 0002-10-01, and each would reload the list.
+ */
+function typedDate(value: string) {
+  return value !== "" && value >= TRANSACTION_DATE_MIN;
+}
+
 function FilterFields({
   filters,
   options,
@@ -627,7 +639,7 @@ function FilterFields({
             type="date"
             aria-label="De"
             value={filters.from}
-            onChange={(e) => e.target.value && set({ from: e.target.value })}
+            onChange={(e) => typedDate(e.target.value) && set({ from: e.target.value })}
           />,
         )}
         {field(
@@ -636,7 +648,7 @@ function FilterFields({
             type="date"
             aria-label="Até"
             value={filters.to}
-            onChange={(e) => e.target.value && set({ to: e.target.value })}
+            onChange={(e) => typedDate(e.target.value) && set({ to: e.target.value })}
           />,
         )}
       </div>

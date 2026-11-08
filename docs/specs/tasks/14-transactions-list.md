@@ -159,6 +159,9 @@ O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já cor
   - os curingas da busca;
   - editar como transferência ou como pagamento um lançamento de outro tipo;
   - o pagamento antigo com conta arquivada.
+- **Segunda rodada: aprovado com nits, os dois aplicados.**
+  - As datas do período só vão para a URL com o ano completo. Antes, digitar o ano recarregava a lista a cada tecla.
+  - O observador do fim da lista não é recriado a cada renderização.
 - **Aceito:**
   - **Depois de editar ou categorizar, a lista volta para a primeira página.** As páginas carregadas a mais somem, e a posição da rolagem muda. Manter as páginas exigiria recarregar todas elas.
   - **A página pesa um pouco mais:** cada filtro carrega as opções completas (categorias, estabelecimentos e a memória), e a busca lê os estabelecimentos do espaço. No volume de uma pessoa, é rápido.
