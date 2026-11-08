@@ -40,7 +40,7 @@ Registrar o dinheiro que muda de lugar sem ser gasto: passar de uma conta para o
   - o total das compras no crédito daquela fatura;
   - o total pago;
   - o saldo em aberto (total − pago);
-  - se a fatura está aberta (hoje antes do fechamento) ou fechada.
+  - o status: **fechada** (o fechamento já chegou), **aberta** (a que recebe as compras de hoje) ou **futura** (fecha depois da aberta: parcelas, ou compras antigas depois de uma mudança de ciclo).
 - `invoiceForDueDate(ciclo, vencimento)` devolve a fatura daquele vencimento: o fechamento sai do vencimento. Quando `dueDay ≤ closingDay`, o fechamento é no mês anterior ao do vencimento. É a função que a revisão da task 7 pediu para a task 12, adiantada aqui.
 - A tela de faturas (task 18) vai usar o mesmo resumo.
 
@@ -77,7 +77,7 @@ Registrar o dinheiro que muda de lugar sem ser gasto: passar de uma conta para o
 ## Critérios de aceite
 
 - [ ] CA1 — Unitário e integração: a transferência reduz a origem e aumenta o destino, e o pagamento de fatura reduz a conta que paga.
-- [ ] CA2 — Unitário: transferência e pagamento de fatura não entram em `spendingByCategory` nem em `incomeByCategory`. As compras no crédito entram, pelo mês da compra.
+- [ ] CA2 — Unitário: transferência e pagamento de fatura não entram em `spendingByCategory` nem em `incomeByCategory`. As compras no crédito entram como qualquer despesa. Filtrar pelo mês da compra fica para quem chama: o dashboard, na task 23.
 - [ ] CA3 — Unitário, Zod e integração: origem e destino iguais são recusados, com a mensagem própria.
 - [ ] CA4 — Unitário: `invoiceSummaries` (total, pago, em aberto, aberta ou fechada, pagamento parcial e a maior) e `invoiceForDueDate`, inclusive com `dueDay ≤ closingDay` e com meses curtos.
 - [ ] CA5 — Integração:
@@ -107,6 +107,26 @@ Registrar o dinheiro que muda de lugar sem ser gasto: passar de uma conta para o
 - **`invoiceForDueDate` entra agora:** o resumo precisa do fechamento de cada vencimento, e a task 12 vai usar a mesma função.
 - **Somas por categoria num módulo próprio** (`totals.ts`), para que a regra "transferência e pagamento não são gasto" fique testada num lugar só antes do dashboard.
 - **Dinheiro na transferência** cobre saque e depósito para quem tem uma conta "Carteira". Para quem não tem, um saque continua sendo uma despesa em dinheiro.
+
+### Revisão
+
+O revisor (Opus, effort high) aprovou com nits. Tudo foi aplicado, menos o que está como aceito.
+
+- **Status da fatura.** "Aberta" valia para toda fatura com fechamento no futuro. Com parcelas, o seletor mostraria várias "(aberta)". Agora há três estados: fechada, aberta (só a que recebe as compras de hoje) e futura, com o rótulo "(futura)". O padrão do diálogo nunca escolhe uma futura.
+- **Valor do diálogo.** Tocar no valor e sair do campo contava como "mexeu", e o valor parava de acompanhar a troca de fatura. Agora só conta uma mudança de verdade.
+- **`/contas` com N+1.** Eram três consultas por cartão. Agora são uma agregação para todos os cartões e uma para o último pagamento, com os ciclos que a lista de cartões já traz. As consultas também passaram a filtrar pelo espaço.
+- **Testes mais fortes:**
+  - a fronteira entre aberta e fechada no dia do fechamento;
+  - duas versões do ciclo com o mesmo vencimento, em que vale o fechamento da mais nova;
+  - a fatura de mais de 12 ciclos atrás, pagável porque tem compras;
+  - a memória da transferência, que não muda com uma despesa.
+- **Nits:**
+  - o ano aparece no seletor quando a fatura não é deste ano;
+  - fatura fechada com crédito a favor aparece no seletor;
+  - trocar o tipo no registro gera um `clientId` novo, para um reenvio depois de erro de rede não reaproveitar o lançamento do outro tipo;
+  - "Mais detalhes · preenchidos" não conta os campos escondidos na transferência.
+- **Desvio da spec:** a conta de destino arquivada mostra "A conta de destino está arquivada. Escolha outra.", em vez da mensagem genérica da task 8. Assim se sabe qual das duas.
+- **Aceito:** depois de uma mudança de ciclo, uma fatura antiga ainda não fechada aparece como futura, e o padrão do diálogo é a aberta. Ela continua na lista para ser escolhida.
 
 ## Fora do escopo
 
