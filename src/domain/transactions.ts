@@ -59,7 +59,9 @@ export type TransactionError =
   | "INSTALLMENT_AMOUNT_SCOPE"
   | "INSTALLMENTS_ON_EDIT"
   | "SUBSCRIPTION_ON_EDIT"
-  | "SUBSCRIPTION_LOCKED";
+  | "SUBSCRIPTION_LOCKED"
+  | "MIXED_TYPES"
+  | "NOT_CATEGORIZABLE";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
@@ -89,6 +91,8 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   SUBSCRIPTION_ON_EDIT:
     "Para tornar um gasto já registrado uma assinatura, exclua e registre de novo.",
   SUBSCRIPTION_LOCKED: "Uma cobrança de assinatura é sempre uma despesa.",
+  MIXED_TYPES: "Selecione só despesas ou só receitas.",
+  NOT_CATEGORIZABLE: "Transferências e pagamentos de fatura não têm categoria.",
 };
 
 /** Which installments an edit or deletion reaches: the chosen one, or it and the next ones. */
@@ -138,16 +142,19 @@ export function validateTransfer(
   input: TransferInput,
   accounts: readonly AccountRef[],
   today: CalendarDate,
+  /** On an edit: the accounts it already had may stay, even if archived since. */
+  current?: { accountId: string | null; toAccountId: string | null },
 ): { ok: true } | { ok: false; error: TransactionError } {
   const dateError = checkDate(input.date, today);
   if (dateError) return { ok: false, error: dateError };
   if (input.accountId === input.toAccountId) return { ok: false, error: "SAME_ACCOUNT" };
   const from = accounts.find((a) => a.id === input.accountId);
   if (!from) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
-  if (from.archivedAt !== null) return { ok: false, error: "ACCOUNT_ARCHIVED" };
+  const kept = (id: string) => id === current?.accountId || id === current?.toAccountId;
+  if (from.archivedAt !== null && !kept(from.id)) return { ok: false, error: "ACCOUNT_ARCHIVED" };
   const to = accounts.find((a) => a.id === input.toAccountId);
   if (!to) return { ok: false, error: "TO_ACCOUNT_NOT_FOUND" };
-  if (to.archivedAt !== null) return { ok: false, error: "TO_ACCOUNT_ARCHIVED" };
+  if (to.archivedAt !== null && !kept(to.id)) return { ok: false, error: "TO_ACCOUNT_ARCHIVED" };
   return { ok: true };
 }
 
@@ -163,14 +170,25 @@ export function validateCardPayment(
     purchaseDueDates: readonly CalendarDate[];
   },
   today: CalendarDate,
+  /**
+   * On an edit: the paying account and the invoice it already had may stay, even if the account
+   * was archived or the invoice left the payable window since.
+   */
+  current?: { accountId: string | null; invoiceDueDate?: CalendarDate | null },
 ): { ok: true } | { ok: false; error: TransactionError } {
   const dateError = checkDate(input.date, today);
   if (dateError) return { ok: false, error: dateError };
   const account = refs.accounts.find((a) => a.id === input.accountId);
   if (!account) return { ok: false, error: "ACCOUNT_NOT_FOUND" };
-  if (account.archivedAt !== null) return { ok: false, error: "ACCOUNT_ARCHIVED" };
+  if (account.archivedAt !== null && account.id !== current?.accountId) {
+    return { ok: false, error: "ACCOUNT_ARCHIVED" };
+  }
   if (!refs.card || refs.card.id !== input.cardId) return { ok: false, error: "CARD_NOT_FOUND" };
-  if (!isPayableInvoice(input.invoiceDueDate, refs.purchaseDueDates, refs.card.cycles, today)) {
+  const keptInvoice = current?.invoiceDueDate === input.invoiceDueDate;
+  if (
+    !keptInvoice &&
+    !isPayableInvoice(input.invoiceDueDate, refs.purchaseDueDates, refs.card.cycles, today)
+  ) {
     return { ok: false, error: "INVALID_INVOICE" };
   }
   return { ok: true };

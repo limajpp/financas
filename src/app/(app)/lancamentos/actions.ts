@@ -14,13 +14,20 @@ import {
   transferSchema,
 } from "@/lib/validation/transactions";
 import { getCurrentSpace, getCurrentUser } from "@/server/session";
+import { type ListCursor, listTransactions } from "@/server/transaction-list";
 import {
+  BULK_MAX,
+  bulkSetCategory,
   createCardPayment,
   createTransaction,
   createTransfer,
   deleteTransaction,
+  updateCardPayment,
   updateTransaction,
+  updateTransfer,
 } from "@/server/transactions";
+import { parseFilters } from "@/lib/validation/transaction-filters";
+import { isCalendarDate } from "@/domain/dates";
 
 type ErrorCode = keyof typeof TRANSACTION_ERROR_MESSAGES;
 
@@ -44,6 +51,8 @@ const FIELD_OF_ERROR: Partial<Record<ErrorCode, string>> = {
   INSTALLMENTS_ON_EDIT: "installments",
   SUBSCRIPTION_ON_EDIT: "subscription",
   SUBSCRIPTION_LOCKED: "type",
+  NOT_CATEGORIZABLE: "categoryId",
+  MIXED_TYPES: "categoryId",
 };
 
 const scopeSchema = z.enum(INSTALLMENT_SCOPES).default("this");
@@ -55,7 +64,11 @@ function failure(code: ErrorCode): ActionFailure {
 }
 
 function done(result: { ok: true } | { ok: false; error: ErrorCode }): ActionResult {
-  if (!result.ok) return failure(result.error);
+  if (!result.ok) {
+    // Gone meanwhile (another tab or device): the list updates without it.
+    if (result.error === "NOT_FOUND") refresh();
+    return failure(result.error);
+  }
   refresh();
   return { ok: true };
 }
@@ -159,4 +172,59 @@ export async function deleteTransactionAction(id: unknown, scope?: unknown): Pro
   const parsedScope = scopeSchema.safeParse(scope);
   if (!parsedScope.success) return { ok: false, error: "Dados inválidos." };
   return done(await deleteTransaction(space.id, parsedId.data, parsedScope.data));
+}
+
+const cursorSchema = z.object({
+  date: z.string().refine(isCalendarDate),
+  createdAt: z.iso.datetime(),
+  id: z.uuid(),
+});
+
+/** The next page of the list for the filters in the URL (the same params as the page). */
+export async function listMoreTransactionsAction(params: unknown, cursor: unknown) {
+  const space = await getCurrentSpace();
+  const parsedParams = z.record(z.string(), z.string()).safeParse(params);
+  const parsedCursor = cursorSchema.safeParse(cursor);
+  if (!parsedParams.success || !parsedCursor.success) {
+    return { ok: false as const, error: "Dados inválidos." };
+  }
+  const cursorValue: ListCursor = parsedCursor.data;
+  const page = await listTransactions(space.id, parseFilters(parsedParams.data), cursorValue);
+  return { ok: true as const, page };
+}
+
+/** Edits a transfer. */
+export async function updateTransferAction(id: unknown, input: unknown): Promise<ActionResult> {
+  const space = await getCurrentSpace();
+  const parsedId = transactionIdSchema.safeParse(id);
+  if (!parsedId.success) return failure("NOT_FOUND");
+  const parsed = transferSchema.safeParse(input);
+  if (!parsed.success) return zodFailure(parsed.error);
+  return done(await updateTransfer(space.id, parsedId.data, parsed.data));
+}
+
+/** Edits an invoice payment (its card stays). */
+export async function updateCardPaymentAction(id: unknown, input: unknown): Promise<ActionResult> {
+  const space = await getCurrentSpace();
+  const parsedId = transactionIdSchema.safeParse(id);
+  if (!parsedId.success) return failure("NOT_FOUND");
+  const parsed = cardPaymentSchema.safeParse(input);
+  if (!parsed.success) return zodFailure(parsed.error);
+  return done(await updateCardPayment(space.id, parsedId.data, parsed.data));
+}
+
+/** Sets one category (or none, with null) on several expenses or incomes at once. */
+export async function bulkSetCategoryAction(
+  ids: unknown,
+  categoryId: unknown,
+): Promise<{ ok: true; count: number } | ActionFailure> {
+  const space = await getCurrentSpace();
+  const parsedIds = z.array(z.uuid()).min(1).max(BULK_MAX).safeParse(ids);
+  if (!parsedIds.success) return { ok: false, error: "Selecione de 1 a 200 lançamentos." };
+  const parsedCategory = z.uuid().nullable().safeParse(categoryId);
+  if (!parsedCategory.success) return failure("CATEGORY_NOT_FOUND");
+  const result = await bulkSetCategory(space.id, parsedIds.data, parsedCategory.data);
+  if (!result.ok) return failure(result.error);
+  refresh();
+  return { ok: true, count: result.count };
 }
