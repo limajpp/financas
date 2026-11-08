@@ -9,6 +9,7 @@ import { entrySchema } from "@/lib/validation/transactions";
 import { createAccount } from "@/server/accounts";
 import { createCard } from "@/server/cards";
 import {
+  UNDO_WINDOW_MS,
   generateRecurring,
   setRecurringRuleStatus,
   undoSubscription,
@@ -109,6 +110,15 @@ const charges = (ruleId: string) =>
   });
 
 const day = (d: Date | null) => d?.toISOString().slice(0, 10);
+
+/** The space's rules as generateRecurring reads them, to replay a run with a stale read. */
+const staleRules = (spaceId: string) =>
+  db.recurringRule.findMany({
+    where: { spaceId },
+    include: {
+      card: { select: { cycles: { select: { closingDay: true, dueDay: true, validFrom: true } } } },
+    },
+  });
 
 describe("assinaturas", () => {
   it("CA5: cria a regra e a 1ª cobrança juntas; o mesmo clientId não duplica nenhuma", async () => {
@@ -331,6 +341,70 @@ describe("assinaturas", () => {
     expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
       "2026-09",
     ]);
+  });
+
+  it("depois de alguns minutos, o Desfazer da 1ª cobrança apaga só ela", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    vi.setSystemTime(Date.now() + UNDO_WINDOW_MS + 1_000);
+    expect(await undoSubscription(s.spaceId, first.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(1);
+    expect(await db.transaction.count()).toBe(0);
+  });
+
+  it("uma geração com o cursor velho não traz de volta uma cobrança excluída", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-10-09");
+    const stale = await staleRules(s.spaceId);
+    await generateRecurring(s.spaceId);
+    const october = await db.transaction.findFirstOrThrow({ where: { recurringMonth: "2026-10" } });
+    await deleteTransaction(s.spaceId, october.id);
+    const spy = vi.spyOn(db.recurringRule, "findMany").mockResolvedValueOnce(stale as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spy.mockRestore();
+    expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("uma geração com o cursor velho não cobra depois de um cancelamento nem de um Desfazer", async () => {
+    const s = await setup();
+    const canceled = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+    const stale = await staleRules(s.spaceId);
+    await setRecurringRuleStatus(s.spaceId, canceled.recurringRuleId!, "CANCELED");
+    const spy = vi.spyOn(db.recurringRule, "findMany").mockResolvedValueOnce(stale as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spy.mockRestore();
+
+    const undone = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+    const staleAgain = await staleRules(s.spaceId);
+    await undoSubscription(s.spaceId, undone.id);
+    const spyAgain = vi
+      .spyOn(db.recurringRule, "findMany")
+      .mockResolvedValueOnce(staleAgain as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spyAgain.mockRestore();
+    expect(await db.transaction.count({ where: { recurringRuleId: undone.recurringRuleId } })).toBe(
+      0,
+    );
+  });
+
+  it("Desfazer correndo com gerações: sem erro, sem sobra (25 rodadas)", async () => {
+    const s = await setup();
+    const errors: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      const first = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+      const results = await Promise.allSettled([
+        generateRecurring(s.spaceId),
+        undoSubscription(s.spaceId, first.id),
+        generateRecurring(s.spaceId),
+      ]);
+      for (const r of results) if (r.status === "rejected") errors.push(String(r.reason));
+      expect(await db.recurringRule.count()).toBe(0);
+      expect(await db.transaction.count()).toBe(0);
+    }
+    expect(errors).toEqual([]);
   });
 
   it("uma cobrança de assinatura não vira receita", async () => {
