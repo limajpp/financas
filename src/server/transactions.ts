@@ -697,11 +697,15 @@ export async function updateCardPayment(
   id: string,
   input: CardPaymentInput,
 ): Promise<TransactionResult> {
-  const current = await db.transaction.findFirst({
+  const row = await db.transaction.findFirst({
     where: { id, spaceId },
-    select: { type: true, accountId: true, cardId: true },
+    select: { type: true, accountId: true, cardId: true, invoiceDueDate: true },
   });
-  if (!current) return { ok: false, error: "NOT_FOUND" };
+  if (!row) return { ok: false, error: "NOT_FOUND" };
+  const current = {
+    ...row,
+    invoiceDueDate: row.invoiceDueDate && dbToCalendarDate(row.invoiceDueDate),
+  };
   if (current.type !== "CARD_PAYMENT" || current.cardId !== input.cardId) {
     return { ok: false, error: "NOT_EDITABLE" };
   }

@@ -78,7 +78,8 @@ async function searchWhere(spaceId: string, q: string): Promise<Prisma.Transacti
   const cents = parseBRL(q);
   return {
     OR: [
-      { description: { contains: q, mode: "insensitive" } },
+      // LIKE wildcards in the text are literal characters.
+      { description: { contains: q.replace(/[\\%_]/g, (c) => `\\${c}`), mode: "insensitive" } },
       ...(matching.length > 0 ? [{ counterpartyId: { in: matching } }] : []),
       ...(cents !== null && cents > 0 ? [{ amountCents: cents }] : []),
     ],

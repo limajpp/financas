@@ -212,6 +212,75 @@ describe("lista de lançamentos", () => {
   });
 });
 
+describe("lista: casos de borda", () => {
+  it("empate na hora de registro: o id desempata, sem repetir nem pular", async () => {
+    const s = await setup();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-08T15:30:00Z"));
+    const created: string[] = [];
+    for (let i = 0; i < PAGE_SIZE + 10; i++) {
+      const result = await createTransaction(
+        s.spaceId,
+        s.userId,
+        randomUUID(),
+        entrySchema.parse({
+          type: "EXPENSE",
+          amountCents: 100,
+          date: "2026-10-20",
+          method: "PIX",
+          accountId: s.azul.id,
+        }),
+      );
+      if (!result.ok) throw new Error(result.error);
+      created.push(result.transaction.id);
+    }
+    const first = await listTransactions(s.spaceId, october());
+    const second = await listTransactions(s.spaceId, october(), first.nextCursor!);
+    const all = [...first.items, ...second.items].map((i) => i.id);
+    expect(new Set(all).size).toBe(PAGE_SIZE + 10);
+    expect(new Set(all)).toEqual(new Set(created));
+  });
+
+  it("o total do dia segue os filtros", async () => {
+    const s = await setup();
+    await expense(s, { amountCents: 1_000 });
+    await expense(s, { amountCents: 5_000, accountId: s.verde.id });
+    const page = await listTransactions(s.spaceId, october({ conta: s.azul.id }));
+    expect(page.dayTotals["2026-10-20"]).toBe(-1_000);
+  });
+
+  it("uma subcategoria filtra só ela; a conta inclui o pagamento de fatura que sai dela", async () => {
+    const s = await setup();
+    const pao = await expense(s, { categoryId: s.mercado.id });
+    await expense(s, { categoryId: s.alimentacao.id });
+    expect(await ids(s, { categoria: s.mercado.id })).toEqual([pao.id]);
+    tick();
+    const paid = await createCardPayment(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      cardPaymentSchema.parse({
+        amountCents: 1_000,
+        date: "2026-10-25",
+        method: "PIX",
+        accountId: s.azul.id,
+        cardId: s.card.id,
+        invoiceDueDate: "2026-11-10",
+      }),
+    );
+    if (!paid.ok) throw new Error(paid.error);
+    expect(await ids(s, { conta: s.azul.id })).toContain(paid.transaction.id);
+  });
+
+  it("% e _ na busca são caracteres, não curingas", async () => {
+    const s = await setup();
+    const discount = await expense(s, { description: "Desconto 10%" });
+    await expense(s, { description: "Pão" });
+    expect(await ids(s, { q: "%" })).toEqual([discount.id]);
+    expect(await ids(s, { q: "_" })).toEqual([]);
+  });
+});
+
 describe("categorizar em massa", () => {
   it("CA5: aplica a todos de uma vez", async () => {
     const s = await setup();
@@ -273,6 +342,39 @@ describe("categorizar em massa", () => {
 });
 
 describe("editar transferência e pagamento de fatura", () => {
+  it("editar como transferência um lançamento de outro tipo é recusado", async () => {
+    const s = await setup();
+    const purchase = await expense(s);
+    const t = await transfer(s);
+    expect(
+      await updateTransfer(
+        s.spaceId,
+        purchase.id,
+        transferSchema.parse({
+          amountCents: 1,
+          date: "2026-10-22",
+          method: "PIX",
+          accountId: s.azul.id,
+          toAccountId: s.verde.id,
+        }),
+      ),
+    ).toEqual({ ok: false, error: "NOT_EDITABLE" });
+    expect(
+      await updateCardPayment(
+        s.spaceId,
+        t.id,
+        cardPaymentSchema.parse({
+          amountCents: 1,
+          date: "2026-10-22",
+          method: "PIX",
+          accountId: s.azul.id,
+          cardId: s.card.id,
+          invoiceDueDate: "2026-11-10",
+        }),
+      ),
+    ).toEqual({ ok: false, error: "NOT_EDITABLE" });
+  });
+
   it("CA6: transferência: valor, contas e forma mudam; mesma conta é recusada; outro espaço não", async () => {
     const s = await setup();
     const bia = await setup("bia@example.com");
@@ -364,5 +466,41 @@ describe("editar transferência e pagamento de fatura", () => {
         cardPaymentSchema.parse({ ...fields, cardId: randomUUID() }),
       ),
     ).toEqual({ ok: false, error: "NOT_EDITABLE" });
+  });
+
+  it("um pagamento antigo mantém a conta arquivada e a fatura que tinha", async () => {
+    const s = await setup();
+    tick();
+    const old = await db.transaction.create({
+      data: {
+        spaceId: s.spaceId,
+        clientId: randomUUID(),
+        createdById: s.userId,
+        type: "CARD_PAYMENT",
+        method: "BOLETO",
+        amountCents: 10_000,
+        date: new Date("2024-01-05"),
+        accountId: s.verde.id,
+        cardId: s.card.id,
+        // More than 12 invoices ago, no purchases on it: not payable anymore.
+        invoiceDueDate: new Date("2024-01-10"),
+      },
+    });
+    await setAccountArchived(s.spaceId, s.verde.id, true);
+    expect(
+      await updateCardPayment(
+        s.spaceId,
+        old.id,
+        cardPaymentSchema.parse({
+          amountCents: 10_000,
+          date: "2024-01-05",
+          method: "BOLETO",
+          accountId: s.verde.id,
+          cardId: s.card.id,
+          invoiceDueDate: "2024-01-10",
+          description: "Fatura de janeiro",
+        }),
+      ),
+    ).toMatchObject({ ok: true, transaction: { description: "Fatura de janeiro" } });
   });
 });

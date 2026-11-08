@@ -170,8 +170,11 @@ export function validateCardPayment(
     purchaseDueDates: readonly CalendarDate[];
   },
   today: CalendarDate,
-  /** On an edit: the paying account it already had may stay, even if archived since. */
-  current?: { accountId: string | null },
+  /**
+   * On an edit: the paying account and the invoice it already had may stay, even if the account
+   * was archived or the invoice left the payable window since.
+   */
+  current?: { accountId: string | null; invoiceDueDate?: CalendarDate | null },
 ): { ok: true } | { ok: false; error: TransactionError } {
   const dateError = checkDate(input.date, today);
   if (dateError) return { ok: false, error: dateError };
@@ -181,7 +184,11 @@ export function validateCardPayment(
     return { ok: false, error: "ACCOUNT_ARCHIVED" };
   }
   if (!refs.card || refs.card.id !== input.cardId) return { ok: false, error: "CARD_NOT_FOUND" };
-  if (!isPayableInvoice(input.invoiceDueDate, refs.purchaseDueDates, refs.card.cycles, today)) {
+  const keptInvoice = current?.invoiceDueDate === input.invoiceDueDate;
+  if (
+    !keptInvoice &&
+    !isPayableInvoice(input.invoiceDueDate, refs.purchaseDueDates, refs.card.cycles, today)
+  ) {
     return { ok: false, error: "INVALID_INVOICE" };
   }
   return { ok: true };

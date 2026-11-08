@@ -27,6 +27,7 @@ import {
   updateTransfer,
 } from "@/server/transactions";
 import { parseFilters } from "@/lib/validation/transaction-filters";
+import { isCalendarDate } from "@/domain/dates";
 
 type ErrorCode = keyof typeof TRANSACTION_ERROR_MESSAGES;
 
@@ -63,7 +64,11 @@ function failure(code: ErrorCode): ActionFailure {
 }
 
 function done(result: { ok: true } | { ok: false; error: ErrorCode }): ActionResult {
-  if (!result.ok) return failure(result.error);
+  if (!result.ok) {
+    // Gone meanwhile (another tab or device): the list updates without it.
+    if (result.error === "NOT_FOUND") refresh();
+    return failure(result.error);
+  }
   refresh();
   return { ok: true };
 }
@@ -170,7 +175,7 @@ export async function deleteTransactionAction(id: unknown, scope?: unknown): Pro
 }
 
 const cursorSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  date: z.string().refine(isCalendarDate),
   createdAt: z.iso.datetime(),
   id: z.uuid(),
 });
