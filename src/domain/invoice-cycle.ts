@@ -89,20 +89,26 @@ export function invoiceForDueDate(cycle: InvoiceCycle, dueDate: CalendarDate): I
 
 /**
  * The invoice after `invoice` in the card's sequence: the one that takes the purchases of the day
- * after it closes. When a newer cycle version starts before that invoice would close, the
- * sequence follows the new cycle from the day it started (what the bank does with the
- * installments left). With a single cycle this is shiftInvoice(cycle, invoice, 1).
+ * after it closes. When a newer cycle version starts before that invoice closes (an invoice
+ * closes at the start of its closing day), the sequence follows the new cycle from the day it
+ * started: what the bank does with the installments left. Due dates only go forward: an invoice
+ * due on or before `invoice`'s (the closing moved, the due day stayed) is skipped, so each
+ * installment gets its own invoice. With a single cycle this is shiftInvoice(cycle, invoice, 1).
  */
 export function nextInvoice(versions: readonly CycleVersion[], invoice: Invoice): Invoice {
   let from = addOneDay(invoice.closingDate);
-  let next = invoiceFor(cycleOn(versions, from), from);
   for (;;) {
+    const next = invoiceFor(cycleOn(versions, from), from);
     const newer = versions
-      .filter((v) => v.validFrom > from && v.validFrom <= next.closingDate)
+      .filter((v) => v.validFrom > from && v.validFrom < next.closingDate)
       .sort((a, b) => (a.validFrom < b.validFrom ? -1 : 1))[0];
-    if (!newer) return next;
-    from = newer.validFrom;
-    next = invoiceFor(newer, from);
+    if (newer) {
+      from = newer.validFrom;
+      continue;
+    }
+    if (next.dueDate > invoice.dueDate) return next;
+    // `from` grows every turn, so this ends.
+    from = addOneDay(next.closingDate);
   }
 }
 

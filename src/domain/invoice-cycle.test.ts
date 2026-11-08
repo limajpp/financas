@@ -311,6 +311,49 @@ describe("nextInvoice", () => {
   });
 });
 
+describe("nextInvoice: cycle changes (review of task 12)", () => {
+  const base = { closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH };
+  const first = invoiceFor(cycle(3, 10), "2026-10-20"); // closes 11-03, due 11-10
+
+  it("the closing moves and the due day stays: no invoice is repeated", () => {
+    const versions = [base, { closingDay: 5, dueDay: 10, validFrom: "2026-11-04" }];
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-05", dueDate: "2026-12-10" });
+  });
+
+  it("a change on a closing day doesn't reach the invoice that closed that day", () => {
+    const versions = [base, { closingDay: 20, dueDay: 27, validFrom: "2026-12-03" }];
+    const second = nextInvoice(versions, first);
+    expect(second).toEqual({ closingDate: "2026-12-03", dueDate: "2026-12-10" });
+    expect(nextInvoice(versions, second)).toEqual({
+      closingDate: "2026-12-20",
+      dueDate: "2026-12-27",
+    });
+  });
+
+  it("CA4: due dates always go forward, one invoice at a time, for random histories", () => {
+    let seed = 11;
+    const random = (n: number) => (seed = (seed * 48271) % 2147483647) % n;
+    for (let k = 0; k < 3_000; k++) {
+      const versions = [
+        { closingDay: 1 + random(31), dueDay: 1 + random(31), validFrom: CYCLE_EPOCH },
+        {
+          closingDay: 1 + random(31),
+          dueDay: 1 + random(31),
+          validFrom: `2026-${String(1 + random(12)).padStart(2, "0")}-${String(1 + random(28)).padStart(2, "0")}`,
+        },
+      ];
+      let invoice = invoiceFor(cycleOn(versions, "2025-11-15"), "2025-11-15");
+      for (let i = 0; i < 24; i++) {
+        const next = nextInvoice(versions, invoice);
+        expect(next.dueDate > invoice.dueDate).toBe(true);
+        expect(next.closingDate > invoice.closingDate).toBe(true);
+        invoice = next;
+      }
+    }
+  });
+});
+
 describe("shiftInvoice", () => {
   const c = cycle(31, 7);
   const first = invoiceFor(c, "2026-01-30");
