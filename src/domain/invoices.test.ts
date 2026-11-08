@@ -27,7 +27,7 @@ describe("invoiceSummaries", () => {
         totalCents: 10_000,
         paidCents: 10_000,
         remainingCents: 0,
-        open: false,
+        status: "closed",
       },
       {
         dueDate: "2026-11-10",
@@ -35,7 +35,7 @@ describe("invoiceSummaries", () => {
         totalCents: 50_000,
         paidCents: 20_000,
         remainingCents: 30_000,
-        open: false,
+        status: "closed",
       },
       {
         dueDate: "2026-12-10",
@@ -43,7 +43,7 @@ describe("invoiceSummaries", () => {
         totalCents: 5_000,
         paidCents: 0,
         remainingCents: 5_000,
-        open: true,
+        status: "open",
       },
     ]);
   });
@@ -66,15 +66,60 @@ describe("invoiceSummaries", () => {
         totalCents: 0,
         paidCents: 0,
         remainingCents: 0,
-        open: true,
+        status: "open",
       },
     ]);
   });
 
-  it("an invoice is open until its closing day (on the closing day it's closed)", () => {
-    const onClosing = invoiceSummaries([], [], cycles, "2026-12-03");
-    expect(onClosing.find((s) => s.dueDate === "2026-12-10")).toBeUndefined();
-    expect(onClosing.at(-1)).toMatchObject({ dueDate: "2027-01-10", open: true });
+  it("an invoice is open until its closing day; on the closing day it's closed", () => {
+    const purchase = [{ invoiceDueDate: "2026-12-10", amountCents: 1 }];
+    expect(invoiceSummaries(purchase, [], cycles, "2026-12-02")[0]).toMatchObject({
+      dueDate: "2026-12-10",
+      status: "open",
+    });
+    const onClosing = invoiceSummaries(purchase, [], cycles, "2026-12-03");
+    expect(onClosing[0]).toMatchObject({ dueDate: "2026-12-10", status: "closed" });
+    expect(onClosing.at(-1)).toMatchObject({ dueDate: "2027-01-10", status: "open" });
+  });
+
+  it("invoices after the open one are future (installments)", () => {
+    const installments = ["2026-12-10", "2027-01-10", "2027-02-10"].map((invoiceDueDate) => ({
+      invoiceDueDate,
+      amountCents: 100,
+    }));
+    expect(invoiceSummaries(installments, [], cycles, today).map((s) => s.status)).toEqual([
+      "open",
+      "future",
+      "future",
+    ]);
+  });
+
+  it("when two versions give the same due date, the closing comes from the newer one", () => {
+    // 3/10 until 2026-11-04, then 5/10: the invoice due 2026-12-10 closes on 12-05, not 12-03.
+    const moved: CycleVersion[] = [
+      ...cycles,
+      { closingDay: 5, dueDay: 10, validFrom: "2026-11-04" },
+    ];
+    const [summary] = invoiceSummaries(
+      [{ invoiceDueDate: "2026-12-10", amountCents: 1 }],
+      [],
+      moved,
+      "2026-12-04",
+    );
+    expect(summary).toMatchObject({ closingDate: "2026-12-05", status: "open" });
+    // A version that starts after the closing it would give doesn't count.
+    const late: CycleVersion[] = [
+      ...cycles,
+      { closingDay: 5, dueDay: 10, validFrom: "2026-12-06" },
+    ];
+    expect(
+      invoiceSummaries(
+        [{ invoiceDueDate: "2026-12-10", amountCents: 1 }],
+        [],
+        late,
+        "2026-12-04",
+      )[0]?.closingDate,
+    ).toBe("2026-12-03");
   });
 
   it("uses the cycle version that produced each due date", () => {
@@ -116,13 +161,17 @@ describe("isPayableInvoice", () => {
 });
 
 describe("defaultInvoiceToPay", () => {
-  const summary = (dueDate: string, remainingCents: number, open = false) => ({
+  const summary = (
+    dueDate: string,
+    remainingCents: number,
+    status: "closed" | "open" | "future" = "closed",
+  ) => ({
     dueDate,
     closingDate: "",
     totalCents: remainingCents,
     paidCents: 0,
     remainingCents,
-    open,
+    status,
   });
 
   it("the oldest closed invoice with something to pay", () => {
@@ -130,14 +179,20 @@ describe("defaultInvoiceToPay", () => {
       defaultInvoiceToPay([
         summary("2026-10-10", 0),
         summary("2026-11-10", 300),
-        summary("2026-12-10", 100, true),
+        summary("2026-12-10", 100, "open"),
       ]),
     ).toBe("2026-11-10");
   });
 
+  it("a future invoice is never the default over the open one", () => {
+    expect(
+      defaultInvoiceToPay([summary("2026-12-10", 0, "open"), summary("2027-01-10", 500, "future")]),
+    ).toBe("2026-12-10");
+  });
+
   it("else the open one", () => {
-    expect(defaultInvoiceToPay([summary("2026-11-10", -50), summary("2026-12-10", 0, true)])).toBe(
-      "2026-12-10",
-    );
+    expect(
+      defaultInvoiceToPay([summary("2026-11-10", -50), summary("2026-12-10", 0, "open")]),
+    ).toBe("2026-12-10");
   });
 });

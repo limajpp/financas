@@ -18,8 +18,11 @@ export type InvoiceSummary = {
   paidCents: number;
   /** total − paid; negative when overpaid (credit). */
   remainingCents: number;
-  /** Still taking purchases: today is before its closing date. */
-  open: boolean;
+  /**
+   * closed: its closing date has come. open: the one taking today's purchases. future: closes
+   * after the open one (installments, or older purchases after a cycle change).
+   */
+  status: "closed" | "open" | "future";
 };
 
 type Amount = { invoiceDueDate: CalendarDate; amountCents: number };
@@ -61,7 +64,8 @@ export function invoiceSummaries(
   };
   for (const p of purchases) add(p.invoiceDueDate, "total", p.amountCents);
   for (const p of payments) add(p.invoiceDueDate, "paid", p.amountCents);
-  add(invoiceFor(cycleOn(cycles, today), today).dueDate, "total", 0);
+  const openDueDate = invoiceFor(cycleOn(cycles, today), today).dueDate;
+  add(openDueDate, "total", 0);
 
   return [...totals.entries()]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
@@ -73,7 +77,12 @@ export function invoiceSummaries(
         totalCents: total,
         paidCents: paid,
         remainingCents: total - paid,
-        open: today < closingDate,
+        status:
+          dueDate === openDueDate
+            ? ("open" as const)
+            : today < closingDate
+              ? ("future" as const)
+              : ("closed" as const),
       };
     });
 }
@@ -99,6 +108,8 @@ export function isPayableInvoice(
 
 /** The invoice the payment dialog starts on: the oldest closed one with something left to pay. */
 export function defaultInvoiceToPay(summaries: readonly InvoiceSummary[]): CalendarDate | null {
-  const unpaid = summaries.find((s) => !s.open && s.remainingCents > 0);
-  return (unpaid ?? summaries.find((s) => s.open) ?? summaries.at(-1))?.dueDate ?? null;
+  const unpaid = summaries.find((s) => s.status === "closed" && s.remainingCents > 0);
+  return (
+    (unpaid ?? summaries.find((s) => s.status === "open") ?? summaries.at(-1))?.dueDate ?? null
+  );
 }
