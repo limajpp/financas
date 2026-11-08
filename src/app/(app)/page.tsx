@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { InstallHint } from "@/components/pwa/install-hint";
 import { generateRecurringSafely } from "@/server/recurring";
 import { getCurrentSpace, getCurrentUser } from "@/server/session";
 
@@ -10,6 +11,7 @@ export default function HomePage() {
         <Greeting />
       </Suspense>
       <p className="mt-2 text-muted-foreground">Em breve, o resumo do seu mês aparece aqui.</p>
+      <InstallHint />
     </div>
   );
 }

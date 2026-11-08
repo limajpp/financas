@@ -35,7 +35,7 @@ Instalar o app na tela inicial do iPhone. Ele passa a abrir em tela cheia, como 
 - **Atualização:** um service worker novo assume na próxima abertura (`skipWaiting` e `clientsClaim`).
 - **Sair da conta apaga os caches do app.** As páginas guardadas têm dados financeiros, e o próximo a usar o aparelho não deve vê-las.
 - **O proxy de autenticação** deixa passar `/serwist/*`, o manifest e os ícones, para o navegador conseguir instalá-los sem sessão.
-- **Em desenvolvimento** (`next dev`), o service worker fica desligado, para não servir código velho enquanto se programa. Ele liga no build de produção e no e2e, por uma variável de ambiente.
+- **Em desenvolvimento** (`next dev`), o service worker fica desligado, para não servir código velho enquanto se programa. Ele só existe no build de produção. Os e2e que dependem dele rodam no CI, que testa o build de produção; localmente, com `npm run build` e `CI=1`.
 
 ### Instruções de instalação no iOS
 
@@ -70,7 +70,10 @@ Instalar o app na tela inicial do iPhone. Ele passa a abrir em tela cheia, como 
 - **`@serwist/turbopack` e não `@serwist/next`.** O `@serwist/next` depende do webpack, e o projeto usa o Turbopack padrão do Next 16. A variante para o Turbopack gera o service worker com esbuild, numa rota.
 - **"Rede primeiro" para as páginas.** O saldo e a lista mudam a cada lançamento. Mostrar primeiro o cache deixaria números velhos na tela mesmo com rede. O cache é só para quando não houver conexão.
 - **Apagar os caches ao sair da conta.** É a contrapartida de guardar páginas com dados financeiros no aparelho.
-- **Service worker desligado no `next dev`.** Um service worker ativo em desenvolvimento serve arquivos velhos e confunde. O e2e liga ele por variável de ambiente para testar o comportamento real.
+- **Service worker desligado no `next dev`.** Um service worker ativo em desenvolvimento serve arquivos velhos e confunde. Os e2e dele rodam contra o build de produção.
+- **A rota do service worker é prerenderizada.** Na Vercel, os arquivos estáticos do build ficam na CDN, não ao lado da função. Por isso, a lista do precache e o próprio `sw.js` são gerados no build, com `use cache`, já que o Cache Components não aceita as opções de rota que o Serwist traz.
+- **Cada tela é guardada uma vez por abertura do app.** O Serwist pode guardar a página a cada navegação, mas isso faria o servidor renderizar tudo de novo a cada clique, e a cada filtro da lista. Aqui, a tela é guardada na primeira visita depois de abrir o app, e só pelo caminho, sem os filtros.
+- **Voltar a rede não recarrega a página.** O recarregamento automático do Serwist apagaria um lançamento pela metade.
 - **Ícone gerado de um SVG no repositório.** Sem dependência de ferramenta externa, e fácil de trocar depois.
 
 ## Fora do escopo

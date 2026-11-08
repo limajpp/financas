@@ -46,6 +46,20 @@ export default function ConfiguracoesPage() {
           ))}
         </ul>
       </nav>
+      <section aria-labelledby="instalar" className="mt-6 rounded-md border px-4 py-3">
+        <h2 id="instalar" className="font-medium">
+          Instalar no iPhone
+        </h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Abra o app no Safari.</li>
+          <li>Toque em Compartilhar (o quadrado com a seta para cima).</li>
+          <li>Escolha &quot;Adicionar à Tela de Início&quot; e toque em Adicionar.</li>
+        </ol>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Depois, abra pelo ícone: o app fica em tela cheia e abre as telas já vistas mesmo sem
+          internet.
+        </p>
+      </section>
       <SignOutButton className="mt-6 md:hidden" />
     </div>
   );
