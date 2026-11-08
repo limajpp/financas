@@ -32,6 +32,7 @@ describe("entrySchema", () => {
       counterpartyDocument: null,
       description: null,
       installments: null,
+      subscription: false,
     });
   });
 
@@ -183,6 +184,40 @@ describe("entrySchema: installments", () => {
     expect(issues({ ...credit, type: "INCOME", installments: 3 })).toEqual({
       installments: "Só compras no crédito podem ser parceladas.",
     });
+  });
+});
+
+describe("entrySchema: subscription", () => {
+  it("defaults to false and takes true on an expense, by any method", () => {
+    expect(entrySchema.parse(base)).toMatchObject({ subscription: false });
+    expect(entrySchema.parse({ ...base, subscription: true })).toMatchObject({
+      subscription: true,
+    });
+    expect(
+      entrySchema.parse({
+        ...base,
+        method: "CREDIT",
+        accountId: undefined,
+        cardId,
+        subscription: true,
+      }),
+    ).toMatchObject({ subscription: true, cardId });
+  });
+
+  it("refuses it on an income and together with installments", () => {
+    expect(issues({ ...base, type: "INCOME", subscription: true })).toEqual({
+      subscription: "Só despesas podem ser assinaturas.",
+    });
+    expect(
+      issues({
+        ...base,
+        method: "CREDIT",
+        accountId: undefined,
+        cardId,
+        installments: 3,
+        subscription: true,
+      }),
+    ).toEqual({ subscription: "Uma compra parcelada não pode ser assinatura." });
   });
 });
 

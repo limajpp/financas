@@ -51,6 +51,7 @@ function pix(overrides: Partial<EntryInput> = {}): EntryInput {
     counterpartyDocument: null,
     description: null,
     installments: null,
+    subscription: false,
     ...overrides,
   };
 }

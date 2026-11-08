@@ -57,7 +57,8 @@ export type TransactionError =
   | "TOO_SMALL_FOR_INSTALLMENTS"
   | "INSTALLMENT_LOCKED"
   | "INSTALLMENT_AMOUNT_SCOPE"
-  | "INSTALLMENTS_ON_EDIT";
+  | "INSTALLMENTS_ON_EDIT"
+  | "SUBSCRIPTION_ON_EDIT";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
@@ -84,6 +85,8 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
     "Para mudar a data ou o cartão de uma compra parcelada, exclua e registre de novo.",
   INSTALLMENT_AMOUNT_SCOPE: "O valor muda só na parcela escolhida: use “só esta”.",
   INSTALLMENTS_ON_EDIT: "Para parcelar uma compra já registrada, exclua e registre de novo.",
+  SUBSCRIPTION_ON_EDIT:
+    "Para tornar um gasto já registrado uma assinatura, exclua e registre de novo.",
 };
 
 /** Which installments an edit or deletion reaches: the chosen one, or it and the next ones. */
@@ -192,6 +195,8 @@ export type EntryInput = {
   description: string | null;
   /** 2–24 for a credit purchase in installments (task 12); null otherwise. */
   installments: number | null;
+  /** The expense starts a monthly subscription on its day of the month (task 13). */
+  subscription: boolean;
 };
 
 /** What the entry points to, looked up in the user's space (missing = not found). */
