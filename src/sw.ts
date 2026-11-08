@@ -1,10 +1,10 @@
 /// <reference lib="esnext" />
 /// <reference lib="webworker" />
 import { defaultCache } from "@serwist/turbopack/worker";
-import type { PrecacheEntry, SerwistGlobalConfig } from "serwist";
-import { ExpirationPlugin, NetworkFirst, Serwist } from "serwist";
+import type { PrecacheEntry, RuntimeCaching, SerwistGlobalConfig, SerwistPlugin } from "serwist";
+import { ExpirationPlugin, NetworkFirst, Serwist, Strategy } from "serwist";
 
-import { OFFLINE_URL, PAGES_CACHE } from "@/lib/pwa";
+import { CLEAR_PRIVATE_CACHES, isPrivateCache, OFFLINE_URL, PAGES_CACHE } from "@/lib/pwa";
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -15,12 +15,26 @@ declare global {
 declare const self: ServiceWorkerGlobalScope;
 
 /**
- * The app's screens: the network first, so balances are never stale while online; the last copy
- * when offline. Both document loads and the copies asked for on client navigation (CACHE_URLS)
- * land here, so they share one cache. Redirects (an expired session) and errors aren't kept.
+ * Bumped by every sign-out. A response whose request started before it isn't saved: a screen
+ * still loading when "Sair" was tapped would otherwise land in the cache after it was cleared.
  */
-const pages = {
-  matcher: ({ request, url, sameOrigin }: { request: Request; url: URL; sameOrigin: boolean }) =>
+let generation = 0;
+const signOutGuard: SerwistPlugin = {
+  handlerWillStart: async ({ state }) => {
+    if (state) state.generation = generation;
+  },
+  cacheWillUpdate: async ({ response, state }) =>
+    state?.generation === generation ? response : null,
+};
+
+/**
+ * The app's screens: the network first, so balances are never stale while online (no timeout:
+ * offline, the request fails fast anyway); the last copy when offline. Both document loads and
+ * the copies asked for on client navigation (CACHE_URLS) land here, so they share one cache.
+ * Redirects (an expired session) and errors aren't kept.
+ */
+const pages: RuntimeCaching = {
+  matcher: ({ request, url, sameOrigin }) =>
     sameOrigin &&
     request.method === "GET" &&
     request.headers.get("RSC") !== "1" &&
@@ -30,7 +44,6 @@ const pages = {
     !/\.[a-z0-9]+$/i.test(url.pathname),
   handler: new NetworkFirst({
     cacheName: PAGES_CACHE,
-    networkTimeoutSeconds: 8,
     plugins: [
       {
         cacheWillUpdate: async ({ response }) =>
@@ -41,15 +54,43 @@ const pages = {
   }),
 };
 
+const runtimeCaching = [pages, ...defaultCache];
+for (const { handler } of runtimeCaching) {
+  if (handler instanceof Strategy) handler.plugins.push(signOutGuard);
+}
+
 const serwist = new Serwist({
   precacheEntries: self.__SW_MANIFEST,
   skipWaiting: true,
   clientsClaim: true,
   navigationPreload: true,
-  runtimeCaching: [pages, ...defaultCache],
+  runtimeCaching,
   fallbacks: {
     entries: [{ url: OFFLINE_URL, matcher: ({ request }) => request.destination === "document" }],
   },
+});
+
+/**
+ * Deletes the saved screens and API answers, and the expiration records that keep their URLs
+ * (search terms included) in IndexedDB.
+ */
+async function clearPrivateCaches() {
+  generation++;
+  for (const { handler } of runtimeCaching) {
+    if (!(handler instanceof Strategy)) continue;
+    for (const plugin of handler.plugins) {
+      if (plugin instanceof ExpirationPlugin) await plugin.deleteCacheAndMetadata();
+    }
+  }
+  const names = await caches.keys();
+  await Promise.all(names.filter(isPrivateCache).map((name) => caches.delete(name)));
+}
+
+self.addEventListener("message", (event) => {
+  if (event.data?.type !== CLEAR_PRIVATE_CACHES) return;
+  const done = clearPrivateCaches();
+  event.waitUntil(done);
+  void done.then(() => event.ports[0]?.postMessage(true));
 });
 
 serwist.addEventListeners();

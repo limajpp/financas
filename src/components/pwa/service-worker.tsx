@@ -2,7 +2,7 @@
 
 import { SerwistProvider, useSerwist } from "@serwist/turbopack/react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Registers the service worker (production builds only: in `next dev` it would serve stale code).
@@ -30,11 +30,30 @@ export function ServiceWorker({ children }: { children: React.ReactNode }) {
 function CacheVisitedScreens() {
   const { serwist } = useSerwist();
   const pathname = usePathname();
-  const saved = useRef(new Set<string>());
+  const saved = useRef<Set<string> | null>(null);
+  const [online, setOnline] = useState(true);
   useEffect(() => {
-    if (!serwist || !navigator.onLine || saved.current.has(pathname)) return;
-    saved.current.add(pathname);
-    void serwist.messageSW({ type: "CACHE_URLS", payload: { urlsToCache: [pathname] } });
-  }, [serwist, pathname]);
+    const update = () => setOnline(navigator.onLine);
+    window.addEventListener("online", update);
+    window.addEventListener("offline", update);
+    return () => {
+      window.removeEventListener("online", update);
+      window.removeEventListener("offline", update);
+    };
+  }, []);
+  useEffect(() => {
+    // The first screen came through the service worker already, if it was in charge.
+    if (saved.current === null) {
+      saved.current = new Set(navigator.serviceWorker?.controller ? [location.pathname] : []);
+    }
+    const done = saved.current;
+    if (!serwist || !online || !navigator.onLine || done.has(pathname)) return;
+    done.add(pathname);
+    // Without a real connection (online but nothing gets through) the screen is tried again later.
+    const retry = setTimeout(() => done.delete(pathname), 30_000);
+    void serwist
+      .messageSW({ type: "CACHE_URLS", payload: { urlsToCache: [pathname] } })
+      .then(() => clearTimeout(retry));
+  }, [serwist, pathname, online]);
   return null;
 }
