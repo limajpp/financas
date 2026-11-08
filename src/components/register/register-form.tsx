@@ -15,11 +15,13 @@ import { NativeSelect } from "@/components/native-select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { type KeypadKey, KEYPAD_DIGITS, pressKey } from "@/domain/amount-keypad";
 import { ALIAS_MAX } from "@/domain/counterparty-memory";
 import { formatDocument } from "@/domain/document";
 import { normalizeName } from "@/domain/names";
 import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
+import { INSTALLMENTS_MAX, INSTALLMENTS_MIN, splitAmount } from "@/domain/installments";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
 import type { PaymentChoice, TransferChoice } from "@/domain/register";
@@ -121,6 +123,8 @@ export function RegisterForm({
     if (date === knownToday) setDate(today);
   }
   const [chosenInvoice, setChosenInvoice] = useState<CalendarDate | null>(null);
+  // "Parcelado": the number of installments, or null (task 12).
+  const [installmentCount, setInstallmentCount] = useState<number | null>(null);
   const [description, setDescription] = useState("");
   const [alias, setAlias] = useState("");
   const [documentText, setDocumentText] = useState("");
@@ -135,6 +139,8 @@ export function RegisterForm({
   const saved = useRef(false);
   const resetRef = useRef<() => void>(() => {});
   const ids = {
+    installments: useId(),
+    installmentCount: useId(),
     from: useId(),
     to: useId(),
     date: useId(),
@@ -156,6 +162,11 @@ export function RegisterForm({
   const validDate = isCalendarDate(date) && date >= TRANSACTION_DATE_MIN && date <= today;
   const invoice = card && validDate ? invoiceOptions(card, date) : null;
   const yesterday = addDays(today, -1);
+  // Only a credit purchase can be in installments; anything else turns it off.
+  const canSplit = kind === "EXPENSE" && payment.method === "CREDIT";
+  const installments = canSplit ? installmentCount : null;
+  const split =
+    installments !== null && cents >= installments ? splitAmount(cents, installments) : null;
 
   // The chosen category stays visible: it takes the last button when it isn't a top one.
   const selected = data.tree.flatMap((p) => [p, ...p.children]).find((c) => c.id === categoryId);
@@ -173,7 +184,10 @@ export function RegisterForm({
       : transferDefault;
   const sameAccount = transfer !== null && transfer.accountId === transfer.toAccountId;
   const canSave =
-    cents > 0 && !pending && (kind !== "TRANSFER" || (transfer !== null && !sameAccount));
+    cents > 0 &&
+    !pending &&
+    (kind !== "TRANSFER" || (transfer !== null && !sameAccount)) &&
+    (installments === null || split !== null);
 
   const place =
     payment.method === "CREDIT"
@@ -297,6 +311,7 @@ export function RegisterForm({
     setCategoryId(null);
     setDate(today);
     setChosenInvoice(null);
+    setInstallmentCount(null);
     setDescription("");
     setAlias("");
     setDocumentText("");
@@ -338,6 +353,7 @@ export function RegisterForm({
                 counterpartyAlias: alias,
                 counterpartyDocument: documentText,
                 description,
+                installments,
               });
       } catch {
         // Offline or a server error: keep everything (and the clientId, so a retry can't
@@ -350,13 +366,15 @@ export function RegisterForm({
         return;
       }
       const id = result.id;
+      const count = kind === "TRANSFER" ? null : installments;
       saved.current = true;
-      toast(`${label} de ${formatBRL(amount)} salva`, {
+      toast(`${label} de ${formatBRL(amount)}${count ? ` em ${count}×` : ""} salva`, {
         duration: 5_000,
         action: {
           label: "Desfazer",
           onClick: async () => {
-            const undone = await deleteTransactionAction(id);
+            // A purchase in installments goes whole: from the 1st on.
+            const undone = await deleteTransactionAction(id, count ? "following" : "this");
             if (undone.ok) toast("Lançamento desfeito.");
             else toast.error(undone.error);
           },
@@ -416,6 +434,15 @@ export function RegisterForm({
       >
         {formatBRL(cents)}
       </output>
+      {installments !== null && cents > 0 && (
+        <p aria-live="polite" className="-mt-2 text-center text-sm text-muted-foreground">
+          {split
+            ? `${installments}× de ${formatBRL(split[1]!)}${
+                split[0] !== split[1] ? ` (1ª de ${formatBRL(split[0]!)})` : ""
+              }`
+            : `Valor pequeno demais para ${installments}×.`}
+        </p>
+      )}
 
       {kind === "TRANSFER" ? (
         <TransferFields
@@ -480,7 +507,44 @@ export function RegisterForm({
           </button>
         )}
 
-        {kind !== "TRANSFER" && invoice && (
+        {canSplit && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Switch
+                id={ids.installments}
+                checked={installments !== null}
+                onCheckedChange={(on) => setInstallmentCount(on ? (installmentCount ?? 2) : null)}
+              />
+              <Label htmlFor={ids.installments}>Parcelado</Label>
+            </div>
+            {installments !== null && (
+              <NativeSelect
+                id={ids.installmentCount}
+                aria-label="Número de parcelas"
+                value={installments}
+                onChange={(e) => setInstallmentCount(Number(e.target.value))}
+                className="w-24"
+              >
+                {Array.from(
+                  { length: INSTALLMENTS_MAX - INSTALLMENTS_MIN + 1 },
+                  (_, i) => i + INSTALLMENTS_MIN,
+                ).map((n) => (
+                  <option key={n} value={n}>
+                    {n}×
+                  </option>
+                ))}
+              </NativeSelect>
+            )}
+          </div>
+        )}
+
+        {kind !== "TRANSFER" && invoice && installments !== null && (
+          <p className="text-sm text-muted-foreground">
+            1ª parcela na fatura que vence em {formatCalendarDate(invoice.computed)}
+          </p>
+        )}
+
+        {kind !== "TRANSFER" && invoice && installments === null && (
           <div className="grid gap-1">
             <Label htmlFor={ids.invoice} className="font-normal text-muted-foreground">
               Cai na fatura que vence em
