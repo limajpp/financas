@@ -4,6 +4,7 @@ import { type BalanceEntry, accountBalance } from "@/domain/balance";
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
+import type { CycleVersion } from "@/domain/invoice-cycle";
 import { defaultInvoiceToPay, invoiceSummaries } from "@/domain/invoices";
 import {
   type CardPaymentInput,
@@ -272,24 +273,33 @@ export async function createTransfer(
   });
 }
 
-/** The card's credit purchases and invoice payments, as (due date, amount). */
-async function cardAmounts(cardId: string) {
-  const rows = await db.transaction.findMany({
+/**
+ * The credit purchases and invoice payments of the space's cards, summed per card and invoice
+ * (one query for any number of cards).
+ */
+async function cardAmounts(spaceId: string, cardIds: readonly string[]) {
+  const groups = await db.transaction.groupBy({
+    by: ["cardId", "type", "invoiceDueDate"],
     where: {
-      cardId,
+      spaceId,
+      cardId: { in: [...cardIds] },
       invoiceDueDate: { not: null },
       OR: [{ type: "EXPENSE", method: "CREDIT" }, { type: "CARD_PAYMENT" }],
     },
-    select: { type: true, amountCents: true, invoiceDueDate: true },
+    _sum: { amountCents: true },
   });
-  const amount = (r: (typeof rows)[number]) => ({
-    invoiceDueDate: dbToCalendarDate(r.invoiceDueDate!),
-    amountCents: r.amountCents,
-  });
-  return {
-    purchases: rows.filter((r) => r.type === "EXPENSE").map(amount),
-    payments: rows.filter((r) => r.type === "CARD_PAYMENT").map(amount),
-  };
+  type Amount = { invoiceDueDate: string; amountCents: number };
+  const byCard = new Map<string, { purchases: Amount[]; payments: Amount[] }>();
+  for (const g of groups) {
+    const amounts = byCard.get(g.cardId!) ?? { purchases: [], payments: [] };
+    const amount = {
+      invoiceDueDate: dbToCalendarDate(g.invoiceDueDate!),
+      amountCents: g._sum.amountCents ?? 0,
+    };
+    (g.type === "CARD_PAYMENT" ? amounts.payments : amounts.purchases).push(amount);
+    byCard.set(g.cardId!, amounts);
+  }
+  return (cardId: string) => byCard.get(cardId) ?? { purchases: [], payments: [] };
 }
 
 async function spaceCardWithCycles(spaceId: string, cardId: string) {
@@ -325,7 +335,7 @@ export async function createCardPayment(
       spaceCardWithCycles(spaceId, input.cardId),
     ]);
     const purchaseDueDates = card
-      ? (await cardAmounts(card.id)).purchases.map((p) => p.invoiceDueDate)
+      ? (await cardAmounts(spaceId, [card.id]))(card.id).purchases.map((p) => p.invoiceDueDate)
       : [];
     const checked = validateCardPayment(
       input,
@@ -351,28 +361,48 @@ export async function createCardPayment(
 }
 
 /**
- * What the "Pagar fatura" dialog needs for a card of the space: its invoices (total, paid,
- * remaining), the one to start on, the account that pays it and the last payment method used.
- * Null when the card isn't in the space.
+ * What the "Pagar fatura" dialog needs for each of the given cards (already loaded from the
+ * space, with their cycles): the invoices (total, paid, remaining), the one to start on, the
+ * account that pays it and the last payment method used. Two queries for any number of cards.
  */
-export async function cardInvoices(spaceId: string, cardId: string) {
-  const card = await spaceCardWithCycles(spaceId, cardId);
-  if (!card) return null;
-  const [{ purchases, payments }, lastPayment] = await Promise.all([
-    cardAmounts(card.id),
+export async function cardsInvoices(
+  spaceId: string,
+  cards: readonly { id: string; accountId: string; cycles: CycleVersion[] }[],
+) {
+  const today = todayInSaoPaulo();
+  const [amountsOf, lastPayment] = await Promise.all([
+    cardAmounts(
+      spaceId,
+      cards.map((c) => c.id),
+    ),
     db.transaction.findFirst({
       where: { spaceId, type: "CARD_PAYMENT" },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { method: true },
     }),
   ]);
-  const invoices = invoiceSummaries(purchases, payments, card.cycles, todayInSaoPaulo());
-  return {
-    invoices,
-    defaultDueDate: defaultInvoiceToPay(invoices),
-    accountId: card.accountId,
-    method: lastPayment?.method ?? "PIX",
-  };
+  return new Map(
+    cards.map((card) => {
+      const { purchases, payments } = amountsOf(card.id);
+      const invoices = invoiceSummaries(purchases, payments, card.cycles, today);
+      return [
+        card.id,
+        {
+          invoices,
+          defaultDueDate: defaultInvoiceToPay(invoices),
+          accountId: card.accountId,
+          method: lastPayment?.method ?? "PIX",
+        },
+      ] as const;
+    }),
+  );
+}
+
+/** cardsInvoices for one card of the space; null when the card isn't in the space. */
+export async function cardInvoices(spaceId: string, cardId: string) {
+  const card = await spaceCardWithCycles(spaceId, cardId);
+  if (!card) return null;
+  return (await cardsInvoices(spaceId, [card])).get(card.id)!;
 }
 
 /**

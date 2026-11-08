@@ -13,6 +13,7 @@ import { ensurePersonalSpace } from "@/server/spaces";
 import {
   accountBalances,
   cardInvoices,
+  cardsInvoices,
   createCardPayment,
   createTransaction,
   createTransfer,
@@ -177,6 +178,20 @@ describe("transferência", () => {
       method: "PIX",
     });
     await transfer(ana, { accountId: verde.id, toAccountId: azul.id, method: "TED" });
+    // An expense after it doesn't change what the transfer remembers.
+    tick();
+    await createTransaction(
+      ana.spaceId,
+      ana.userId,
+      randomUUID(),
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 100,
+        date: "2026-11-05",
+        method: "DEBIT",
+        accountId: azul.id,
+      }),
+    );
     expect((await registerData(ana.spaceId)).transfer).toEqual({
       accountId: verde.id,
       toAccountId: azul.id,
@@ -203,7 +218,7 @@ describe("pagamento de fatura", () => {
           totalCents: 50_000,
           paidCents: 0,
           remainingCents: 50_000,
-          open: false,
+          status: "closed",
         },
         {
           dueDate: "2026-12-10",
@@ -211,7 +226,7 @@ describe("pagamento de fatura", () => {
           totalCents: 7_000,
           paidCents: 0,
           remainingCents: 7_000,
-          open: true,
+          status: "open",
         },
       ],
       defaultDueDate: "2026-11-10",
@@ -292,6 +307,55 @@ describe("pagamento de fatura", () => {
     await pay(ana, fields, clientId);
     expect(await pay(ana, fields, clientId)).toMatchObject({ ok: true, created: false });
     expect(await db.transaction.count({ where: { type: "CARD_PAYMENT" } })).toBe(1);
+  });
+
+  it("CA5: uma fatura antiga (mais de 12 atrás) é pagável se tem compras", async () => {
+    const ana = await owner("ana@example.com");
+    const azul = await ana.account("Banco Azul");
+    const roxo = await card(ana, azul.id);
+    await purchase(ana, roxo.id, "2025-01-20", 9_000); // due 2025-02-10
+    expect(
+      await pay(ana, {
+        amountCents: 9_000,
+        accountId: azul.id,
+        cardId: roxo.id,
+        invoiceDueDate: "2025-02-10",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      await pay(ana, {
+        amountCents: 1,
+        accountId: azul.id,
+        cardId: roxo.id,
+        invoiceDueDate: "2025-03-10",
+      }),
+    ).toEqual({ ok: false, error: "INVALID_INVOICE" });
+  });
+
+  it("os resumos de vários cartões saem juntos, cada um com o seu", async () => {
+    const ana = await owner("ana@example.com");
+    const azul = await ana.account("Banco Azul");
+    const verde = await ana.account("Banco Verde");
+    const roxo = await card(ana, azul.id);
+    const preto = await createCard(
+      ana.spaceId,
+      cardSchema.parse({ name: "Cartão Preto", accountId: verde.id, closingDay: 25, dueDay: 5 }),
+    );
+    if (!preto.ok) throw new Error(preto.error);
+    await purchase(ana, roxo.id, "2026-11-05", 1_000);
+    await purchase(ana, preto.card.id, "2026-11-05", 2_000);
+
+    const all = await cardsInvoices(ana.spaceId, [
+      { id: roxo.id, accountId: azul.id, cycles: roxo.cycles },
+      { id: preto.card.id, accountId: verde.id, cycles: preto.card.cycles },
+    ]);
+    expect(all.get(roxo.id)?.invoices).toMatchObject([
+      { dueDate: "2026-12-10", totalCents: 1_000 },
+    ]);
+    expect(all.get(preto.card.id)).toMatchObject({
+      accountId: verde.id,
+      invoices: [{ dueDate: "2026-12-05", totalCents: 2_000, status: "open" }],
+    });
   });
 
   it("uma mudança de ciclo não move a fatura de um pagamento", async () => {

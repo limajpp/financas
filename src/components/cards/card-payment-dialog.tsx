@@ -24,14 +24,24 @@ import type { CardView, PayerOption } from "./types";
 
 type Method = (typeof CARD_PAYMENT_METHODS)[number];
 
-/** "10/12 (aberta) · R$ 300,00 a pagar": short enough for the select on a phone. */
-function invoiceLabel(invoice: InvoiceSummary) {
-  const due = formatCalendarDate(invoice.dueDate).slice(0, 5);
+const STATUS_LABELS: Record<InvoiceSummary["status"], string> = {
+  closed: "",
+  open: " (aberta)",
+  future: " (futura)",
+};
+
+/**
+ * "10/12 (aberta) · R$ 300,00 a pagar": short enough for the select on a phone. The year shows
+ * when it isn't this year's (an old invoice still unpaid).
+ */
+function invoiceLabel(invoice: InvoiceSummary, today: string) {
+  const full = formatCalendarDate(invoice.dueDate);
+  const due = invoice.dueDate.slice(0, 4) === today.slice(0, 4) ? full.slice(0, 5) : full;
   const left =
     invoice.remainingCents < 0
       ? `${formatBRL(-invoice.remainingCents)} a favor`
       : `${formatBRL(invoice.remainingCents)} a pagar`;
-  return `${due}${invoice.open ? " (aberta)" : ""} · ${left}`;
+  return `${due}${STATUS_LABELS[invoice.status]} · ${left}`;
 }
 
 /** The amount field starts with what's left on the invoice (empty when nothing is). */
@@ -90,8 +100,10 @@ function PaymentForm({
   const clientId = useRef<string | null>(null);
   const ids = { invoice: useId(), amount: useId(), account: useId(), date: useId() };
 
-  // Invoices with something to pay, the open one, and the chosen one.
-  const options = invoices.filter((i) => i.remainingCents > 0 || i.open || i.dueDate === dueDate);
+  // Invoices with something to pay (or overpaid), the open one, and the chosen one.
+  const options = invoices.filter(
+    (i) => i.remainingCents !== 0 || i.status === "open" || i.dueDate === dueDate,
+  );
 
   function chooseInvoice(next: string) {
     setDueDate(next);
@@ -164,7 +176,7 @@ function PaymentForm({
         >
           {options.map((invoice) => (
             <option key={invoice.dueDate} value={invoice.dueDate}>
-              {invoiceLabel(invoice)}
+              {invoiceLabel(invoice, today)}
             </option>
           ))}
         </NativeSelect>
@@ -178,8 +190,9 @@ function PaymentForm({
           id={ids.amount}
           value={amount}
           onValueChange={(value) => {
+            // The blur reformats without changing anything: that isn't touching the amount.
+            if (value !== amount) setAmountTouched(true);
             setAmount(value);
-            setAmountTouched(true);
           }}
           placeholder="0,00"
         />

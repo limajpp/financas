@@ -264,6 +264,9 @@ export function RegisterForm({
 
   function switchKind(next: Kind) {
     if (next === kind) return;
+    // Another kind of entry: a retry after a network error must not reuse the previous one's id
+    // (the server would answer with the entry that may have arrived, of the other kind).
+    clientId.current = null;
     setKind(next);
     setCategoryId(null);
     setError(null);
@@ -535,7 +538,7 @@ export function RegisterForm({
         >
           {showDetails
             ? "Menos detalhes"
-            : description || documentText || alias
+            : description || (kind !== "TRANSFER" && (documentText || alias))
               ? "Mais detalhes · preenchidos"
               : "Mais detalhes"}
         </button>
