@@ -330,7 +330,7 @@ test.describe("com o envio retido", () => {
     await page.getByRole("button", { name: "Sair", exact: true }).click();
     await dialog.getByRole("button", { name: "Sair e apagar" }).click();
     await expect(page).toHaveURL(/\/entrar$/);
-    expect(await queued(page)).toBe(0);
+    await expect.poll(() => queued(page)).toBe(0);
 
     // Back in, nothing waits and nothing was created.
     await page.unroute("**/api/sync");
@@ -339,6 +339,64 @@ test.describe("com o envio retido", () => {
     await expect(indicator(page, /aguardando sincronização/)).toBeHidden();
     await page.goto("/lancamentos");
     await expect(page.getByText("Padaria Offline")).toHaveCount(0);
+  });
+
+  test("com a sessão expirada, o lançamento espera o novo login e é enviado sozinho", async ({
+    page,
+    context,
+    isMobile,
+  }) => {
+    test.slow();
+    const { email } = await setup(page);
+    await page.route("**/api/sync", (route) =>
+      route.fulfill({ status: 401, json: { error: "Sessão expirada. Entre de novo." } }),
+    );
+    await context.setOffline(true);
+    await registerOffline(page, "Padaria Offline", "4790");
+    await context.setOffline(false);
+    await expect(indicator(page, "Entre de novo para enviar 1 lançamento")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // The session is gone: the next screen sends to the login, and the entry is still waiting.
+    await context.clearCookies();
+    await page.unroute("**/api/sync");
+    await page.getByRole("link", { name: "Lançamentos", exact: true }).click();
+    await expect(page).toHaveURL(/\/entrar/);
+    expect(await queued(page)).toBe(1);
+
+    await signIn(page, email);
+    await expect(page.getByText("1 lançamento sincronizado")).toBeVisible({ timeout: 30_000 });
+    await expect(indicator(page, /Entre de novo|aguardando sincronização/)).toBeHidden();
+    await open(page, "Lançamentos");
+    await expect(row(page, isMobile, "Padaria Offline")).toHaveCount(1);
+  });
+
+  test("com rede, se o envio falha o lançamento vai para a fila e é criado uma vez só", async ({
+    page,
+    isMobile,
+  }) => {
+    test.slow();
+    await setup(page);
+    // The Server Action's request dies on the way; the queue's endpoint works.
+    await page.route("**/registrar", (route) =>
+      route.request().method() === "POST" && route.request().headers()["next-action"]
+        ? route.abort()
+        : route.continue(),
+    );
+    await typeAmount(page, "4790");
+    await page.getByLabel("O que foi?").fill("Padaria Offline");
+    await save(page).click();
+
+    const toast = page.getByRole("listitem").filter({ hasText: "salva no aparelho" });
+    await expect(toast).toContainText("O envio não respondeu.");
+    // The first request may still arrive: nothing here can promise an undo.
+    await expect(toast.getByRole("button", { name: "Desfazer" })).toHaveCount(0);
+    await expect(page.getByText("1 lançamento sincronizado")).toBeVisible({ timeout: 30_000 });
+    await page.unroute("**/registrar");
+
+    await open(page, "Lançamentos");
+    await expect(row(page, isMobile, "Padaria Offline")).toHaveCount(1);
   });
 });
 

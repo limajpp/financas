@@ -61,8 +61,10 @@ describe("fila no IndexedDB", () => {
   it("descarta um item", async () => {
     await putInOutbox(item(1));
     await putInOutbox(item(2));
-    await removeFromOutbox("id-1");
+    expect(await removeFromOutbox("id-1")).toBe(true);
     expect((await listOutbox("ana")).map((i) => i.clientId)).toEqual(["id-2"]);
+    // Already gone (sent, or discarded in another tab): the caller must not claim an undo.
+    expect(await removeFromOutbox("id-1")).toBe(false);
   });
 
   it("corrigir substitui o item rejeitado pelo mesmo clientId, de novo pendente", async () => {

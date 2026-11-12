@@ -1,6 +1,6 @@
 import { applyResults, nextBatch, type SyncResult } from "@/domain/outbox";
 
-import { applyOutboxChanges, listOutbox } from "./outbox-db";
+import { applyOutboxChanges, listOutbox, removeFromOutbox } from "./outbox-db";
 
 export type FlushOutcome = {
   /**
@@ -58,25 +58,41 @@ async function send(userId: string): Promise<FlushOutcome> {
   }
 }
 
-let sending = false;
+/** The send running in this tab, if any. */
+let current: Promise<FlushOutcome> | null = null;
 
 /**
  * Sends the user's pending entries to `/api/sync`, in batches, and updates the queue with the
  * answers. Only one tab sends at a time (not needed for correctness, the server dedupes by
- * `clientId`; it just avoids double work).
+ * `clientId`; it just avoids double work): BUSY when another one is at it.
  */
 export async function flushOutbox(userId: string): Promise<FlushOutcome> {
   const busy: FlushOutcome = { status: "BUSY", synced: 0, rejected: 0 };
-  if (sending) return busy;
-  sending = true;
+  if (current) return busy;
+  // One tab at a time. Without the Web Locks API (old browsers), each tab sends on its own.
+  const run = (async (): Promise<FlushOutcome> => {
+    if (typeof navigator === "undefined" || !navigator.locks) return send(userId);
+    return await navigator.locks.request(LOCK, { ifAvailable: true }, async (lock) =>
+      lock ? send(userId) : busy,
+    );
+  })();
+  current = run;
   try {
-    if (typeof navigator !== "undefined" && navigator.locks) {
-      return await navigator.locks.request(LOCK, { ifAvailable: true }, (lock) =>
-        lock ? send(userId) : busy,
-      );
-    }
-    return await send(userId);
+    return await run;
   } finally {
-    sending = false;
+    current = null;
   }
+}
+
+/**
+ * Takes an entry out of the queue, for "Desfazer" and "Descartar". It waits for a send on its way
+ * (in any tab) to finish first: an item already in a batch would be created on the server all the
+ * same. False when the entry is no longer in the queue, which means it was sent.
+ */
+export async function discardFromOutbox(clientId: string): Promise<boolean> {
+  await current?.catch(() => {});
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(LOCK, async () => removeFromOutbox(clientId));
+  }
+  return removeFromOutbox(clientId);
 }

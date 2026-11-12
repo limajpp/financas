@@ -45,6 +45,7 @@ import {
   TRANSFER_METHODS,
 } from "@/domain/transactions";
 import { findInOutbox, putInOutbox, removeFromOutbox } from "@/lib/outbox-db";
+import { discardFromOutbox } from "@/lib/outbox-sync";
 import { cn } from "@/lib/utils";
 import { entrySchema, transferSchema } from "@/lib/validation/transactions";
 
@@ -480,8 +481,10 @@ export function RegisterForm({
     /**
      * Keeps the entry on the device, to be sent when the connection is back (task 16). False when
      * it couldn't be kept (a mistake in the form, or no storage): the message is on the screen.
+     * `attempted`: a request was already made and may still arrive, so there is no "Desfazer"
+     * (taking the entry out of the queue wouldn't stop it from being created).
      */
-    async function queue() {
+    async function queue(attempted: boolean) {
       const checked = (isTransfer ? transferSchema : entrySchema).safeParse(input);
       if (!checked.success) {
         setError(checked.error.issues[0]?.message ?? "Dados inválidos.");
@@ -502,16 +505,25 @@ export function RegisterForm({
         return false;
       }
       toast(`${label} de ${formatBRL(amount)} salva no aparelho`, {
-        description: "Ela será enviada quando a conexão voltar.",
+        description: attempted
+          ? "O envio não respondeu. Ela será enviada de novo em instantes."
+          : "Ela será enviada quando a conexão voltar.",
         duration: 5_000,
-        action: {
-          label: "Desfazer",
-          onClick: () =>
-            void removeFromOutbox(id).then(
-              () => toast("Lançamento desfeito."),
-              () => toast.error("Não foi possível desfazer."),
-            ),
-        },
+        action: attempted
+          ? undefined
+          : {
+              label: "Desfazer",
+              onClick: () =>
+                void discardFromOutbox(id).then(
+                  (removed) =>
+                    removed
+                      ? toast("Lançamento desfeito.")
+                      : toast.error(
+                          "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.",
+                        ),
+                  () => toast.error("Não foi possível desfazer."),
+                ),
+            },
       });
       // No trip home: without a connection the next screen might not load. The form goes blank
       // for the next entry.
@@ -523,7 +535,7 @@ export function RegisterForm({
     startTransition(async () => {
       const failed = "Não foi possível salvar. Verifique a conexão e tente de novo.";
       if (!navigator.onLine) {
-        if (!(await queue())) setError((current) => current ?? failed);
+        if (!(await queue(false))) setError((current) => current ?? failed);
         return;
       }
       let result: Awaited<ReturnType<typeof createTransactionAction>> | typeof TIMED_OUT;
@@ -539,7 +551,7 @@ export function RegisterForm({
         // No answer, or an error on the way: the entry waits on the device. If the request did
         // arrive, the queue's resend gets the same entry back (same clientId).
         // Otherwise everything stays filled in, with the clientId, for a retry.
-        if (!(await queue())) setError((current) => current ?? failed);
+        if (!(await queue(true))) setError((current) => current ?? failed);
         return;
       }
       if (!result.ok) {

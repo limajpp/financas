@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutboxItem, SyncItem, SyncResult } from "@/domain/outbox";
 
 import { clearOutbox, listOutbox, putInOutbox } from "./outbox-db";
-import { flushOutbox } from "./outbox-sync";
+import { discardFromOutbox, flushOutbox } from "./outbox-sync";
 
 function item(n: number, over: Partial<OutboxItem> = {}): OutboxItem {
   return {
@@ -144,5 +144,38 @@ describe("flushOutbox", () => {
     const [a, b] = await Promise.all([flushOutbox("ana"), flushOutbox("ana")]);
     expect([a.status, b.status].sort()).toEqual(["BUSY", "DONE"]);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("discardFromOutbox", () => {
+  it("tira da fila um item que ainda não foi enviado", async () => {
+    const { fetchMock } = server();
+    await putInOutbox(item(1));
+    expect(await discardFromOutbox("id-1")).toBe(true);
+    expect(await listOutbox("ana")).toEqual([]);
+    await flushOutbox("ana");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("espera o envio em curso e avisa que o item já foi enviado", async () => {
+    let answer: (response: Response) => void = () => {};
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>((resolve) => (answer = resolve))),
+    );
+    await putInOutbox(item(1));
+    const flushing = flushOutbox("ana");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
+
+    // "Descartar" tapped while the batch is on its way.
+    let discarded: boolean | null = null;
+    const discarding = discardFromOutbox("id-1").then((removed) => (discarded = removed));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(discarded).toBeNull();
+
+    answer(Response.json({ results: [{ clientId: "id-1", status: "SYNCED", id: "tx-1" }] }));
+    await flushing;
+    await discarding;
+    expect(discarded).toBe(false);
   });
 });

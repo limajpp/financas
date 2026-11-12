@@ -11,7 +11,7 @@ import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/componen
 import { formatCalendarDate } from "@/domain/dates";
 import { formatBRL } from "@/domain/money";
 import { type OutboxItem, outboxLabel, summarize, viewOf } from "@/domain/outbox";
-import { removeFromOutbox } from "@/lib/outbox-db";
+import { discardFromOutbox } from "@/lib/outbox-sync";
 import { cn } from "@/lib/utils";
 
 import { useOutbox, useOutboxState } from "./outbox-provider";
@@ -43,14 +43,17 @@ export function OutboxIndicator() {
   }
 
   async function discard(clientId: string) {
+    let removed: boolean;
     try {
-      await removeFromOutbox(clientId);
+      // Waits for a send on its way: an entry already in it can't be taken back here.
+      removed = await discardFromOutbox(clientId);
     } catch {
       toast.error("Não foi possível descartar.");
       return;
     }
     setDiscarding(null);
-    toast("Lançamento descartado.");
+    if (removed) toast("Lançamento descartado.");
+    else toast.error("Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.");
   }
 
   return (

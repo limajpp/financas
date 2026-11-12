@@ -18,6 +18,7 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
   - o envio não responde em 8 s (rede "fantasma").
 - Antes de entrar na fila, os dados passam pelo mesmo schema Zod do servidor (`entrySchema` / `transferSchema`). Um erro de preenchimento aparece na hora, no campo, como hoje.
 - O item da fila guarda o `clientId` que a tela já gerou. Se o primeiro envio chegou ao servidor mesmo sem resposta, o reenvio devolve o lançamento que já existe.
+- **"Desfazer" só existe quando nada foi enviado** (o aparelho estava sem rede). Se um envio foi tentado e não respondeu, ele ainda pode chegar, e o aviso diz "O envio não respondeu. Ela será enviada de novo em instantes.", sem "Desfazer".
 - Ao entrar na fila, aparece o aviso "Despesa de R$ 0,00 salva no aparelho. Ela será enviada quando a conexão voltar.", com "Desfazer" (tira o item da fila). O formulário volta em branco e **a tela continua no registro**, pronta para o próximo lançamento.
 
 ### A fila (Dexie)
@@ -36,8 +37,8 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 - **Resposta por item:**
   - `SYNCED`: sai da fila;
   - `REJECTED`: fica na fila como rejeitado, com a mensagem. Não é reenviado sozinho e não impede os outros.
-- **Falha do lote inteiro** (rede, 5xx, 401): os itens continuam pendentes. Nova tentativa nos gatilhos acima e com espera crescente (5 s, 15 s, 1 min, 5 min).
-- **Sessão expirada (401):** o indicador passa a dizer "Entre de novo para enviar N lançamentos". Depois do login, o envio acontece sozinho.
+- **Falha do lote inteiro** (rede, 5xx): os itens continuam pendentes. Nova tentativa nos gatilhos acima e com espera crescente (5 s, 15 s, 1 min, 5 min).
+- **Sessão expirada (401):** os itens continuam pendentes e o indicador passa a dizer "Entre de novo para enviar N lançamentos". Não há nova tentativa até o login. Depois dele, o envio acontece sozinho.
 - Depois de enviar, aparece "N lançamentos sincronizados" e a tela atual é atualizada (`router.refresh()`).
 
 ### `/api/sync`
@@ -59,14 +60,14 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
   - **Pendente:** "Enviar agora" (para todos) e "Descartar".
   - **Rejeitado:** "Corrigir" e "Descartar".
 - **"Corrigir"** abre a tela de registro preenchida com os dados do item. Salvar envia de novo (ou devolve o item à fila como pendente, se ainda sem rede), com o mesmo `clientId`.
-- "Descartar" pede confirmação.
+- "Descartar" pede confirmação, e espera um envio em curso terminar. Se o item já tinha sido enviado, o app diz "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos." em vez de fingir que descartou. O "Desfazer" do aviso faz o mesmo.
 
 ### Sair da conta
 
 - Com a fila vazia, nada muda.
 - Sem rede, "Sair" avisa que não é possível sair agora (a sessão é encerrada no servidor).
 - Com itens na fila, "Sair" primeiro tenta enviar. Se sobrar algo, pergunta: "Há N lançamentos que ainda não foram enviados. Sair vai apagá-los deste aparelho." com "Cancelar" e "Sair e apagar".
-- Sair sempre apaga a fila do usuário, junto com os caches (task 15).
+- Sair sempre apaga a fila do usuário, junto com os caches (task 15). A fila só é apagada depois que a saída aconteceu de verdade: se ela falhar, nada se perde. Em seguida a tela de login é carregada do zero, sem nada da sessão na memória.
 
 ## Critérios de aceite
 
@@ -106,8 +107,24 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 - **Sem rede, a tela fica no registro depois de salvar.** Ir para a tela inicial depende da rede (ou de uma cópia guardada dela), e o aviso de "salva no aparelho" se perderia num recarregamento. De quebra, registrar vários gastos seguidos no metrô fica mais rápido.
 - **O aviso é uma faixa no topo, não um botão flutuante.** Flutuando acima da barra inferior, ele cobria o botão "Salvar" do registro no celular (pego pelo e2e do iPhone).
 - **`E2E_PORT` no `playwright.config.ts`.** Para rodar o e2e numa máquina em que a porta 3000 já está ocupada. Sem a variável, nada muda.
+- **Um 401 não entra na espera crescente.** Tentar de novo sem login só daria outro 401. O envio volta sozinho quando o app reaparece depois do login.
+- **Uma action pendurada segura as seguintes.** O Next envia as Server Actions de uma aba uma por vez. Enquanto um salvamento sem resposta não desiste, os próximos também vão para a fila depois de 8 s (o que é o comportamento certo), mas o "Desfazer" de um lançamento normal e o "Sair" podem demorar. Fica documentado, sem tratamento.
 - **Sem Background Sync.** O Safari não tem. O envio acontece com o app aberto.
 - **Só a tela de registro entra na fila.** O pagamento de fatura (em Contas) depende de valores da fatura que precisam de rede.
+
+## Revisão
+
+O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já corrigidos.
+
+- **"Desfazer" e "Descartar" podiam dizer que apagaram um lançamento que acabou criado.** Com rede, o item entrava na fila e era enviado na hora; tocar em "Desfazer" depois disso não fazia nada, mas o app dizia "Lançamento desfeito". Agora os dois esperam o envio em curso, avisam quando o item já foi enviado, e o "Desfazer" não aparece quando um envio já foi tentado.
+- **Depois de a sessão expirar, o novo login não enviava a fila.** O Next mantém o layout do app vivo atrás da tela de login, e o motor da fila guardava o estado antigo. Agora ele recomeça a cada vez que o app reaparece.
+- **Também corrigido:**
+  - "Corrigir" funciona depois de trocar de conta na mesma aba (o usuário da fila era fixado no primeiro login);
+  - um lançamento que entra na fila durante um envio não fica esperando o próximo gatilho;
+  - "Sair" espera o envio em curso em vez de perguntar por lançamentos que estão sendo enviados, e a fila só é apagada depois que a saída acontece;
+  - `/api/sync` compara o tipo exato do corpo (`application/json`);
+  - testes do motor da fila (espera crescente, 401 e novo login, troca de usuário) e e2e da sessão expirada e da falha do envio com rede.
+- **Aceito e documentado:** uma Server Action pendurada segura as seguintes (ver Decisões).
 
 ## Fora do escopo
 

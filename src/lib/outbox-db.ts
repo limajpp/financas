@@ -38,8 +38,14 @@ export async function findInOutbox(userId: string, clientId: string): Promise<Ou
   return item && item.userId === userId ? item : null;
 }
 
-export async function removeFromOutbox(clientId: string): Promise<void> {
-  await db().outbox.delete(clientId);
+/** Removes an item. False when it was no longer there (already sent, or discarded elsewhere). */
+export async function removeFromOutbox(clientId: string): Promise<boolean> {
+  const { outbox } = db();
+  return db().transaction("rw", outbox, async () => {
+    if (!(await outbox.get(clientId))) return false;
+    await outbox.delete(clientId);
+    return true;
+  });
 }
 
 /** Applies a batch's answer: the synced leave, the rejected keep the reason. */

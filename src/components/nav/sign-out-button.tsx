@@ -4,7 +4,7 @@ import { LogOut } from "lucide-react";
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { signOutAction } from "@/app/(auth)/actions";
+import { endSessionAction, signOutAction } from "@/app/(auth)/actions";
 import { useOutbox } from "@/components/outbox/outbox-provider";
 import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/responsive-dialog";
 import { Button } from "@/components/ui/button";
@@ -21,18 +21,25 @@ export function SignOutButton({ className }: { className?: string }) {
   const [left, setLeft] = useState<number | null>(null);
   const [pending, startTransition] = useTransition();
 
-  /** Signs out on the server (it redirects to the login) and empties this user's queue. */
+  /**
+   * Ends the session, then deletes this user's queue (only once the sign-out has really happened:
+   * if it fails, nothing is lost) and loads the login screen from scratch, so nothing of the
+   * session stays in memory either.
+   */
   async function leave() {
-    // Next keeps this layout alive behind the login screen: the question must not come back
-    // with the next sign-in.
+    // In case the page stays (a failed sign-out): the question must not linger.
     setLeft(null);
     try {
-      const userId = outbox.userId();
-      if (userId) await clearOutbox(userId).catch(() => {});
-      await signOutAction();
+      await endSessionAction();
     } catch {
       toast.error("Não foi possível sair. Verifique a conexão.");
+      return;
     }
+    const userId = outbox.userId();
+    if (userId) await clearOutbox(userId).catch(() => {});
+    // A full load on purpose, not the router: the screens Next keeps alive in memory go too.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign("/entrar");
   }
 
   function signOut() {

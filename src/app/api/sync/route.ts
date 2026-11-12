@@ -30,7 +30,8 @@ export async function POST(request: Request) {
   const session = await getSession();
   if (!session) return json(401, "Sessão expirada. Entre de novo.");
 
-  if (!request.headers.get("content-type")?.includes("application/json")) {
+  const mime = request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+  if (mime !== "application/json") {
     return json(400, "Envie os lançamentos em JSON.");
   }
   let body: unknown;
