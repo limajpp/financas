@@ -16,6 +16,7 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except the auth API, Next internals and files with an extension (icons, images…).
-  matcher: ["/((?!api/auth|_next/static|_next/image|.*\\..*).*)"],
+  // Everything except the auth API, the offline queue's endpoint (it answers 401 itself: a redirect
+  // to the login would be useless to a fetch), Next internals and files with an extension.
+  matcher: ["/((?!api/auth|api/sync|_next/static|_next/image|.*\\..*).*)"],
 };
