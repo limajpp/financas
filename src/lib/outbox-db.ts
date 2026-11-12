@@ -60,6 +60,14 @@ export async function applyOutboxChanges(changes: OutboxChanges): Promise<void> 
   });
 }
 
+/** Marks the items of a batch that is about to leave the device (see OutboxItem.attempted). */
+export async function markAttempted(clientIds: readonly string[]): Promise<void> {
+  const { outbox } = db();
+  await db().transaction("rw", outbox, async () => {
+    for (const clientId of clientIds) await outbox.update(clientId, { attempted: true });
+  });
+}
+
 /** Deletes the user's whole queue (sign-out). */
 export async function clearOutbox(userId: string): Promise<void> {
   await db().outbox.where("userId").equals(userId).delete();

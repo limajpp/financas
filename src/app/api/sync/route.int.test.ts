@@ -52,7 +52,10 @@ function post(body: unknown, headers: Record<string, string> = {}) {
         "content-type": "application/json",
         ...headers,
       },
-      body: typeof body === "string" ? body : JSON.stringify(body),
+      body:
+        typeof body === "string"
+          ? body
+          : JSON.stringify({ userId: session.current?.userId ?? "ninguém", ...(body as object) }),
     }),
   );
 }
@@ -98,6 +101,15 @@ describe("POST /api/sync", () => {
     expect(response.status).toBe(200);
     expect(await db.transaction.count({ where: { spaceId } })).toBe(1);
     expect(await db.transaction.count({ where: { spaceId: otherSpace.id } })).toBe(0);
+  });
+
+  it("recusa a fila de outro usuário com 409, sem criar nada", async () => {
+    const { spaceId, accountId } = await signedIn();
+    const response = await post({ userId: "outra-pessoa", items: [item(accountId)] });
+    expect(response.status).toBe(409);
+    expect(await db.transaction.count({ where: { spaceId } })).toBe(0);
+    // And without saying whose queue it is, nothing is accepted.
+    expect((await post({ userId: undefined, items: [item(accountId)] })).status).toBe(400);
   });
 
   it("sem sessão responde 401 em JSON (CA5)", async () => {

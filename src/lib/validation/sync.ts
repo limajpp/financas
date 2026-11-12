@@ -8,6 +8,8 @@ import { SYNC_BATCH_MAX } from "@/domain/outbox";
  * answer by.
  */
 export const syncRequestSchema = z.object({
+  /** Whose queue this is. It must be the session's user: it never chooses whose data is written. */
+  userId: z.string().min(1).max(100),
   items: z
     .array(
       z.object({

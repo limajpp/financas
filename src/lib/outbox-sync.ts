@@ -1,11 +1,12 @@
 import { applyResults, nextBatch, type SyncResult } from "@/domain/outbox";
 
-import { applyOutboxChanges, listOutbox, removeFromOutbox } from "./outbox-db";
+import { applyOutboxChanges, listOutbox, markAttempted, removeFromOutbox } from "./outbox-db";
 
 export type FlushOutcome = {
   /**
-   * DONE: nothing left to send. FAILED: no network, a server error, or items the server asked to
-   * retry (try again later). UNAUTHORIZED: the session expired. BUSY: another tab is sending.
+   * DONE: nothing left to send. FAILED: no network, no answer in time, a server error, or items
+   * the server asked to retry (try again later). UNAUTHORIZED: the session expired, or it is
+   * another user's. BUSY: another tab is sending.
    */
   status: "DONE" | "FAILED" | "UNAUTHORIZED" | "BUSY";
   synced: number;
@@ -13,6 +14,12 @@ export type FlushOutcome = {
 };
 
 const LOCK = "financas-outbox";
+
+/**
+ * A batch that doesn't answer in this long counts as failed (and is tried again later): on a
+ * connection in name only the request would hang, and "Descartar" and "Sair" wait for it.
+ */
+export const SYNC_TIMEOUT_MS = 15_000;
 
 function isResults(body: unknown): body is { results: SyncResult[] } {
   return (
@@ -30,16 +37,24 @@ async function send(userId: string): Promise<FlushOutcome> {
 
     let response: Response;
     try {
+      // From here on, these entries may reach the server whatever comes back.
+      await markAttempted(batch.map((item) => item.clientId));
       response = await fetch("/api/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ items: batch }),
+        // The user the queue belongs to: the server refuses it under someone else's session.
+        body: JSON.stringify({ userId, items: batch }),
         credentials: "same-origin",
+        signal: AbortSignal.timeout(SYNC_TIMEOUT_MS),
       });
     } catch {
       return { ...outcome, status: "FAILED" };
     }
-    if (response.status === 401) return { ...outcome, status: "UNAUTHORIZED" };
+    // 409: the session is another user's (signed in on this device after this one's expired).
+    // Like a 401, the entries wait for their owner's login.
+    if (response.status === 401 || response.status === 409) {
+      return { ...outcome, status: "UNAUTHORIZED" };
+    }
     if (!response.ok) return { ...outcome, status: "FAILED" };
     let body: unknown;
     try {
@@ -82,6 +97,24 @@ export async function flushOutbox(userId: string): Promise<FlushOutcome> {
   } finally {
     current = null;
   }
+}
+
+/**
+ * Waits for a send on its way, in this tab or another, to finish (at most `maxMs`). "Sair" uses it
+ * so it doesn't ask about entries that are being sent right now.
+ */
+export async function waitForSend(maxMs = SYNC_TIMEOUT_MS): Promise<void> {
+  const settled = (async () => {
+    await current?.catch(() => {});
+    if (typeof navigator !== "undefined" && navigator.locks) {
+      await navigator.locks.request(LOCK, async () => {});
+    }
+  })();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    settled,
+    new Promise<void>((resolve) => (timer = setTimeout(resolve, maxMs))),
+  ]).finally(() => clearTimeout(timer));
 }
 
 /**

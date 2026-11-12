@@ -500,6 +500,7 @@ export function RegisterForm({
           data: input,
           createdAt: fixing?.createdAt ?? Date.now(),
           status: "PENDING",
+          ...(attempted ? { attempted: true } : {}),
         });
       } catch {
         return false;
@@ -509,21 +510,23 @@ export function RegisterForm({
           ? "O envio não respondeu. Ela será enviada de novo em instantes."
           : "Ela será enviada quando a conexão voltar.",
         duration: 5_000,
-        action: attempted
-          ? undefined
-          : {
-              label: "Desfazer",
-              onClick: () =>
-                void discardFromOutbox(id).then(
-                  (removed) =>
-                    removed
-                      ? toast("Lançamento desfeito.")
-                      : toast.error(
-                          "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.",
-                        ),
-                  () => toast.error("Não foi possível desfazer."),
-                ),
-            },
+        // No "Desfazer" either for a fixed entry: it would take the original away with it.
+        action:
+          attempted || wasFixing
+            ? undefined
+            : {
+                label: "Desfazer",
+                onClick: () =>
+                  void discardFromOutbox(id).then(
+                    (removed) =>
+                      removed
+                        ? toast("Lançamento desfeito.")
+                        : toast.error(
+                            "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.",
+                          ),
+                    () => toast.error("Não foi possível desfazer."),
+                  ),
+              },
       });
       // No trip home: without a connection the next screen might not load. The form goes blank
       // for the next entry.

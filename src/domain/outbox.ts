@@ -22,6 +22,11 @@ export type OutboxItem = {
   createdAt: number;
   /** REJECTED: the server refused it; it waits to be fixed or discarded. */
   status: "PENDING" | "REJECTED";
+  /**
+   * A request with this entry has already left the device (the Server Action that didn't answer,
+   * or a batch): it may have reached the server even if no answer came back.
+   */
+  attempted?: boolean;
   error?: string;
   fieldErrors?: FieldErrors;
 };

@@ -43,6 +43,10 @@ export async function POST(request: Request) {
   const parsed = syncRequestSchema.safeParse(body);
   if (!parsed.success) return json(400, "Lote inválido.");
 
+  // A queue left on the device by someone else (their session expired, another user signed in):
+  // their accounts don't exist in this space, and every entry would come back refused.
+  if (parsed.data.userId !== session.user.id) return json(409, "Esta fila é de outro usuário.");
+
   const space = await getCurrentSpace();
   const results = await syncItems(space.id, session.user.id, parsed.data.items);
   return Response.json({ results });

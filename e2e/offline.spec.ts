@@ -372,18 +372,21 @@ test.describe("com o envio retido", () => {
     await expect(row(page, isMobile, "Padaria Offline")).toHaveCount(1);
   });
 
-  test("com rede, se o envio falha o lançamento vai para a fila e é criado uma vez só", async ({
+  test("com rede, se a resposta do envio se perde, o lançamento vai para a fila e é criado uma vez só", async ({
     page,
     isMobile,
   }) => {
     test.slow();
     await setup(page);
-    // The Server Action's request dies on the way; the queue's endpoint works.
-    await page.route("**/registrar", (route) =>
-      route.request().method() === "POST" && route.request().headers()["next-action"]
-        ? route.abort()
-        : route.continue(),
-    );
+    // The Server Action reaches the server (the entry is created) but its answer is lost: the
+    // queue's resend must get the same entry back, not a second one.
+    await page.route("**/registrar", async (route) => {
+      if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) {
+        return route.continue();
+      }
+      await route.fetch();
+      await route.abort();
+    });
     await typeAmount(page, "4790");
     await page.getByLabel("O que foi?").fill("Padaria Offline");
     await save(page).click();
@@ -397,6 +400,36 @@ test.describe("com o envio retido", () => {
 
     await open(page, "Lançamentos");
     await expect(row(page, isMobile, "Padaria Offline")).toHaveCount(1);
+  });
+
+  test("com rede, um envio que não responde em 8 s vai para a fila e é criado uma vez só", async ({
+    page,
+    isMobile,
+  }) => {
+    test.slow();
+    await setup(page);
+    // The Server Action answers only after the screen gave up on it (8 s).
+    await page.route("**/registrar", async (route) => {
+      if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) {
+        return route.continue();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10_000));
+      await route.continue().catch(() => {});
+    });
+    await typeAmount(page, "4790");
+    await page.getByLabel("O que foi?").fill("Padaria Lenta");
+    await save(page).click();
+
+    const toast = page.getByRole("listitem").filter({ hasText: "salva no aparelho" });
+    await expect(toast).toContainText("O envio não respondeu.", { timeout: 15_000 });
+    await expect(page.getByText("1 lançamento sincronizado")).toBeVisible({ timeout: 30_000 });
+    await page.unroute("**/registrar");
+
+    await open(page, "Lançamentos");
+    // The late answer, if it arrives, finds the entry the queue already created.
+    await page.waitForTimeout(3_000);
+    await page.reload();
+    await expect(row(page, isMobile, "Padaria Lenta")).toHaveCount(1);
   });
 });
 

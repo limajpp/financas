@@ -6,6 +6,7 @@ import type { OutboxItem, SyncItem } from "@/domain/outbox";
 
 import { clearOutbox, listOutbox, putInOutbox } from "./outbox-db";
 import { OutboxEngine } from "./outbox-engine";
+import * as sync from "./outbox-sync";
 
 function item(n: number, over: Partial<OutboxItem> = {}): OutboxItem {
   return {
@@ -43,16 +44,23 @@ function server() {
 
 const queue = () => listOutbox("ana");
 let stop: (() => void) | null = null;
+let running: OutboxEngine | null = null;
 function start(engine: OutboxEngine, onSynced: (count: number) => void = () => {}) {
+  running = engine;
   stop = engine.start(onSynced);
 }
 
 beforeEach(async () => {
   await Promise.all([clearOutbox("ana"), clearOutbox("bia")]);
 });
-afterEach(() => {
+afterEach(async () => {
   stop?.();
   stop = null;
+  // A send still on its way would reach the next test's fake server. Stopped, nothing new starts.
+  const engine = running;
+  running = null;
+  if (engine) await vi.waitFor(() => expect(engine.getState().sending).toBe(false));
+  vi.restoreAllMocks();
   vi.useRealTimers();
   vi.unstubAllGlobals();
 });
@@ -103,20 +111,25 @@ describe("OutboxEngine", () => {
     expect(await listOutbox("bia")).toHaveLength(1);
   });
 
-  it("um lançamento que entra durante um envio não fica para trás", async () => {
+  it("um lançamento que entra logo depois da última olhada do envio não fica para trás", async () => {
     const api = server();
-    let release: () => void = () => {};
-    api.hold = new Promise((resolve) => (release = resolve));
     await putInOutbox(item(1));
+    // Item 2 arrives right after the send has looked at the queue for the last time (when it is
+    // about to answer DONE): its own request to send is absorbed by the send still running.
+    const real = sync.flushOutbox;
+    let first = true;
+    vi.spyOn(sync, "flushOutbox").mockImplementation(async (userId) => {
+      const outcome = await real(userId);
+      if (first) {
+        first = false;
+        await putInOutbox(item(2));
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      return outcome;
+    });
     const engine = new OutboxEngine();
     start(engine);
     engine.signedIn("ana");
-    await vi.waitFor(() => expect(api.calls).toBe(1));
-
-    // Queued while the first batch is on its way.
-    await putInOutbox(item(2));
-    api.hold = null;
-    release();
 
     await vi.waitFor(async () => expect(await queue()).toEqual([]));
     expect(api.calls).toBe(2);
@@ -140,7 +153,7 @@ describe("OutboxEngine", () => {
 
     await vi.waitFor(() => expect(delays.length).toBeGreaterThanOrEqual(5));
     expect(delays.slice(0, 5)).toEqual([5_000, 15_000, 60_000, 300_000, 300_000]);
-    expect(await queue()).toEqual([item(1)]);
+    expect(await queue()).toEqual([item(1, { attempted: true })]);
 
     api.status = 200;
     await vi.waitFor(async () => expect(await queue()).toEqual([]));

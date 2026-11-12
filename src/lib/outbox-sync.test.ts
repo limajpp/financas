@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OutboxItem, SyncItem, SyncResult } from "@/domain/outbox";
 
 import { clearOutbox, listOutbox, putInOutbox } from "./outbox-db";
-import { discardFromOutbox, flushOutbox } from "./outbox-sync";
+import { discardFromOutbox, flushOutbox, waitForSend } from "./outbox-sync";
 
 function item(n: number, over: Partial<OutboxItem> = {}): OutboxItem {
   return {
@@ -50,6 +50,37 @@ describe("flushOutbox", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("diz ao servidor de quem é a fila e desiste de um envio que não responde", async () => {
+    const { fetchMock } = server();
+    await putInOutbox(item(1));
+    await flushOutbox("ana");
+    const init = fetchMock.mock.calls[0]![1];
+    expect(JSON.parse(init.body as string)).toMatchObject({ userId: "ana" });
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("um envio sem resposta a tempo conta como falha, e o item fica marcado como tentado", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new DOMException("The operation timed out.", "TimeoutError");
+      }),
+    );
+    await putInOutbox(item(1));
+    expect((await flushOutbox("ana")).status).toBe("FAILED");
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
+  });
+
+  it("a fila de outro usuário (409) espera o login do dono, sem marcar nada como recusado", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => Response.json({ error: "x" }, { status: 409 })),
+    );
+    await putInOutbox(item(1));
+    expect((await flushOutbox("ana")).status).toBe("UNAUTHORIZED");
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
+  });
+
   it("envia os pendentes do usuário em ordem e esvazia a fila", async () => {
     const { batches, fetchMock } = server();
     await putInOutbox(item(2));
@@ -88,7 +119,12 @@ describe("flushOutbox", () => {
 
     expect(await flushOutbox("ana")).toEqual({ status: "DONE", synced: 2, rejected: 1 });
     expect(await listOutbox("ana")).toEqual([
-      item(2, { status: "REJECTED", error: "Data inválida.", fieldErrors: undefined }),
+      item(2, {
+        status: "REJECTED",
+        error: "Data inválida.",
+        fieldErrors: undefined,
+        attempted: true,
+      }),
     ]);
   });
 
@@ -99,7 +135,7 @@ describe("flushOutbox", () => {
 
     expect(await flushOutbox("ana")).toEqual({ status: "FAILED", synced: 1, rejected: 0 });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(await listOutbox("ana")).toEqual([item(1)]);
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
   });
 
   it("sem rede, tudo continua pendente", async () => {
@@ -111,7 +147,7 @@ describe("flushOutbox", () => {
     );
     await putInOutbox(item(1));
     expect(await flushOutbox("ana")).toEqual({ status: "FAILED", synced: 0, rejected: 0 });
-    expect(await listOutbox("ana")).toEqual([item(1)]);
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
   });
 
   it.each([
@@ -125,7 +161,7 @@ describe("flushOutbox", () => {
     );
     await putInOutbox(item(1));
     expect(await flushOutbox("ana")).toEqual({ status: expected, synced: 0, rejected: 0 });
-    expect(await listOutbox("ana")).toEqual([item(1)]);
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
   });
 
   it("uma resposta que não é a do sync (a página de login, por exemplo) não mexe na fila", async () => {
@@ -135,7 +171,7 @@ describe("flushOutbox", () => {
     );
     await putInOutbox(item(1));
     expect((await flushOutbox("ana")).status).toBe("FAILED");
-    expect(await listOutbox("ana")).toEqual([item(1)]);
+    expect(await listOutbox("ana")).toEqual([item(1, { attempted: true })]);
   });
 
   it("dois envios ao mesmo tempo: só um vai ao servidor", async () => {
@@ -177,5 +213,99 @@ describe("discardFromOutbox", () => {
     await flushing;
     await discarding;
     expect(discarded).toBe(false);
+  });
+});
+
+/**
+ * A small Web Locks API (jsdom has none): exclusive locks by name, `ifAvailable`, and `hold()` to
+ * play another tab that holds the queue's lock until `release()`.
+ */
+function fakeLocks() {
+  const held = new Map<string, Promise<void>>();
+  const request = async (
+    name: string,
+    optionsOrCallback: unknown,
+    maybeCallback?: (lock: unknown) => Promise<unknown>,
+  ) => {
+    const callback = (maybeCallback ?? optionsOrCallback) as (lock: unknown) => Promise<unknown>;
+    const ifAvailable =
+      typeof optionsOrCallback === "object" &&
+      (optionsOrCallback as { ifAvailable?: boolean }).ifAvailable;
+    if (held.has(name) && ifAvailable) return callback(null);
+    while (held.has(name)) await held.get(name);
+    let done: () => void = () => {};
+    held.set(name, new Promise<void>((resolve) => (done = resolve)));
+    try {
+      return await callback({ name });
+    } finally {
+      held.delete(name);
+      done();
+    }
+  };
+  vi.stubGlobal("navigator", { ...navigator, locks: { request } });
+  return {
+    /** Another tab takes the lock. */
+    hold(name = "financas-outbox") {
+      let release: () => void = () => {};
+      const released = new Promise<void>((resolve) => (release = resolve));
+      void request(name, () => released);
+      return release;
+    },
+  };
+}
+
+describe("com outra aba enviando (Web Locks)", () => {
+  it("o envio desta aba responde BUSY e não chama o servidor", async () => {
+    const locks = fakeLocks();
+    const { fetchMock } = server();
+    await putInOutbox(item(1));
+    const release = locks.hold();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect((await flushOutbox("ana")).status).toBe("BUSY");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect((await flushOutbox("ana")).status).toBe("DONE");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("descartar espera a outra aba terminar o envio", async () => {
+    const locks = fakeLocks();
+    await putInOutbox(item(1));
+    const release = locks.hold();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let discarded: boolean | null = null;
+    const discarding = discardFromOutbox("id-1").then((removed) => (discarded = removed));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(discarded).toBeNull();
+
+    // The other tab's batch took it.
+    await clearOutbox("ana");
+    release();
+    await discarding;
+    expect(discarded).toBe(false);
+  });
+
+  it("esperar o envio termina quando a outra aba solta a fila, ou no limite", async () => {
+    const locks = fakeLocks();
+    const release = locks.hold();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    let waited = false;
+    const waiting = waitForSend(10_000).then(() => (waited = true));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(waited).toBe(false);
+    release();
+    await waiting;
+    expect(waited).toBe(true);
+
+    locks.hold();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const started = Date.now();
+    await waitForSend(50);
+    expect(Date.now() - started).toBeLessThan(1_000);
   });
 });

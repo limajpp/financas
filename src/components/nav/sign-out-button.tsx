@@ -10,6 +10,7 @@ import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/re
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { clearOutbox, listOutbox } from "@/lib/outbox-db";
+import { waitForSend } from "@/lib/outbox-sync";
 
 /**
  * "Sair". Nothing financial stays on the device afterwards: the saved screens go (task 15) and so
@@ -53,7 +54,8 @@ export function SignOutButton({ className }: { className?: string }) {
       if (userId) {
         try {
           if ((await listOutbox(userId)).length > 0) {
-            await outbox.flush();
+            // Another tab may be the one sending (BUSY here): its entries aren't lost.
+            if ((await outbox.flush())?.status === "BUSY") await waitForSend();
             remaining = (await listOutbox(userId)).length;
           }
         } catch {

@@ -160,8 +160,10 @@ export class OutboxEngine {
     let outcome: FlushOutcome;
     try {
       outcome = await flushOutbox(userId);
-      // An entry queued while the last batch was on its way missed it.
-      if (outcome.status === "DONE" && pendingKeyOf(await listOutbox(userId))) {
+      // An entry queued right after the send's last look at the queue missed it (and its own
+      // request to send was answered with this one). A few rounds at most.
+      for (let round = 0; round < 5 && outcome.status === "DONE"; round++) {
+        if (!pendingKeyOf(await listOutbox(userId))) break;
         const more = await flushOutbox(userId);
         outcome = {
           status: more.status,

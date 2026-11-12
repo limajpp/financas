@@ -18,7 +18,7 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
   - o envio não responde em 8 s (rede "fantasma").
 - Antes de entrar na fila, os dados passam pelo mesmo schema Zod do servidor (`entrySchema` / `transferSchema`). Um erro de preenchimento aparece na hora, no campo, como hoje.
 - O item da fila guarda o `clientId` que a tela já gerou. Se o primeiro envio chegou ao servidor mesmo sem resposta, o reenvio devolve o lançamento que já existe.
-- **"Desfazer" só existe quando nada foi enviado** (o aparelho estava sem rede). Se um envio foi tentado e não respondeu, ele ainda pode chegar, e o aviso diz "O envio não respondeu. Ela será enviada de novo em instantes.", sem "Desfazer".
+- **"Desfazer" só existe quando nada foi enviado** (o aparelho estava sem rede) e não se está corrigindo um item (desfazer levaria o original junto). Se um envio foi tentado e não respondeu, ele ainda pode chegar, e o aviso diz "O envio não respondeu. Ela será enviada de novo em instantes.", sem "Desfazer".
 - Ao entrar na fila, aparece o aviso "Despesa de R$ 0,00 salva no aparelho. Ela será enviada quando a conexão voltar.", com "Desfazer" (tira o item da fila). O formulário volta em branco e **a tela continua no registro**, pronta para o próximo lançamento.
 
 ### A fila (Dexie)
@@ -32,7 +32,8 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 ### Envio
 
 - **Quando:** ao abrir o app, quando a conexão volta (`online`), quando o app volta para a frente (`visibilitychange`) e logo depois de um item entrar na fila.
-- **Como:** `POST /api/sync` com os itens pendentes, em ordem de criação, em lotes de até 50.
+- **Como:** `POST /api/sync` com os itens pendentes, em ordem de criação, em lotes de até 50, e com o id do dono da fila. Um lote sem resposta em 15 s conta como falha.
+- Antes de cada envio, os itens do lote são marcados como **tentados**: a partir daí, podem chegar ao servidor mesmo sem resposta.
 - Só uma aba envia por vez (`navigator.locks`). Mesmo sem isso não duplicaria, por causa do `clientId`.
 - **Resposta por item:**
   - `SYNCED`: sai da fila;
@@ -43,9 +44,9 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 
 ### `/api/sync`
 
-- `POST`, JSON `{ items: [{ clientId, kind, data }] }`, de 1 a 50 itens. Responde `{ results: [{ clientId, status, id?, error?, fieldErrors? }] }`, na mesma ordem.
+- `POST`, JSON `{ userId, items: [{ clientId, kind, data }] }`, de 1 a 50 itens. Responde `{ results: [{ clientId, status, id?, error?, fieldErrors? }] }`, na mesma ordem.
 - Exige sessão: sem ela, `401` em JSON (o proxy deixa `/api/sync` passar, para a rota responder em vez de redirecionar para o login).
-- O espaço e o usuário vêm **só da sessão**. Nada no corpo escolhe o espaço.
+- O espaço e o usuário vêm **só da sessão**. Nada no corpo escolhe o espaço. O `userId` do corpo só confere se a fila é de quem está logado: se não for, `409`, e o aparelho guarda os itens para o login do dono, sem marcá-los como recusados.
 - Recusa pedidos de outra origem (cabeçalho `Origin`) e corpo que não seja JSON.
 - O envelope é validado com Zod: um corpo malformado dá `400`. Cada item é validado em separado, e um item inválido vira `REJECTED` sem derrubar o lote.
 - Os itens são processados em sequência, pelas mesmas funções das actions (`createTransaction`, `createTransfer`). Daí vem a idempotência por `clientId` e as regras de domínio.
@@ -60,7 +61,7 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
   - **Pendente:** "Enviar agora" (para todos) e "Descartar".
   - **Rejeitado:** "Corrigir" e "Descartar".
 - **"Corrigir"** abre a tela de registro preenchida com os dados do item. Salvar envia de novo (ou devolve o item à fila como pendente, se ainda sem rede), com o mesmo `clientId`.
-- "Descartar" pede confirmação, e espera um envio em curso terminar. Se o item já tinha sido enviado, o app diz "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos." em vez de fingir que descartou. O "Desfazer" do aviso faz o mesmo.
+- "Descartar" pede confirmação, e espera um envio em curso terminar (nesta aba ou em outra). Num item já tentado, a confirmação diz "Um envio já foi tentado e pode ter chegado. Descartar só tira deste aparelho." e o aviso depois pede para conferir em Lançamentos. Se o item já tinha sido enviado, o app diz "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos." em vez de fingir que descartou. O "Desfazer" do aviso faz o mesmo.
 
 ### Sair da conta
 
@@ -107,6 +108,8 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 - **Sem rede, a tela fica no registro depois de salvar.** Ir para a tela inicial depende da rede (ou de uma cópia guardada dela), e o aviso de "salva no aparelho" se perderia num recarregamento. De quebra, registrar vários gastos seguidos no metrô fica mais rápido.
 - **O aviso é uma faixa no topo, não um botão flutuante.** Flutuando acima da barra inferior, ele cobria o botão "Salvar" do registro no celular (pego pelo e2e do iPhone).
 - **`E2E_PORT` no `playwright.config.ts`.** Para rodar o e2e numa máquina em que a porta 3000 já está ocupada. Sem a variável, nada muda.
+- **Item "tentado" em vez de perguntar ao servidor.** Saber se um item descartado já chegou exigiria uma consulta por `clientId`, que sem rede não dá para fazer. O app avisa com honestidade e manda conferir em Lançamentos.
+- **15 s de limite para o lote.** Sem isso, um envio pendurado numa rede "fantasma" travava a fila, o "Descartar" e o "Sair".
 - **Um 401 não entra na espera crescente.** Tentar de novo sem login só daria outro 401. O envio volta sozinho quando o app reaparece depois do login.
 - **Uma action pendurada segura as seguintes.** O Next envia as Server Actions de uma aba uma por vez. Enquanto um salvamento sem resposta não desiste, os próximos também vão para a fila depois de 8 s (o que é o comportamento certo), mas o "Desfazer" de um lançamento normal e o "Sair" podem demorar. Fica documentado, sem tratamento.
 - **Sem Background Sync.** O Safari não tem. O envio acontece com o app aberto.
@@ -125,6 +128,13 @@ O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já cor
   - `/api/sync` compara o tipo exato do corpo (`application/json`);
   - testes do motor da fila (espera crescente, 401 e novo login, troca de usuário) e e2e da sessão expirada e da falha do envio com rede.
 - **Aceito e documentado:** uma Server Action pendurada segura as seguintes (ver Decisões).
+- **Segunda rodada: pediu mudanças, já corrigidas.**
+  - "Descartar" ainda podia dizer que descartou um item que já tinha chegado ao servidor sem resposta. Os itens agora ficam marcados como tentados, e o texto muda para esses.
+  - Um envio sem resposta travava "Descartar", "Desfazer" e "Sair". O lote agora desiste em 15 s.
+  - A fila de outro usuário (sessão expirada e outra pessoa entrando no mesmo aparelho) é recusada com 409, sem marcar os itens como recusados.
+  - Sem "Desfazer" ao salvar sem rede um item que estava sendo corrigido.
+  - "Sair" espera o envio de outra aba antes de contar o que sobrou.
+  - Testes: o lançamento que entra depois da última olhada do envio, as travas entre abas (Web Locks) e os e2e que de fato exigem deduplicação (resposta perdida e envio que passa de 8 s).
 
 ## Fora do escopo
 

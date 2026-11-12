@@ -42,7 +42,7 @@ export function OutboxIndicator() {
     }
   }
 
-  async function discard(clientId: string) {
+  async function discard({ clientId, attempted }: OutboxItem) {
     let removed: boolean;
     try {
       // Waits for a send on its way: an entry already in it can't be taken back here.
@@ -52,7 +52,12 @@ export function OutboxIndicator() {
       return;
     }
     setDiscarding(null);
-    if (removed) toast("Lançamento descartado.");
+    if (removed && attempted) {
+      // A request with it already left the device: nothing here can tell whether it arrived.
+      toast("Lançamento tirado deste aparelho.", {
+        description: "Se ele já tinha chegado ao servidor, exclua em Lançamentos.",
+      });
+    } else if (removed) toast("Lançamento descartado.");
     else toast.error("Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.");
   }
 
@@ -103,7 +108,7 @@ export function OutboxIndicator() {
                 confirming={discarding === item.clientId}
                 onAskDiscard={() => setDiscarding(item.clientId)}
                 onCancelDiscard={() => setDiscarding(null)}
-                onDiscard={() => void discard(item.clientId)}
+                onDiscard={() => void discard(item)}
                 onFix={() => setOpen(false)}
               />
             ))}
@@ -157,7 +162,11 @@ function OutboxRow({
       )}
       {confirming ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="mr-auto text-sm">Descartar este lançamento?</span>
+          <span className="mr-auto text-sm">
+            {item.attempted
+              ? "Um envio já foi tentado e pode ter chegado. Descartar só tira deste aparelho."
+              : "Descartar este lançamento?"}
+          </span>
           <Button type="button" variant="ghost" size="sm" onClick={onCancelDiscard}>
             Cancelar
           </Button>
