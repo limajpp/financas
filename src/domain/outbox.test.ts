@@ -8,6 +8,7 @@ import {
   retryDelay,
   SYNC_BATCH_MAX,
   summarize,
+  viewOf,
 } from "./outbox";
 
 function item(n: number, over: Partial<OutboxItem> = {}): OutboxItem {
@@ -122,5 +123,47 @@ describe("summarize e outboxLabel", () => {
     expect(outboxLabel({ pending: 1, rejected: 0 }, true)).toBe(
       "Entre de novo para enviar 1 lançamento",
     );
+  });
+});
+
+describe("viewOf", () => {
+  it("resume uma despesa, uma receita e uma transferência", () => {
+    expect(
+      viewOf({
+        kind: "ENTRY",
+        data: { type: "EXPENSE", amountCents: 4790, date: "2026-11-09", counterparty: " Padaria " },
+      }),
+    ).toEqual({ label: "Despesa", amountCents: 4790, date: "2026-11-09", what: "Padaria" });
+    expect(
+      viewOf({
+        kind: "ENTRY",
+        data: {
+          type: "INCOME",
+          amountCents: 100,
+          date: "2026-11-09",
+          counterparty: "",
+          description: "Freela",
+        },
+      }),
+    ).toMatchObject({ label: "Receita", what: "Freela" });
+    expect(
+      viewOf({
+        kind: "TRANSFER",
+        data: { amountCents: 5000, date: "2026-11-09", description: "" },
+      }),
+    ).toEqual({ label: "Transferência", amountCents: 5000, date: "2026-11-09", what: null });
+  });
+
+  it("não quebra com dados ilegíveis", () => {
+    expect(viewOf({ kind: "ENTRY", data: null })).toEqual({
+      label: "Despesa",
+      amountCents: 0,
+      date: null,
+      what: null,
+    });
+    expect(viewOf({ kind: "ENTRY", data: { amountCents: "x", date: 5 } })).toMatchObject({
+      amountCents: 0,
+      date: null,
+    });
   });
 });

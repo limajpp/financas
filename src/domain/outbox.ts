@@ -105,3 +105,32 @@ export function outboxLabel(summary: OutboxSummary, sessionExpired: boolean): st
   if (sessionExpired) return `Entre de novo para enviar ${entries(summary.pending)}`;
   return `${entries(summary.pending)} aguardando sincronização`;
 }
+
+/** What the queue's list shows of an item. The data is whatever the form saved: read with care. */
+export type OutboxItemView = {
+  label: "Despesa" | "Receita" | "Transferência";
+  amountCents: number;
+  /** A calendar date (YYYY-MM-DD), or null if the saved one is unreadable. */
+  date: string | null;
+  /** The counterparty, else the description. */
+  what: string | null;
+};
+
+export function viewOf(item: Pick<OutboxItem, "kind" | "data">): OutboxItemView {
+  const data = (typeof item.data === "object" && item.data !== null ? item.data : {}) as Record<
+    string,
+    unknown
+  >;
+  const text = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  return {
+    label:
+      item.kind === "TRANSFER" ? "Transferência" : data.type === "INCOME" ? "Receita" : "Despesa",
+    amountCents:
+      typeof data.amountCents === "number" && Number.isFinite(data.amountCents)
+        ? data.amountCents
+        : 0,
+    date: typeof data.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(data.date) ? data.date : null,
+    what: text(data.counterparty) ?? text(data.description),
+  };
+}
