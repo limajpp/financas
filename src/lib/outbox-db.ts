@@ -38,13 +38,17 @@ export async function findInOutbox(userId: string, clientId: string): Promise<Ou
   return item && item.userId === userId ? item : null;
 }
 
-/** Removes an item. False when it was no longer there (already sent, or discarded elsewhere). */
-export async function removeFromOutbox(clientId: string): Promise<boolean> {
+/**
+ * Removes an item and returns it as it was at that moment (whether a send was attempted, say), or
+ * null when it was no longer there (already sent, or discarded elsewhere).
+ */
+export async function removeFromOutbox(clientId: string): Promise<OutboxItem | null> {
   const { outbox } = db();
   return db().transaction("rw", outbox, async () => {
-    if (!(await outbox.get(clientId))) return false;
+    const item = await outbox.get(clientId);
+    if (!item) return null;
     await outbox.delete(clientId);
-    return true;
+    return item;
   });
 }
 
@@ -55,7 +59,9 @@ export async function applyOutboxChanges(changes: OutboxChanges): Promise<void> 
     await outbox.bulkDelete(changes.synced);
     for (const { clientId, error, fieldErrors } of changes.rejected) {
       // update() does nothing for an item discarded while the batch was on its way.
-      await outbox.update(clientId, { status: "REJECTED", error, fieldErrors });
+      // Refused means nothing was created, and the same data would be refused again: it is no
+      // longer an entry that "may have arrived".
+      await outbox.update(clientId, { status: "REJECTED", error, fieldErrors, attempted: false });
     }
   });
 }

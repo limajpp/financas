@@ -135,6 +135,13 @@ O revisor (Opus, effort high) pediu mudanças por dois problemas graves, já cor
   - Sem "Desfazer" ao salvar sem rede um item que estava sendo corrigido.
   - "Sair" espera o envio de outra aba antes de contar o que sobrou.
   - Testes: o lançamento que entra depois da última olhada do envio, as travas entre abas (Web Locks) e os e2e que de fato exigem deduplicação (resposta perdida e envio que passa de 8 s).
+- **Terceira rodada: aprovado com nits.** Aplicados:
+  - "Desfazer" e "Descartar" escolhem a mensagem pelo item como estava ao ser tirado da fila, e não por uma cópia antiga;
+  - com o armazenamento cheio, o lote sai mesmo sem conseguir marcar os itens como tentados;
+  - um item recusado deixa de ser "tentado" (nada foi criado);
+  - o e2e dos 8 s confirma que o pedido atrasado chegou ao servidor;
+  - "Sim, descartar" mostra "Aguardando envio…" enquanto espera.
+- **Descartado:** o simulador de Web Locks dos testes não reproduz a fila de espera do `ifAvailable`. Nenhum teste depende disso hoje.
 
 ## Fora do escopo
 

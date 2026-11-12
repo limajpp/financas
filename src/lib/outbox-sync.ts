@@ -1,4 +1,4 @@
-import { applyResults, nextBatch, type SyncResult } from "@/domain/outbox";
+import { applyResults, nextBatch, type OutboxItem, type SyncResult } from "@/domain/outbox";
 
 import { applyOutboxChanges, listOutbox, markAttempted, removeFromOutbox } from "./outbox-db";
 
@@ -38,7 +38,8 @@ async function send(userId: string): Promise<FlushOutcome> {
     let response: Response;
     try {
       // From here on, these entries may reach the server whatever comes back.
-      await markAttempted(batch.map((item) => item.clientId));
+      // Best effort: with the storage full the mark fails, and the batch must still go.
+      await markAttempted(batch.map((item) => item.clientId)).catch(() => {});
       response = await fetch("/api/sync", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -120,12 +121,34 @@ export async function waitForSend(maxMs = SYNC_TIMEOUT_MS): Promise<void> {
 /**
  * Takes an entry out of the queue, for "Desfazer" and "Descartar". It waits for a send on its way
  * (in any tab) to finish first: an item already in a batch would be created on the server all the
- * same. False when the entry is no longer in the queue, which means it was sent.
+ * same. Returns the removed entry, or null when it is no longer in the queue (it was sent).
  */
-export async function discardFromOutbox(clientId: string): Promise<boolean> {
+export async function discardFromOutbox(clientId: string): Promise<OutboxItem | null> {
   await current?.catch(() => {});
   if (typeof navigator !== "undefined" && navigator.locks) {
     return navigator.locks.request(LOCK, async () => removeFromOutbox(clientId));
   }
   return removeFromOutbox(clientId);
+}
+
+/** What to tell the user after "Desfazer" or "Descartar", from what was actually removed. */
+export function discardMessage(
+  removed: OutboxItem | null,
+  done: string,
+): { kind: "ok" | "warning" | "error"; title: string; description?: string } {
+  if (!removed) {
+    return {
+      kind: "error",
+      title: "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.",
+    };
+  }
+  if (removed.attempted) {
+    // A request with it already left the device: nothing here can tell whether it arrived.
+    return {
+      kind: "warning",
+      title: "Lançamento tirado deste aparelho.",
+      description: "Se ele já tinha chegado ao servidor, exclua em Lançamentos.",
+    };
+  }
+  return { kind: "ok", title: done };
 }

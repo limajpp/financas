@@ -409,12 +409,16 @@ test.describe("com o envio retido", () => {
     test.slow();
     await setup(page);
     // The Server Action answers only after the screen gave up on it (8 s).
+    let reached = false;
     await page.route("**/registrar", async (route) => {
       if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) {
         return route.continue();
       }
       await new Promise((resolve) => setTimeout(resolve, 10_000));
-      await route.continue().catch(() => {});
+      // It must really reach the server, or "uma vez só" below would prove nothing.
+      const response = await route.fetch();
+      reached = response.ok();
+      await route.fulfill({ response }).catch(() => {});
     });
     await typeAmount(page, "4790");
     await page.getByLabel("O que foi?").fill("Padaria Lenta");
@@ -426,8 +430,8 @@ test.describe("com o envio retido", () => {
     await page.unroute("**/registrar");
 
     await open(page, "Lançamentos");
-    // The late answer, if it arrives, finds the entry the queue already created.
-    await page.waitForTimeout(3_000);
+    // The late request found the entry the queue had already created (or the other way round).
+    await expect.poll(() => reached, { timeout: 15_000 }).toBe(true);
     await page.reload();
     await expect(row(page, isMobile, "Padaria Lenta")).toHaveCount(1);
   });

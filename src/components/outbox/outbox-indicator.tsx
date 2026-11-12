@@ -11,7 +11,7 @@ import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/componen
 import { formatCalendarDate } from "@/domain/dates";
 import { formatBRL } from "@/domain/money";
 import { type OutboxItem, outboxLabel, summarize, viewOf } from "@/domain/outbox";
-import { discardFromOutbox } from "@/lib/outbox-sync";
+import { discardFromOutbox, discardMessage } from "@/lib/outbox-sync";
 import { cn } from "@/lib/utils";
 
 import { useOutbox, useOutboxState } from "./outbox-provider";
@@ -25,6 +25,8 @@ export function OutboxIndicator() {
   const { flush } = useOutbox();
   const [open, setOpen] = useState(false);
   const [discarding, setDiscarding] = useState<string | null>(null);
+  // The discard waiting for a send on its way.
+  const [waiting, setWaiting] = useState<string | null>(null);
   if (!userId) return null;
   const summary = summarize(items, userId);
   const label = outboxLabel(summary, sessionExpired);
@@ -42,23 +44,22 @@ export function OutboxIndicator() {
     }
   }
 
-  async function discard({ clientId, attempted }: OutboxItem) {
-    let removed: boolean;
+  async function discard(clientId: string) {
+    setWaiting(clientId);
+    let removed: OutboxItem | null;
     try {
       // Waits for a send on its way: an entry already in it can't be taken back here.
       removed = await discardFromOutbox(clientId);
     } catch {
       toast.error("Não foi possível descartar.");
       return;
+    } finally {
+      setWaiting(null);
     }
     setDiscarding(null);
-    if (removed && attempted) {
-      // A request with it already left the device: nothing here can tell whether it arrived.
-      toast("Lançamento tirado deste aparelho.", {
-        description: "Se ele já tinha chegado ao servidor, exclua em Lançamentos.",
-      });
-    } else if (removed) toast("Lançamento descartado.");
-    else toast.error("Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.");
+    const message = discardMessage(removed, "Lançamento descartado.");
+    if (message.kind === "error") toast.error(message.title);
+    else toast(message.title, { description: message.description });
   }
 
   return (
@@ -108,7 +109,8 @@ export function OutboxIndicator() {
                 confirming={discarding === item.clientId}
                 onAskDiscard={() => setDiscarding(item.clientId)}
                 onCancelDiscard={() => setDiscarding(null)}
-                onDiscard={() => void discard(item)}
+                waiting={waiting === item.clientId}
+                onDiscard={() => void discard(item.clientId)}
                 onFix={() => setOpen(false)}
               />
             ))}
@@ -129,6 +131,7 @@ export function OutboxIndicator() {
 function OutboxRow({
   item,
   confirming,
+  waiting,
   onAskDiscard,
   onCancelDiscard,
   onDiscard,
@@ -136,6 +139,7 @@ function OutboxRow({
 }: {
   item: OutboxItem;
   confirming: boolean;
+  waiting: boolean;
   onAskDiscard: () => void;
   onCancelDiscard: () => void;
   onDiscard: () => void;
@@ -170,8 +174,14 @@ function OutboxRow({
           <Button type="button" variant="ghost" size="sm" onClick={onCancelDiscard}>
             Cancelar
           </Button>
-          <Button type="button" variant="destructive" size="sm" onClick={onDiscard}>
-            Sim, descartar
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            disabled={waiting}
+            onClick={onDiscard}
+          >
+            {waiting ? "Aguardando envio…" : "Sim, descartar"}
           </Button>
         </div>
       ) : (

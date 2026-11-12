@@ -45,7 +45,7 @@ import {
   TRANSFER_METHODS,
 } from "@/domain/transactions";
 import { findInOutbox, putInOutbox, removeFromOutbox } from "@/lib/outbox-db";
-import { discardFromOutbox } from "@/lib/outbox-sync";
+import { discardFromOutbox, discardMessage } from "@/lib/outbox-sync";
 import { cn } from "@/lib/utils";
 import { entrySchema, transferSchema } from "@/lib/validation/transactions";
 
@@ -518,12 +518,12 @@ export function RegisterForm({
                 label: "Desfazer",
                 onClick: () =>
                   void discardFromOutbox(id).then(
-                    (removed) =>
-                      removed
-                        ? toast("Lançamento desfeito.")
-                        : toast.error(
-                            "Este lançamento já foi enviado. Para apagar, exclua em Lançamentos.",
-                          ),
+                    (removed) => {
+                      // The connection may have come back meanwhile, and a send been attempted.
+                      const message = discardMessage(removed, "Lançamento desfeito.");
+                      if (message.kind === "error") toast.error(message.title);
+                      else toast(message.title, { description: message.description });
+                    },
                     () => toast.error("Não foi possível desfazer."),
                   ),
               },

@@ -61,10 +61,10 @@ describe("fila no IndexedDB", () => {
   it("descarta um item", async () => {
     await putInOutbox(item(1));
     await putInOutbox(item(2));
-    expect(await removeFromOutbox("id-1")).toBe(true);
+    expect(await removeFromOutbox("id-1")).toEqual(item(1));
     expect((await listOutbox("ana")).map((i) => i.clientId)).toEqual(["id-2"]);
     // Already gone (sent, or discarded in another tab): the caller must not claim an undo.
-    expect(await removeFromOutbox("id-1")).toBe(false);
+    expect(await removeFromOutbox("id-1")).toBeNull();
   });
 
   it("corrigir substitui o item rejeitado pelo mesmo clientId, de novo pendente", async () => {
@@ -77,7 +77,8 @@ describe("fila no IndexedDB", () => {
 
   it("aplica a resposta do servidor", async () => {
     await putInOutbox(item(1));
-    await putInOutbox(item(2));
+    // A refused entry was never created: it stops being "attempted".
+    await putInOutbox(item(2, { attempted: true }));
     await putInOutbox(item(3));
 
     await applyOutboxChanges({
@@ -94,6 +95,7 @@ describe("fila no IndexedDB", () => {
         status: "REJECTED",
         error: "Data inválida.",
         fieldErrors: { date: "Data inválida." },
+        attempted: false,
       }),
       item(3),
     ]);

@@ -4,8 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OutboxItem, SyncItem, SyncResult } from "@/domain/outbox";
 
+import * as outboxDb from "./outbox-db";
 import { clearOutbox, listOutbox, putInOutbox } from "./outbox-db";
-import { discardFromOutbox, flushOutbox, waitForSend } from "./outbox-sync";
+import { discardFromOutbox, discardMessage, flushOutbox, waitForSend } from "./outbox-sync";
 
 function item(n: number, over: Partial<OutboxItem> = {}): OutboxItem {
   return {
@@ -123,7 +124,7 @@ describe("flushOutbox", () => {
         status: "REJECTED",
         error: "Data inválida.",
         fieldErrors: undefined,
-        attempted: true,
+        attempted: false,
       }),
     ]);
   });
@@ -187,7 +188,7 @@ describe("discardFromOutbox", () => {
   it("tira da fila um item que ainda não foi enviado", async () => {
     const { fetchMock } = server();
     await putInOutbox(item(1));
-    expect(await discardFromOutbox("id-1")).toBe(true);
+    expect(await discardFromOutbox("id-1")).toEqual(item(1));
     expect(await listOutbox("ana")).toEqual([]);
     await flushOutbox("ana");
     expect(fetchMock).not.toHaveBeenCalled();
@@ -204,15 +205,15 @@ describe("discardFromOutbox", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalled());
 
     // "Descartar" tapped while the batch is on its way.
-    let discarded: boolean | null = null;
+    let discarded: unknown = "esperando";
     const discarding = discardFromOutbox("id-1").then((removed) => (discarded = removed));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(discarded).toBeNull();
+    expect(discarded).toBe("esperando");
 
     answer(Response.json({ results: [{ clientId: "id-1", status: "SYNCED", id: "tx-1" }] }));
     await flushing;
     await discarding;
-    expect(discarded).toBe(false);
+    expect(discarded).toBeNull();
   });
 });
 
@@ -277,16 +278,16 @@ describe("com outra aba enviando (Web Locks)", () => {
     const release = locks.hold();
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    let discarded: boolean | null = null;
+    let discarded: unknown = "esperando";
     const discarding = discardFromOutbox("id-1").then((removed) => (discarded = removed));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(discarded).toBeNull();
+    expect(discarded).toBe("esperando");
 
     // The other tab's batch took it.
     await clearOutbox("ana");
     release();
     await discarding;
-    expect(discarded).toBe(false);
+    expect(discarded).toBeNull();
   });
 
   it("esperar o envio termina quando a outra aba solta a fila, ou no limite", async () => {
@@ -307,5 +308,45 @@ describe("com outra aba enviando (Web Locks)", () => {
     const started = Date.now();
     await waitForSend(50);
     expect(Date.now() - started).toBeLessThan(1_000);
+  });
+});
+
+describe("depois de descartar", () => {
+  it("diz a verdade conforme o que foi tirado da fila", () => {
+    expect(discardMessage(null, "Lançamento desfeito.")).toMatchObject({ kind: "error" });
+    expect(discardMessage(item(1, { attempted: true }), "Lançamento desfeito.")).toEqual({
+      kind: "warning",
+      title: "Lançamento tirado deste aparelho.",
+      description: "Se ele já tinha chegado ao servidor, exclua em Lançamentos.",
+    });
+    expect(discardMessage(item(1), "Lançamento desfeito.")).toEqual({
+      kind: "ok",
+      title: "Lançamento desfeito.",
+    });
+  });
+
+  it("desfazer depois de uma tentativa que falhou avisa que pode ter chegado", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        throw new TypeError("Failed to fetch");
+      }),
+    );
+    await putInOutbox(item(1));
+    await flushOutbox("ana");
+    expect(discardMessage(await discardFromOutbox("id-1"), "x").kind).toBe("warning");
+  });
+});
+
+describe("com o armazenamento cheio", () => {
+  it("o lote sai mesmo sem conseguir marcar os itens como tentados", async () => {
+    const { fetchMock } = server();
+    await putInOutbox(item(1));
+    vi.spyOn(outboxDb, "markAttempted").mockRejectedValue(
+      new DOMException("Quota exceeded", "QuotaExceededError"),
+    );
+    expect(await flushOutbox("ana")).toEqual({ status: "DONE", synced: 1, rejected: 0 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    vi.restoreAllMocks();
   });
 });
