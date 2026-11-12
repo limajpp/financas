@@ -18,7 +18,7 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
   - o envio não responde em 8 s (rede "fantasma").
 - Antes de entrar na fila, os dados passam pelo mesmo schema Zod do servidor (`entrySchema` / `transferSchema`). Um erro de preenchimento aparece na hora, no campo, como hoje.
 - O item da fila guarda o `clientId` que a tela já gerou. Se o primeiro envio chegou ao servidor mesmo sem resposta, o reenvio devolve o lançamento que já existe.
-- Ao entrar na fila, aparece o aviso "Despesa de R$ 0,00 salva no aparelho. Ela será enviada quando a conexão voltar.", com "Desfazer" (tira o item da fila). O formulário volta em branco e o app vai para a tela inicial, como no registro com rede.
+- Ao entrar na fila, aparece o aviso "Despesa de R$ 0,00 salva no aparelho. Ela será enviada quando a conexão voltar.", com "Desfazer" (tira o item da fila). O formulário volta em branco e **a tela continua no registro**, pronta para o próximo lançamento.
 
 ### A fila (Dexie)
 
@@ -53,7 +53,7 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 
 ### Indicador e itens com erro
 
-- No app inteiro, um aviso discreto quando a fila do usuário não está vazia: "1 lançamento aguardando sincronização" / "N lançamentos aguardando sincronização". No celular fica acima da barra inferior; no desktop, na barra lateral.
+- No app inteiro, um aviso discreto quando a fila do usuário não está vazia: "1 lançamento aguardando sincronização" / "N lançamentos aguardando sincronização". É uma faixa fina no topo da tela, no celular e no desktop.
 - Com itens rejeitados, o aviso muda de cor e diz "N lançamentos com erro".
 - Tocar no aviso abre uma folha com a lista: tipo, valor, o que foi, data e, nos rejeitados, o motivo.
   - **Pendente:** "Enviar agora" (para todos) e "Descartar".
@@ -64,12 +64,13 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 ### Sair da conta
 
 - Com a fila vazia, nada muda.
+- Sem rede, "Sair" avisa que não é possível sair agora (a sessão é encerrada no servidor).
 - Com itens na fila, "Sair" primeiro tenta enviar. Se sobrar algo, pergunta: "Há N lançamentos que ainda não foram enviados. Sair vai apagá-los deste aparelho." com "Cancelar" e "Sair e apagar".
 - Sair sempre apaga a fila do usuário, junto com os caches (task 15).
 
 ## Critérios de aceite
 
-- [ ] CA1 — E2E (Chromium e iPhone/WebKit): com o navegador offline, registrar uma despesa mostra o aviso de "salva no aparelho" e o indicador com 1 item. Ao voltar a rede, o indicador some e o lançamento aparece em Lançamentos, uma vez só.
+- [ ] CA1 — E2E (Chromium e iPhone/WebKit): com o navegador offline, registrar uma despesa mostra o aviso de "salva no aparelho" e o indicador com 1 item. Ao voltar a rede, o indicador some e o lançamento aparece em Lançamentos, uma vez só. No build de produção, o mesmo com o app aberto já sem rede, pelo service worker.
 - [ ] CA2 — Integração: enviar o mesmo lote duas vezes para `/api/sync`, em sequência e em paralelo, resulta em um lançamento por `clientId`, e as duas respostas trazem `SYNCED` com o mesmo `id`.
 - [ ] CA3 — Integração: num lote com um item inválido no meio (schema ou regra de domínio), os outros são criados e o inválido volta `REJECTED` com a mensagem em pt-BR.
 - [ ] CA4 — Integração: um item que aponta para conta, cartão ou categoria de outro espaço é `REJECTED` e nada é criado em nenhum dos dois espaços. O mesmo `clientId` usado em outro espaço não devolve o lançamento de lá.
@@ -102,6 +103,9 @@ Registrar no metrô ou em modo avião funciona: o lançamento fica guardado no a
 - **`RETRY` separado de `REJECTED`.** Um erro inesperado do servidor não é culpa do item, e não deve pedir correção.
 - **Sair apaga a fila, depois de tentar enviar e de avisar.** É a mesma regra dos caches: nenhum dado financeiro fica no aparelho depois de sair. A alternativa (guardar para o próximo login) deixaria lançamentos legíveis no IndexedDB.
 - **O espaço vem da sessão, nunca do corpo.** É isso que faz a rota "recusar itens de outro espaço": referências de fora simplesmente não existem para ela.
+- **Sem rede, a tela fica no registro depois de salvar.** Ir para a tela inicial depende da rede (ou de uma cópia guardada dela), e o aviso de "salva no aparelho" se perderia num recarregamento. De quebra, registrar vários gastos seguidos no metrô fica mais rápido.
+- **O aviso é uma faixa no topo, não um botão flutuante.** Flutuando acima da barra inferior, ele cobria o botão "Salvar" do registro no celular (pego pelo e2e do iPhone).
+- **`E2E_PORT` no `playwright.config.ts`.** Para rodar o e2e numa máquina em que a porta 3000 já está ocupada. Sem a variável, nada muda.
 - **Sem Background Sync.** O Safari não tem. O envio acontece com o app aberto.
 - **Só a tela de registro entra na fila.** O pagamento de fatura (em Contas) depende de valores da fatura que precisam de rede.
 
