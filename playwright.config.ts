@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3000;
+// E2E_PORT: for a machine where something else already uses 3000 (BETTER_AUTH_URL must match).
+const PORT = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://localhost:${PORT}`;
 
 export default defineConfig({
@@ -28,7 +29,7 @@ export default defineConfig({
     // CI tests the production build; locally the dev server is enough.
     command: process.env.CI ? "npm run start" : "npm run dev",
     // Many sign-ups from one IP in a few seconds: Better Auth's rate limit would block them.
-    env: { AUTH_RATE_LIMIT: "off" },
+    env: { AUTH_RATE_LIMIT: "off", PORT: String(PORT) },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
