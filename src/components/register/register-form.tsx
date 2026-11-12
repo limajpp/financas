@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronDown, LayoutGrid } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import { undoSubscriptionAction } from "@/app/(app)/assinaturas/actions";
@@ -13,6 +13,7 @@ import {
 } from "@/app/(app)/lancamentos/actions";
 import { CategoryIcon } from "@/components/categories/category-icon";
 import { NativeSelect } from "@/components/native-select";
+import { useOutbox } from "@/components/outbox/outbox-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,21 +22,31 @@ import { type KeypadKey, KEYPAD_DIGITS, pressKey } from "@/domain/amount-keypad"
 import { ALIAS_MAX } from "@/domain/counterparty-memory";
 import { formatDocument } from "@/domain/document";
 import { normalizeName } from "@/domain/names";
-import { addDays, type CalendarDate, formatCalendarDate, isCalendarDate } from "@/domain/dates";
+import {
+  addDays,
+  type CalendarDate,
+  formatCalendarDate,
+  isCalendarDate,
+  todayInSaoPaulo,
+} from "@/domain/dates";
 import { INSTALLMENTS_MAX, INSTALLMENTS_MIN, splitAmount } from "@/domain/installments";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
+import type { OutboxItem } from "@/domain/outbox";
 import type { PaymentChoice, TransferChoice } from "@/domain/register";
 import {
   COUNTERPARTY_NAME_MAX,
   DESCRIPTION_MAX,
   type EntryType,
   INVOICE_OVERRIDE_WINDOW,
+  METHODS_BY_TYPE,
   PAYMENT_METHOD_LABELS,
   TRANSACTION_DATE_MIN,
   TRANSFER_METHODS,
 } from "@/domain/transactions";
+import { findInOutbox, putInOutbox, removeFromOutbox } from "@/lib/outbox-db";
 import { cn } from "@/lib/utils";
+import { entrySchema, transferSchema } from "@/lib/validation/transactions";
 
 import { CategorySheet } from "./category-sheet";
 import { CounterpartyCombobox } from "./counterparty-combobox";
@@ -85,16 +96,47 @@ function closeKeyboardOnEnter(event: React.KeyboardEvent<HTMLInputElement>) {
   event.currentTarget.blur();
 }
 
+/** A save that doesn't answer in this long goes to the offline queue (a connection in name only). */
+const SAVE_TIMEOUT_MS = 8_000;
+const TIMED_OUT = Symbol("timed out");
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | typeof TIMED_OUT> {
+  let timer: ReturnType<typeof setTimeout>;
+  const timeout = new Promise<typeof TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(TIMED_OUT), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+function subscribeToVisibility(onChange: () => void) {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+const text = (value: unknown) => (typeof value === "string" ? value : "");
+
 /** The single register screen: amount on the keypad, a category, save. The rest comes filled. */
 export function RegisterForm({
   accounts,
   cards,
   counterparties,
-  today,
+  today: serverToday,
   transfer: transferDefault,
   ...byType
 }: RegisterProps) {
   const router = useRouter();
+  const outbox = useOutbox();
+  // Opened offline, this screen is a saved copy from another day: "Hoje" follows the device's
+  // clock when it is ahead of the day the server rendered.
+  const deviceToday = useSyncExternalStore(
+    subscribeToVisibility,
+    () => todayInSaoPaulo(),
+    () => serverToday,
+  );
+  const today = deviceToday > serverToday ? deviceToday : serverToday;
+  // "Corrigir" on an entry the server refused (task 16): the queue item being fixed.
+  const fixId = useSearchParams().get("corrigir");
+  const [fixing, setFixing] = useState<OutboxItem | null>(null);
   const [kind, setKind] = useState<Kind>("EXPENSE");
   // The entry type behind the expense/income parts (hidden while on a transfer).
   const type: EntryType = kind === "TRANSFER" ? "EXPENSE" : kind;
@@ -286,8 +328,9 @@ export function RegisterForm({
     setInstallmentCount(null);
     setSubscription(false);
     // Another kind of entry: a retry after a network error must not reuse the previous one's id
-    // (the server would answer with the entry that may have arrived, of the other kind).
-    clientId.current = null;
+    // (the server would answer with the entry that may have arrived, of the other kind). An entry
+    // being fixed never arrived: it keeps its id, so the fixed one replaces it in the queue.
+    if (!fixing) clientId.current = null;
     setKind(next);
     setCategoryId(null);
     setError(null);
@@ -328,56 +371,185 @@ export function RegisterForm({
     setPrefill(null);
     setShowDetails(false);
     setError(null);
+    setFixing(null);
   }
+
+  /**
+   * Loads a refused entry from the offline queue back into the form. An account, card or category
+   * that no longer exists is left out: the form keeps its default there.
+   */
+  function fill(item: OutboxItem) {
+    const data = (item.data ?? {}) as Record<string, unknown>;
+    reset();
+    clientId.current = item.clientId;
+    setFixing(item);
+    setCents(typeof data.amountCents === "number" ? data.amountCents : 0);
+    if (typeof data.date === "string" && isCalendarDate(data.date)) setDate(data.date);
+    setDescription(text(data.description));
+    if (item.kind === "TRANSFER") {
+      setKind("TRANSFER");
+      const method = TRANSFER_METHODS.find((m) => m === data.method);
+      if (method && typeof data.accountId === "string" && typeof data.toAccountId === "string") {
+        setTransfer({ method, accountId: data.accountId, toAccountId: data.toAccountId });
+      }
+    } else {
+      const entryType: EntryType = data.type === "INCOME" ? "INCOME" : "EXPENSE";
+      setKind(entryType);
+      setCounterparty(text(data.counterparty));
+      const categories = byType[entryType].tree.flatMap((p) => [p, ...p.children]);
+      setCategoryId(categories.find((c) => c.id === data.categoryId)?.id ?? null);
+      const method = METHODS_BY_TYPE[entryType].find((m) => m === data.method);
+      if (method && typeof data.accountId === "string") {
+        const choice: PaymentChoice = {
+          method,
+          accountId: data.accountId,
+          cardId: typeof data.cardId === "string" ? data.cardId : null,
+        };
+        setPayments((current) => ({ ...current, [entryType]: choice }));
+      }
+      if (typeof data.invoiceDueDate === "string") setChosenInvoice(data.invoiceDueDate);
+      if (typeof data.installments === "number") setInstallmentCount(data.installments);
+      setSubscription(data.subscription === true);
+      setAlias(text(data.counterpartyAlias));
+      setDocumentText(text(data.counterpartyDocument));
+      setShowDetails(
+        [data.description, data.counterpartyAlias, data.counterpartyDocument].some(
+          (value) => text(value) !== "",
+        ),
+      );
+    }
+    setError(item.error ?? null);
+  }
+  const fillRef = useRef(fill);
+  useEffect(() => {
+    fillRef.current = fill;
+  });
+  useEffect(() => {
+    if (!fixId) return;
+    let stale = false;
+    void outbox
+      .whenUser()
+      .then((userId) => findInOutbox(userId, fixId))
+      .then((item) => {
+        if (stale) return;
+        if (item) fillRef.current(item);
+        // Already sent or discarded (another tab): a plain, blank register screen.
+        else router.replace("/registrar");
+      })
+      .catch(() => {});
+    return () => {
+      stale = true;
+    };
+  }, [fixId, outbox, router]);
 
   function save() {
     // Already saved: the screen is on its way home (the form resets once it's hidden).
     if (!canSave || saved.current) return;
     setError(null);
-    clientId.current ??= crypto.randomUUID();
+    const id = (clientId.current ??= crypto.randomUUID());
     const amount = cents;
     const label = KIND_LABELS[kind];
-    startTransition(async () => {
-      let result: Awaited<ReturnType<typeof createTransactionAction>>;
+    const isTransfer = kind === "TRANSFER";
+    const input = isTransfer
+      ? {
+          amountCents: amount,
+          date,
+          method: transfer!.method,
+          accountId: transfer!.accountId,
+          toAccountId: transfer!.toAccountId,
+          description,
+        }
+      : {
+          type,
+          amountCents: amount,
+          date,
+          method: payment.method,
+          accountId: payment.accountId,
+          cardId: payment.cardId,
+          invoiceDueDate: chosenInvoice,
+          categoryId,
+          counterparty,
+          counterpartyAlias: alias,
+          counterpartyDocument: documentText,
+          description,
+          installments,
+          subscription,
+        };
+    const wasFixing = fixing !== null;
+
+    /**
+     * Keeps the entry on the device, to be sent when the connection is back (task 16). False when
+     * it couldn't be kept (a mistake in the form, or no storage): the message is on the screen.
+     */
+    async function queue() {
+      const checked = (isTransfer ? transferSchema : entrySchema).safeParse(input);
+      if (!checked.success) {
+        setError(checked.error.issues[0]?.message ?? "Dados inválidos.");
+        return false;
+      }
+      const userId = outbox.userId();
+      if (!userId) return false;
       try {
-        result =
-          kind === "TRANSFER"
-            ? await createTransferAction(clientId.current, {
-                amountCents: amount,
-                date,
-                method: transfer!.method,
-                accountId: transfer!.accountId,
-                toAccountId: transfer!.toAccountId,
-                description,
-              })
-            : await createTransactionAction(clientId.current, {
-                type,
-                amountCents: amount,
-                date,
-                method: payment.method,
-                accountId: payment.accountId,
-                cardId: payment.cardId,
-                invoiceDueDate: chosenInvoice,
-                categoryId,
-                counterparty,
-                counterpartyAlias: alias,
-                counterpartyDocument: documentText,
-                description,
-                installments,
-                subscription,
-              });
+        await putInOutbox({
+          clientId: id,
+          userId,
+          kind: isTransfer ? "TRANSFER" : "ENTRY",
+          data: input,
+          createdAt: fixing?.createdAt ?? Date.now(),
+          status: "PENDING",
+        });
       } catch {
-        // Offline or a server error: keep everything (and the clientId, so a retry can't
-        // duplicate if the first request did arrive).
-        setError("Não foi possível salvar. Verifique a conexão e tente de novo.");
+        return false;
+      }
+      toast(`${label} de ${formatBRL(amount)} salva no aparelho`, {
+        description: "Ela será enviada quando a conexão voltar.",
+        duration: 5_000,
+        action: {
+          label: "Desfazer",
+          onClick: () =>
+            void removeFromOutbox(id).then(
+              () => toast("Lançamento desfeito."),
+              () => toast.error("Não foi possível desfazer."),
+            ),
+        },
+      });
+      // No trip home: without a connection the next screen might not load. The form goes blank
+      // for the next entry.
+      reset();
+      if (wasFixing) router.replace("/registrar");
+      return true;
+    }
+
+    startTransition(async () => {
+      const failed = "Não foi possível salvar. Verifique a conexão e tente de novo.";
+      if (!navigator.onLine) {
+        if (!(await queue())) setError((current) => current ?? failed);
+        return;
+      }
+      let result: Awaited<ReturnType<typeof createTransactionAction>> | typeof TIMED_OUT;
+      try {
+        result = await withTimeout(
+          isTransfer ? createTransferAction(id, input) : createTransactionAction(id, input),
+          SAVE_TIMEOUT_MS,
+        );
+      } catch {
+        result = TIMED_OUT;
+      }
+      if (result === TIMED_OUT) {
+        // No answer, or an error on the way: the entry waits on the device. If the request did
+        // arrive, the queue's resend gets the same entry back (same clientId).
+        // Otherwise everything stays filled in, with the clientId, for a retry.
+        if (!(await queue())) setError((current) => current ?? failed);
         return;
       }
       if (!result.ok) {
         setError(result.error);
         return;
       }
-      const id = result.id;
-      const count = kind === "TRANSFER" ? null : installments;
+      // A fixed entry is saved now: it leaves the queue.
+      if (wasFixing) void removeFromOutbox(id).catch(() => {});
+      const savedId = result.id;
+      const count = isTransfer ? null : installments;
       const isSubscription = subscription;
       saved.current = true;
       const message = isSubscription
@@ -393,8 +565,8 @@ export function RegisterForm({
             let undone: Awaited<ReturnType<typeof deleteTransactionAction>>;
             try {
               undone = isSubscription
-                ? await undoSubscriptionAction(id)
-                : await deleteTransactionAction(id, count ? "following" : "this");
+                ? await undoSubscriptionAction(savedId)
+                : await deleteTransactionAction(savedId, count ? "following" : "this");
             } catch {
               toast.error("Não foi possível desfazer. Verifique a conexão.");
               return;
