@@ -884,10 +884,14 @@ export async function deleteTransaction(
 }
 
 /** Today's balance (end of day in São Paulo) of every account in the space, by account id. */
-export async function accountBalances(spaceId: string): Promise<Map<string, number>> {
+export async function accountBalances(
+  spaceId: string,
+  /** A database transaction to read in (the reconciliation, task 21); the default client else. */
+  client: Pick<typeof db, "account" | "transaction"> = db,
+): Promise<Map<string, number>> {
   const today = todayInSaoPaulo();
   const [accounts, rows] = await Promise.all([
-    db.account.findMany({
+    client.account.findMany({
       where: { spaceId },
       select: {
         id: true,
@@ -897,7 +901,7 @@ export async function accountBalances(spaceId: string): Promise<Map<string, numb
       },
     }),
     // Only what can move an account: credit purchases point to a card instead.
-    db.transaction.findMany({
+    client.transaction.findMany({
       where: {
         spaceId,
         date: { lte: calendarDateToDb(today) },

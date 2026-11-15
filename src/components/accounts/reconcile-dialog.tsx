@@ -93,14 +93,25 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
       }
       if (!result.ok) return setError(result.error);
       if (!result.reconciled) {
-        // An entry came in meanwhile: the comparison shows the new balance, with a new id for an
-        // adjustment of the new difference.
+        // An entry came in meanwhile: compare again (the new balance and the entry that explains
+        // it), with a new id for an adjustment of the new difference.
         clientId.current = null;
-        setComparison({
-          ...comparison,
-          appBalanceCents: result.appBalanceCents,
-          ...reconciliationDiff(result.appBalanceCents, comparison.bankBalanceCents),
-        });
+        try {
+          const again = await compareBalanceAction(account.id, comparison.bankBalanceCents);
+          if (again.ok) setComparison(again);
+          else
+            setComparison({
+              ...comparison,
+              appBalanceCents: result.appBalanceCents,
+              ...reconciliationDiff(result.appBalanceCents, comparison.bankBalanceCents),
+            });
+        } catch {
+          setComparison({
+            ...comparison,
+            appBalanceCents: result.appBalanceCents,
+            ...reconciliationDiff(result.appBalanceCents, comparison.bankBalanceCents),
+          });
+        }
         return setError("O saldo do app mudou desde a comparação. Confira os valores de novo.");
       }
       const adjustment = result.adjustment;

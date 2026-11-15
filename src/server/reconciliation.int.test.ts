@@ -210,7 +210,12 @@ describe("conferir saldo", () => {
       reconcile(s, 90_000, -10_000, { clientId }),
     ]);
     const again = await reconcile(s, 90_000, -10_000, { clientId });
-    expect(a.ok && b.ok && again.ok).toBe(true);
+    // All three answer with the same adjustment (the one a retry waited for, included).
+    const ids = [a, b, again].map((r) =>
+      r.ok && r.reconciled ? r.adjustment?.id : "not reconciled",
+    );
+    expect(new Set(ids).size).toBe(1);
+    expect(ids[0]).toEqual(expect.any(String));
     expect(await db.transaction.count({ where: { adjustment: true } })).toBe(1);
     expect(await balance(s)).toBe(90_000);
   });

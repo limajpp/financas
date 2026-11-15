@@ -111,10 +111,20 @@ export async function reconcileAccount(
   const today = todayInSaoPaulo();
   try {
     const adjustment = await db.$transaction(async (tx) => {
-      // Entries pointing to the account wait for this lock (their foreign key needs the row), and
-      // so does another reconciliation: the balance below is the one being closed.
+      // New entries on the account (their foreign key needs the row), a change of its initial
+      // balance and another reconciliation wait for this lock. Editing or deleting an entry
+      // doesn't, which is the same as it happening right after: the balance below reads what is
+      // committed, after the lock.
       await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`;
-      const appBalanceCents = (await accountBalances(spaceId)).get(accountId) ?? 0;
+      // A retry whose first try went through while this one waited: that adjustment is the answer.
+      const earlier = await tx.transaction.findUnique({
+        where: { spaceId_clientId: { spaceId, clientId } },
+        select: { id: true, amountCents: true, adjustment: true, accountId: true },
+      });
+      if (earlier?.adjustment && earlier.accountId === accountId) {
+        return { id: earlier.id, amountCents: earlier.amountCents };
+      }
+      const appBalanceCents = (await accountBalances(spaceId, tx)).get(accountId) ?? 0;
       const { diffCents } = reconciliationDiff(appBalanceCents, bankBalanceCents);
       if (diffCents !== expectedDiffCents) throw new Changed(appBalanceCents);
       const closing = adjustmentFor(diffCents);

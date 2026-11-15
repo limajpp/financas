@@ -74,7 +74,7 @@ De vez em quando, você abre o app do banco, digita o saldo que ele mostra e o a
   - se a diferença não é mais a que a tela mostrou (`expectedDiffCents`), não grava nada e devolve o saldo novo. A tela atualiza a comparação e avisa;
   - quando bate, grava a conferência;
   - com `adjust` e diferença, cria o ajuste, idempotente pelo `clientId` como os outros lançamentos, e grava a conferência, na mesma transação do banco;
-  - sem `adjust` e com diferença, devolve a diferença e não grava nada;
+  - sem `adjust` e com diferença, não grava nada e devolve o saldo do app;
   - uma conta de outro espaço, ou arquivada, é recusada.
 - **`accountRecentEntries(spaceId, contaId, desde)`:** os 10 lançamentos mais recentes da conta, do dia do saldo inicial até hoje.
 - **Antes de comparar e de conferir,** as cobranças de assinatura vencidas são geradas (task 13), para o saldo já ter as de hoje.
@@ -142,6 +142,11 @@ O revisor (Opus, effort high) pediu mudanças, sem bloqueios. Corrigido:
   - a conta arquivada na comparação;
   - o `CHECK` conferido pelo nome, incluindo uma transferência;
   - no e2e, o "Desfazer" do ajuste, o preenchimento com uma segunda conta e uma URL inválida no registro.
+
+- **Segunda rodada: aprovado com nits, aplicados.**
+  - Um reenvio com o mesmo `clientId`, enquanto o primeiro ainda gravava, respondia "o saldo mudou". Agora ele confere o `clientId` depois da trava e devolve o mesmo ajuste.
+  - Quando o saldo muda no meio, o diálogo compara de novo, trazendo também o lançamento que explica a mudança.
+  - A conferência lê o saldo dentro da própria transação, com uma conexão só.
 
 Aceito:
 
