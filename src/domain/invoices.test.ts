@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 
 import { CYCLE_EPOCH, type CycleVersion } from "./invoice-cycle";
-import { defaultInvoiceToPay, invoiceSummaries, isPayableInvoice } from "./invoices";
+import {
+  defaultInvoiceToPay,
+  groupInvoices,
+  invoiceBalance,
+  invoiceSummaries,
+  isPayableInvoice,
+} from "./invoices";
 
 // Closes on the 3rd, due on the 10th.
 const cycles: CycleVersion[] = [{ closingDay: 3, dueDay: 10, validFrom: CYCLE_EPOCH }];
@@ -56,6 +62,39 @@ describe("invoiceSummaries", () => {
       today,
     );
     expect(summary?.remainingCents).toBe(-5_000);
+  });
+
+  it("refunds (task 18) come off the total: purchases − refunds", () => {
+    const [summary] = invoiceSummaries(
+      [{ invoiceDueDate: "2026-11-10", amountCents: 10_000 }],
+      [{ invoiceDueDate: "2026-11-10", amountCents: 4_000 }],
+      cycles,
+      today,
+      [
+        { invoiceDueDate: "2026-11-10", amountCents: 2_500 },
+        { invoiceDueDate: "2026-11-10", amountCents: 500 },
+      ],
+    );
+    expect(summary).toMatchObject({ totalCents: 7_000, paidCents: 4_000, remainingCents: 3_000 });
+  });
+
+  it("refunds bigger than the purchases give a negative total (credit)", () => {
+    const summaries = invoiceSummaries(
+      [{ invoiceDueDate: "2026-11-10", amountCents: 1_000 }],
+      [],
+      cycles,
+      today,
+      [
+        { invoiceDueDate: "2026-11-10", amountCents: 6_000 },
+        { invoiceDueDate: "2027-01-10", amountCents: 300 },
+      ],
+    );
+    expect(summaries.map((s) => [s.dueDate, s.totalCents, s.status])).toEqual([
+      ["2026-11-10", -5_000, "closed"],
+      ["2026-12-10", 0, "open"],
+      ["2027-01-10", -300, "future"],
+    ]);
+    expect(invoiceBalance(summaries[0]!)).toBe("credit");
   });
 
   it("always lists the open invoice, even empty", () => {
@@ -194,5 +233,39 @@ describe("defaultInvoiceToPay", () => {
     expect(
       defaultInvoiceToPay([summary("2026-11-10", -50), summary("2026-12-10", 0, "open")]),
     ).toBe("2026-12-10");
+  });
+});
+
+describe("invoiceBalance", () => {
+  const remaining = (remainingCents: number) => ({
+    dueDate: "2026-11-10",
+    closingDate: "2026-11-03",
+    totalCents: 0,
+    paidCents: 0,
+    remainingCents,
+    status: "closed" as const,
+  });
+
+  it("paid when nothing is left, due when something is, credit when overpaid", () => {
+    expect(invoiceBalance(remaining(0))).toBe("paid");
+    expect(invoiceBalance(remaining(1))).toBe("due");
+    expect(invoiceBalance(remaining(-1))).toBe("credit");
+  });
+});
+
+describe("groupInvoices", () => {
+  it("the open one, the future ones nearest first and the closed ones newest first", () => {
+    const summaries = invoiceSummaries(
+      ["2026-09-10", "2026-10-10", "2026-11-10", "2027-01-10", "2027-02-10"].map(
+        (invoiceDueDate) => ({ invoiceDueDate, amountCents: 100 }),
+      ),
+      [],
+      cycles,
+      today,
+    );
+    const groups = groupInvoices(summaries);
+    expect(groups.open?.dueDate).toBe("2026-12-10");
+    expect(groups.upcoming.map((s) => s.dueDate)).toEqual(["2027-01-10", "2027-02-10"]);
+    expect(groups.past.map((s) => s.dueDate)).toEqual(["2026-11-10", "2026-10-10", "2026-09-10"]);
   });
 });

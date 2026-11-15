@@ -5,7 +5,7 @@ import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/da
 import { addAlias, resolveCounterparty } from "@/domain/counterparty-memory";
 import { normalizeName } from "@/domain/names";
 import type { CycleVersion } from "@/domain/invoice-cycle";
-import { planInstallments } from "@/domain/installments";
+import { planInstallments, shiftGroupInvoices } from "@/domain/installments";
 import { addMonthsToMonth, monthOf } from "@/domain/recurring";
 import { defaultInvoiceToPay, invoiceSummaries } from "@/domain/invoices";
 import {
@@ -373,8 +373,8 @@ export async function createTransfer(
 }
 
 /**
- * The credit purchases and invoice payments of the space's cards, summed per card and invoice
- * (one query for any number of cards).
+ * The credit purchases, refunds (incomes on credit, task 18) and invoice payments of the space's
+ * cards, summed per card and invoice (one query for any number of cards).
  */
 async function cardAmounts(spaceId: string, cardIds: readonly string[]) {
   const groups = await db.transaction.groupBy({
@@ -383,22 +383,36 @@ async function cardAmounts(spaceId: string, cardIds: readonly string[]) {
       spaceId,
       cardId: { in: [...cardIds] },
       invoiceDueDate: { not: null },
-      OR: [{ type: "EXPENSE", method: "CREDIT" }, { type: "CARD_PAYMENT" }],
+      OR: [{ type: { in: ["EXPENSE", "INCOME"] }, method: "CREDIT" }, { type: "CARD_PAYMENT" }],
     },
     _sum: { amountCents: true },
   });
   type Amount = { invoiceDueDate: string; amountCents: number };
-  const byCard = new Map<string, { purchases: Amount[]; payments: Amount[] }>();
+  type Amounts = { purchases: Amount[]; refunds: Amount[]; payments: Amount[] };
+  const empty = (): Amounts => ({ purchases: [], refunds: [], payments: [] });
+  const byCard = new Map<string, Amounts>();
   for (const g of groups) {
-    const amounts = byCard.get(g.cardId!) ?? { purchases: [], payments: [] };
+    const amounts = byCard.get(g.cardId!) ?? empty();
     const amount = {
       invoiceDueDate: dbToCalendarDate(g.invoiceDueDate!),
       amountCents: g._sum.amountCents ?? 0,
     };
-    (g.type === "CARD_PAYMENT" ? amounts.payments : amounts.purchases).push(amount);
+    const list =
+      g.type === "CARD_PAYMENT"
+        ? amounts.payments
+        : g.type === "INCOME"
+          ? amounts.refunds
+          : amounts.purchases;
+    list.push(amount);
     byCard.set(g.cardId!, amounts);
   }
-  return (cardId: string) => byCard.get(cardId) ?? { purchases: [], payments: [] };
+  return (cardId: string) => byCard.get(cardId) ?? empty();
+}
+
+/** The invoices a card's purchases and refunds fall on (any of them may be paid). */
+async function creditDueDates(spaceId: string, cardId: string) {
+  const { purchases, refunds } = (await cardAmounts(spaceId, [cardId]))(cardId);
+  return [...purchases, ...refunds].map((p) => p.invoiceDueDate);
 }
 
 async function spaceCardWithCycles(spaceId: string, cardId: string) {
@@ -433,9 +447,7 @@ export async function createCardPayment(
       }),
       spaceCardWithCycles(spaceId, input.cardId),
     ]);
-    const purchaseDueDates = card
-      ? (await cardAmounts(spaceId, [card.id]))(card.id).purchases.map((p) => p.invoiceDueDate)
-      : [];
+    const purchaseDueDates = card ? await creditDueDates(spaceId, card.id) : [];
     const checked = validateCardPayment(
       input,
       { accounts, card, purchaseDueDates },
@@ -482,8 +494,8 @@ export async function cardsInvoices(
   ]);
   return new Map(
     cards.map((card) => {
-      const { purchases, payments } = amountsOf(card.id);
-      const invoices = invoiceSummaries(purchases, payments, card.cycles, today);
+      const { purchases, refunds, payments } = amountsOf(card.id);
+      const invoices = invoiceSummaries(purchases, payments, card.cycles, today, refunds);
       return [
         card.id,
         {
@@ -594,6 +606,13 @@ export async function updateTransaction(
   }
 }
 
+/** Thrown inside the database transaction to undo it; turned into the error it carries. */
+class Rollback extends Error {
+  constructor(readonly code: "INVALID_INVOICE" | "INSTALLMENT_ORDER" | "NOT_FOUND") {
+    super(code);
+  }
+}
+
 async function updateInstallments(
   spaceId: string,
   id: string,
@@ -619,43 +638,78 @@ async function updateInstallments(
   if (scope === "following" && input.amountCents !== current.amountCents) {
     return { ok: false, error: "INSTALLMENT_AMOUNT_SCOPE" };
   }
-  // The invoice stays: installments follow the card's invoices, not a manual choice.
   // The date is locked (checked above), and later installments are dated in the future by
-  // design: the "not in the future" rule doesn't apply to them.
+  // design: the "not in the future" rule doesn't apply to them. The invoice is checked apart:
+  // moving one installment takes the next ones along (task 18).
   const today = todayInSaoPaulo();
-  const checked = validateEntry(
-    { ...input, invoiceDueDate: null, installments: null },
-    await refsFor(spaceId, input),
-    { today: current.date > today ? current.date : today, current },
-  );
+  const refs = await refsFor(spaceId, input);
+  const checked = validateEntry({ ...input, invoiceDueDate: null, installments: null }, refs, {
+    today: current.date > today ? current.date : today,
+    current,
+  });
   if (!checked.ok) return checked;
+  const moveTo =
+    input.invoiceDueDate !== null && input.invoiceDueDate !== current.invoiceDueDate
+      ? input.invoiceDueDate
+      : null;
+  const cycles = refs.cards.find((c) => c.id === input.cardId)?.cycles ?? [];
 
   const counterpartyId = await counterpartyIdFor(spaceId, input);
   const shared = { categoryId: input.categoryId, counterpartyId, description: input.description };
   // All or nothing: "esta e as próximas" never ends half applied.
-  const count = await db.$transaction(async (tx) => {
-    const updated = await tx.transaction.updateMany({
-      where: { id, spaceId },
-      data: { ...shared, amountCents: input.amountCents },
-    });
-    if (updated.count > 0 && scope === "following") {
-      await tx.transaction.updateMany({
-        where: {
-          spaceId,
-          installmentGroupId: current.installmentGroupId,
-          installmentNumber: { gt: current.installmentNumber! },
-        },
-        data: shared,
+  const result = await db
+    .$transaction(async (tx) => {
+      const updated = await tx.transaction.updateMany({
+        where: { id, spaceId },
+        data: { ...shared, amountCents: input.amountCents },
       });
-    }
-    return updated.count;
-  });
-  if (count === 0) return { ok: false, error: "NOT_FOUND" };
-  const row = await db.transaction.findFirstOrThrow({
-    where: { id, spaceId },
-    select: transactionSelect,
-  });
-  return { ok: true, transaction: toTransaction(row) };
+      if (updated.count === 0) return { ok: false as const, error: "NOT_FOUND" as const };
+      if (scope === "following") {
+        await tx.transaction.updateMany({
+          where: {
+            spaceId,
+            installmentGroupId: current.installmentGroupId,
+            installmentNumber: { gt: current.installmentNumber! },
+          },
+          data: shared,
+        });
+      }
+      if (moveTo !== null) {
+        const rows = await tx.transaction.findMany({
+          where: { spaceId, installmentGroupId: current.installmentGroupId },
+          select: { id: true, installmentNumber: true, date: true, invoiceDueDate: true },
+        });
+        const shifted = shiftGroupInvoices(
+          rows.map((r) => ({
+            id: r.id,
+            number: r.installmentNumber!,
+            date: dbToCalendarDate(r.date),
+            invoiceDueDate: dbToCalendarDate(r.invoiceDueDate!),
+          })),
+          cycles,
+          { number: current.installmentNumber!, invoiceDueDate: moveTo },
+        );
+        if (!shifted.ok) throw new Rollback(shifted.error);
+        for (const update of shifted.updates) {
+          // An installment deleted meanwhile (another tab): nothing changes.
+          const moved = await tx.transaction.updateMany({
+            where: { id: update.id, spaceId },
+            data: {
+              invoiceDueDate: calendarDateToDb(update.invoiceDueDate),
+              invoiceOverridden: update.invoiceOverridden,
+            },
+          });
+          if (moved.count === 0) throw new Rollback("NOT_FOUND");
+        }
+      }
+      return { ok: true as const };
+    })
+    .catch((error: unknown) => {
+      if (error instanceof Rollback) return { ok: false as const, error: error.code };
+      throw error;
+    });
+  if (!result.ok) return result;
+  return reloadTransaction(spaceId, id);
 }
 
 /** Edits a transfer (its type stays): the same rules as creating one. */
@@ -716,9 +770,7 @@ export async function updateCardPayment(
     }),
     spaceCardWithCycles(spaceId, input.cardId),
   ]);
-  const purchaseDueDates = card
-    ? (await cardAmounts(spaceId, [card.id]))(card.id).purchases.map((p) => p.invoiceDueDate)
-    : [];
+  const purchaseDueDates = card ? await creditDueDates(spaceId, card.id) : [];
   const checked = validateCardPayment(
     input,
     { accounts, card, purchaseDueDates },

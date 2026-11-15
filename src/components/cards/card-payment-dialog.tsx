@@ -22,6 +22,9 @@ import {
 
 import type { CardView, PayerOption } from "./types";
 
+/** What the dialog needs of a card; `dueDate` is the invoice it starts on (the invoices screen). */
+export type PayableCard = Pick<CardView, "id" | "name" | "payment"> & { dueDate?: string };
+
 type Method = (typeof CARD_PAYMENT_METHODS)[number];
 
 const STATUS_LABELS: Record<InvoiceSummary["status"], string> = {
@@ -54,7 +57,7 @@ export function CardPaymentDialog({
   accounts,
   onClose,
 }: {
-  card: CardView | null;
+  card: PayableCard | null;
   accounts: PayerOption[];
   onClose: () => void;
 }) {
@@ -65,7 +68,14 @@ export function CardPaymentDialog({
   return (
     <Dialog open={card !== null} onOpenChange={(open) => !open && onClose()}>
       <ResponsiveDialogContent>
-        {shown && <PaymentForm key={shown.id} card={shown} accounts={accounts} onDone={onClose} />}
+        {shown && (
+          <PaymentForm
+            key={`${shown.id}:${shown.dueDate ?? ""}`}
+            card={shown}
+            accounts={accounts}
+            onDone={onClose}
+          />
+        )}
       </ResponsiveDialogContent>
     </Dialog>
   );
@@ -76,11 +86,12 @@ function PaymentForm({
   accounts,
   onDone,
 }: {
-  card: CardView;
+  card: PayableCard;
   accounts: PayerOption[];
   onDone: () => void;
 }) {
-  const { invoices, defaultDueDate } = card.payment;
+  const { invoices } = card.payment;
+  const defaultDueDate = card.dueDate ?? card.payment.defaultDueDate;
   const today = todayInSaoPaulo();
   const payers = accounts.filter((a) => !a.archived);
   const [dueDate, setDueDate] = useState(defaultDueDate ?? "");

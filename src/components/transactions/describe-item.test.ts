@@ -73,4 +73,16 @@ describe("describeItem", () => {
       "Banco Azul · Pix · Assinatura",
     );
   });
+
+  it("a refund on the card (task 18) says so and is money coming in", () => {
+    expect(
+      describeItem({
+        ...base,
+        type: "INCOME",
+        method: "CREDIT",
+        account: null,
+        card: { id: "c", name: "Cartão Roxo" },
+      }),
+    ).toMatchObject({ line: "Cartão Roxo · Estorno", amount: `+${formatBRL(10_000)}` });
+  });
 });

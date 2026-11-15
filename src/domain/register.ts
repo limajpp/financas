@@ -70,10 +70,11 @@ export function defaultPayment(
   const account = accounts.find((a) => a.id === memory.accountId) ?? accounts[0];
   if (!account) return null;
   const card = cards.find((c) => c.id === memory.cardId) ?? cards[0];
+  // A refund (an income on credit, task 18) is rare: the next income doesn't start on it.
   const fits =
     memory.method !== null &&
     METHODS_BY_TYPE[type].includes(memory.method) &&
-    (memory.method !== "CREDIT" || card !== undefined);
+    (memory.method !== "CREDIT" || (card !== undefined && type === "EXPENSE"));
   return {
     method: fits ? memory.method! : "PIX",
     accountId: account.id,

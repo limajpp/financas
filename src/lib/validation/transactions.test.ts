@@ -187,6 +187,30 @@ describe("entrySchema: installments", () => {
   });
 });
 
+describe("entrySchema: refund (task 18)", () => {
+  it("CA5: an income on credit points to the card and keeps a manual invoice", () => {
+    expect(
+      entrySchema.parse({
+        ...base,
+        type: "INCOME",
+        method: "CREDIT",
+        cardId,
+        invoiceDueDate: "2026-11-12",
+      }),
+    ).toMatchObject({ type: "INCOME", accountId: null, cardId, invoiceDueDate: "2026-11-12" });
+  });
+
+  it("CA5: refuses installments or a subscription on it", () => {
+    const refund = { ...base, type: "INCOME", method: "CREDIT", accountId: undefined, cardId };
+    expect(issues({ ...refund, installments: 2 })).toEqual({
+      installments: "Só compras no crédito podem ser parceladas.",
+    });
+    expect(issues({ ...refund, subscription: true })).toEqual({
+      subscription: "Só despesas podem ser assinaturas.",
+    });
+  });
+});
+
 describe("entrySchema: subscription", () => {
   it("defaults to false and takes true on an expense, by any method", () => {
     expect(entrySchema.parse(base)).toMatchObject({ subscription: false });

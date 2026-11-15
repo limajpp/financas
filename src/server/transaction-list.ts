@@ -135,10 +135,7 @@ export async function listTransactions(
       : null;
 
   const days = [...new Set(page.map((i) => i.date))];
-  const groupIds = [
-    ...new Set(page.flatMap((i) => (i.installmentGroupId ? [i.installmentGroupId] : []))),
-  ];
-  const [dayGroups, installmentGroups] = await Promise.all([
+  const [dayGroups, items] = await Promise.all([
     days.length === 0
       ? []
       : db.transaction.groupBy({
@@ -152,13 +149,7 @@ export async function listTransactions(
           },
           _sum: { amountCents: true },
         }),
-    groupIds.length === 0
-      ? []
-      : db.transaction.groupBy({
-          by: ["installmentGroupId"],
-          where: { spaceId, installmentGroupId: { in: groupIds } },
-          _sum: { amountCents: true },
-        }),
+    withGroupTotals(spaceId, page),
   ]);
 
   const dayTotals: Record<string, number> = Object.fromEntries(days.map((d) => [d, 0]));
@@ -166,16 +157,45 @@ export async function listTransactions(
     const sign = g.type === "INCOME" ? 1 : -1;
     dayTotals[dbToCalendarDate(g.date)]! += sign * (g._sum.amountCents ?? 0);
   }
-  const groupTotal = new Map(
-    installmentGroups.map((g) => [g.installmentGroupId!, g._sum.amountCents ?? 0]),
-  );
-  const items: ListItem[] = page.map((item) => ({
+  return { items, nextCursor, dayTotals };
+}
+
+/** Adds each installment's purchase total (the sum of its group). */
+async function withGroupTotals(
+  spaceId: string,
+  page: ReturnType<typeof toItem>[],
+): Promise<ListItem[]> {
+  const groupIds = [
+    ...new Set(page.flatMap((i) => (i.installmentGroupId ? [i.installmentGroupId] : []))),
+  ];
+  const groups =
+    groupIds.length === 0
+      ? []
+      : await db.transaction.groupBy({
+          by: ["installmentGroupId"],
+          where: { spaceId, installmentGroupId: { in: groupIds } },
+          _sum: { amountCents: true },
+        });
+  const groupTotal = new Map(groups.map((g) => [g.installmentGroupId!, g._sum.amountCents ?? 0]));
+  return page.map((item) => ({
     ...item,
     installmentGroupCents: item.installmentGroupId
       ? (groupTotal.get(item.installmentGroupId) ?? null)
       : null,
   }));
-  return { items, nextCursor, dayTotals };
+}
+
+/**
+ * The entries of one card's invoice (task 18): its purchases, refunds and payments, as list items
+ * newest first. The card must already be known to be in the space.
+ */
+export async function invoiceItems(spaceId: string, cardId: string, dueDate: string) {
+  const rows = await db.transaction.findMany({
+    where: { spaceId, cardId, invoiceDueDate: calendarDateToDb(dueDate) },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    select: listSelect,
+  });
+  return withGroupTotals(spaceId, rows.map(toItem));
 }
 
 export type ListPage = Awaited<ReturnType<typeof listTransactions>>;

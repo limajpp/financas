@@ -8,8 +8,16 @@
  *   card's sequence of invoices (see nextInvoice).
  */
 import { type CalendarDate, addMonths } from "./dates";
-import { type CycleVersion, type Invoice, cycleOn, invoiceFor, nextInvoice } from "./invoice-cycle";
+import {
+  type CycleVersion,
+  type Invoice,
+  cycleOn,
+  invoiceFor,
+  nextInvoice,
+  shiftInvoice,
+} from "./invoice-cycle";
 import { closingDateFor } from "./invoices";
+import { INVOICE_OVERRIDE_WINDOW } from "./transactions";
 
 export const INSTALLMENTS_MIN = 2;
 export const INSTALLMENTS_MAX = 24;
@@ -63,18 +71,19 @@ export function planInstallments(
   }));
 }
 
+type GroupRow = { id: string; number: number; date: CalendarDate; invoiceDueDate: CalendarDate };
+
 /**
- * After a card's cycle changed: the installments of one group whose invoice is now different.
- * The sequence starts at the lowest-numbered installment left: the 1st is recomputed from its
- * date like any purchase; a later one (the earlier ones were deleted) keeps its own invoice.
+ * The invoice each installment of a group should be on, by number. The sequence starts at the
+ * lowest-numbered installment left: the 1st is computed from its date like any purchase; a later
+ * one (the earlier ones were deleted) keeps its own invoice.
  */
-export function replanGroupInvoices(
-  rows: readonly { id: string; number: number; date: CalendarDate; invoiceDueDate: CalendarDate }[],
+function plannedGroupInvoices(
+  sorted: readonly GroupRow[],
   cycles: readonly CycleVersion[],
-): { id: string; invoiceDueDate: CalendarDate }[] {
-  const sorted = [...rows].sort((a, b) => a.number - b.number);
+): Map<number, Invoice> {
   const anchor = sorted[0];
-  if (!anchor) return [];
+  if (!anchor) return new Map();
   const anchorInvoice =
     anchor.number === 1
       ? invoiceFor(cycleOn(cycles, anchor.date), anchor.date)
@@ -84,8 +93,83 @@ export function replanGroupInvoices(
         };
   const last = sorted.at(-1)!.number;
   const invoices = invoiceSequence(cycles, anchorInvoice, last - anchor.number + 1);
+  return new Map(invoices.map((invoice, i) => [anchor.number + i, invoice]));
+}
+
+const byNumber = (rows: readonly GroupRow[]) => [...rows].sort((a, b) => a.number - b.number);
+
+/** After a card's cycle changed: the installments of one group whose invoice is now different. */
+export function replanGroupInvoices(
+  rows: readonly GroupRow[],
+  cycles: readonly CycleVersion[],
+): { id: string; invoiceDueDate: CalendarDate }[] {
+  const sorted = byNumber(rows);
+  const planned = plannedGroupInvoices(sorted, cycles);
   return sorted.flatMap((row) => {
-    const due = invoices[row.number - anchor.number]!.dueDate;
+    const due = planned.get(row.number)!.dueDate;
     return due === row.invoiceDueDate ? [] : [{ id: row.id, invoiceDueDate: due }];
   });
+}
+
+/**
+ * The invoices an installment may be moved to: its computed invoice and up to 3 before and after
+ * (the window of task 8). The edit dialog offers these; the server checks against them.
+ */
+export function installmentInvoiceWindow(
+  cycles: readonly CycleVersion[],
+  computed: Invoice,
+): Invoice[] {
+  const cycle = cycleOn(cycles, computed.closingDate);
+  const window: Invoice[] = [];
+  for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {
+    window.push(n === 0 ? computed : shiftInvoice(cycle, computed, n));
+  }
+  return window;
+}
+
+/**
+ * Moves installment `moved.number` to another invoice (task 18): it and the next ones go one per
+ * invoice from there, and the earlier ones stay. The chosen invoice must be at most 3 invoices
+ * away from the one computed for that installment (the window of task 8), and after the invoice
+ * of the installment before it: two installments never share an invoice. Each moved installment is
+ * a manual choice unless it lands on its computed invoice.
+ */
+export function shiftGroupInvoices(
+  rows: readonly GroupRow[],
+  cycles: readonly CycleVersion[],
+  moved: { number: number; invoiceDueDate: CalendarDate },
+):
+  | {
+      ok: true;
+      updates: { id: string; invoiceDueDate: CalendarDate; invoiceOverridden: boolean }[];
+    }
+  | { ok: false; error: "INVALID_INVOICE" | "INSTALLMENT_ORDER" } {
+  const sorted = byNumber(rows);
+  const planned = plannedGroupInvoices(sorted, cycles);
+  const computed = planned.get(moved.number);
+  if (!computed) return { ok: false, error: "INVALID_INVOICE" };
+
+  const chosen = installmentInvoiceWindow(cycles, computed).find(
+    (invoice) => invoice.dueDate === moved.invoiceDueDate,
+  );
+  if (!chosen) return { ok: false, error: "INVALID_INVOICE" };
+  const before = sorted.filter((row) => row.number < moved.number).at(-1);
+  if (before && chosen.dueDate <= before.invoiceDueDate) {
+    return { ok: false, error: "INSTALLMENT_ORDER" };
+  }
+
+  const following = sorted.filter((row) => row.number >= moved.number);
+  const last = following.at(-1)!.number;
+  const invoices = invoiceSequence(cycles, chosen, last - moved.number + 1);
+  return {
+    ok: true,
+    updates: following.map((row) => {
+      const due = invoices[row.number - moved.number]!.dueDate;
+      return {
+        id: row.id,
+        invoiceDueDate: due,
+        invoiceOverridden: due !== planned.get(row.number)!.dueDate,
+      };
+    }),
+  };
 }

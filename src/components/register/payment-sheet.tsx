@@ -73,7 +73,12 @@ export function PaymentSheet({
                 onClick={() => chooseMethod(method)}
               >
                 {PAYMENT_METHOD_LABELS[method]}
-                {noCard && <span className="text-[11px] font-normal">Nenhum cartão</span>}
+                {noCard ? (
+                  <span className="text-[11px] font-normal">Nenhum cartão</span>
+                ) : (
+                  method === "CREDIT" &&
+                  type === "INCOME" && <span className="text-[11px] font-normal">estorno</span>
+                )}
               </Button>
             );
           })}

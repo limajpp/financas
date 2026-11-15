@@ -27,7 +27,9 @@ export function describeItem(item: ListItemView) {
   } else if (item.card) {
     line = item.installmentNumber
       ? `${item.card.name} · ${item.installmentNumber}/${item.installmentTotal}`
-      : `${item.card.name} · ${PAYMENT_METHOD_LABELS[item.method]}`;
+      : item.type === "INCOME"
+        ? `${item.card.name} · Estorno`
+        : `${item.card.name} · ${PAYMENT_METHOD_LABELS[item.method]}`;
   } else {
     line = `${item.account?.name} · ${PAYMENT_METHOD_LABELS[item.method]}`;
   }

@@ -63,7 +63,10 @@ function CardForm({
   // Active accounts, plus the card's own account even if it was archived since.
   const payers = accounts.filter((a) => !a.archived || a.id === card?.accountId);
   const [name, setName] = useState(card?.name ?? "");
-  const [accountId, setAccountId] = useState(card?.accountId ?? payers[0]?.id ?? "");
+  const [chosenAccountId, setAccountId] = useState(card?.accountId ?? "");
+  // Opened right after creating the first account, the list may arrive a moment later: the first
+  // account is the default until one is chosen.
+  const accountId = chosenAccountId || payers[0]?.id || "";
   const [closingDay, setClosingDay] = useState(String(card?.closingDay ?? ""));
   const [dueDay, setDueDay] = useState(String(card?.dueDay ?? ""));
   const [limit, setLimit] = useState(card?.limitCents ? formatBRLInput(card.limitCents) : "");

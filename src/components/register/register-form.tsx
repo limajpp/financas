@@ -211,6 +211,8 @@ export function RegisterForm({
   const yesterday = addDays(today, -1);
   // Only a credit purchase can be in installments; anything else turns it off.
   const canSplit = kind === "EXPENSE" && payment.method === "CREDIT";
+  // An income on credit is a refund on the card (task 18).
+  const refund = kind === "INCOME" && payment.method === "CREDIT";
   const installments = canSplit ? installmentCount : null;
   const subscription = kind === "EXPENSE" && subscriptionOn;
   const split =
@@ -346,6 +348,11 @@ export function RegisterForm({
   function changePayment(next: PaymentChoice) {
     // "Parcelado" is only for credit: leaving credit turns it off.
     if (next.method !== "CREDIT") setInstallmentCount(null);
+    // A refund suggests "Reembolsos" when no category was chosen yet (task 18).
+    if (type === "INCOME" && next.method === "CREDIT" && payment.method !== "CREDIT") {
+      const refunds = data.tree.find((c) => normalizeName(c.name) === normalizeName("Reembolsos"));
+      if (refunds && categoryId === null) setCategoryId(refunds.id);
+    }
     if (next.cardId !== payment.cardId || next.method !== payment.method) setChosenInvoice(null);
     setPayments((current) => ({ ...current, [type]: next }));
   }
@@ -373,6 +380,10 @@ export function RegisterForm({
     setShowDetails(false);
     setError(null);
     setFixing(null);
+    // A refund is rare: the next income starts back on the usual payment (task 18).
+    setPayments((current) =>
+      current.INCOME.method === "CREDIT" ? { ...current, INCOME: byType.INCOME.payment! } : current,
+    );
   }
 
   /**
@@ -449,7 +460,9 @@ export function RegisterForm({
     setError(null);
     const id = (clientId.current ??= crypto.randomUUID());
     const amount = cents;
-    const label = KIND_LABELS[kind];
+    const label = refund ? "Estorno" : KIND_LABELS[kind];
+    // "Estorno" is masculine; the others are feminine.
+    const salva = refund ? "salvo" : "salva";
     const isTransfer = kind === "TRANSFER";
     const input = isTransfer
       ? {
@@ -505,10 +518,11 @@ export function RegisterForm({
       } catch {
         return false;
       }
-      toast(`${label} de ${formatBRL(amount)} salva no aparelho`, {
+      const [it, sent] = refund ? ["Ele", "enviado"] : ["Ela", "enviada"];
+      toast(`${label} de ${formatBRL(amount)} ${salva} no aparelho`, {
         description: attempted
-          ? "O envio não respondeu. Ela será enviada de novo em instantes."
-          : "Ela será enviada quando a conexão voltar.",
+          ? `O envio não respondeu. ${it} será ${sent} de novo em instantes.`
+          : `${it} será ${sent} quando a conexão voltar.`,
         duration: 5_000,
         // No "Desfazer" either for a fixed entry: it would take the original away with it.
         action:
@@ -569,7 +583,7 @@ export function RegisterForm({
       saved.current = true;
       const message = isSubscription
         ? `Assinatura de ${formatBRL(amount)} salva`
-        : `${label} de ${formatBRL(amount)}${count ? ` em ${count}×` : ""} salva`;
+        : `${label} de ${formatBRL(amount)}${count ? ` em ${count}×` : ""} ${salva}`;
       toast(message, {
         duration: 5_000,
         action: {
@@ -900,7 +914,7 @@ export function RegisterForm({
         )}
         <Keypad onKey={press} />
         <Button type="submit" className="h-11 text-base" disabled={!canSave}>
-          {pending ? "Salvando…" : `Salvar ${KIND_LABELS[kind].toLowerCase()}`}
+          {pending ? "Salvando…" : `Salvar ${refund ? "estorno" : KIND_LABELS[kind].toLowerCase()}`}
         </Button>
       </div>
 

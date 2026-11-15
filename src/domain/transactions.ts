@@ -27,10 +27,10 @@ export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   TED: "TED",
 };
 
-/** Credit and debit make no sense for money coming in. */
+/** Debit makes no sense for money coming in; credit is a refund on the card (task 18). */
 export const METHODS_BY_TYPE: Record<EntryType, readonly PaymentMethod[]> = {
   EXPENSE: PAYMENT_METHODS,
-  INCOME: ["PIX", "TED", "CASH", "BOLETO"],
+  INCOME: ["PIX", "TED", "CASH", "BOLETO", "CREDIT"],
 };
 
 export const TRANSACTION_DATE_MIN: CalendarDate = "2000-01-01";
@@ -56,6 +56,7 @@ export type TransactionError =
   | "TO_ACCOUNT_ARCHIVED"
   | "TOO_SMALL_FOR_INSTALLMENTS"
   | "INSTALLMENT_LOCKED"
+  | "INSTALLMENT_ORDER"
   | "INSTALLMENT_AMOUNT_SCOPE"
   | "INSTALLMENTS_ON_EDIT"
   | "SUBSCRIPTION_ON_EDIT"
@@ -71,7 +72,7 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   NOT_EDITABLE: "Transferências e pagamentos de fatura ainda não podem ser editados.",
   FUTURE_DATE: "A data não pode estar no futuro.",
   DATE_TOO_OLD: "A data precisa ser de 2000 em diante.",
-  METHOD_NOT_ALLOWED: "Uma receita entra por Pix, TED, dinheiro ou boleto.",
+  METHOD_NOT_ALLOWED: "Uma receita entra por Pix, TED, dinheiro, boleto ou estorno no crédito.",
   ACCOUNT_NOT_FOUND: "Conta não encontrada.",
   ACCOUNT_ARCHIVED: "Essa conta está arquivada. Escolha outra.",
   CARD_NOT_FOUND: "Cartão não encontrado.",
@@ -86,6 +87,8 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   TOO_SMALL_FOR_INSTALLMENTS: "O valor é pequeno demais para tantas parcelas.",
   INSTALLMENT_LOCKED:
     "Para mudar a data ou o cartão de uma compra parcelada, exclua e registre de novo.",
+  INSTALLMENT_ORDER:
+    "Uma parcela não pode ir para a fatura de uma parcela anterior, nem antes dela.",
   INSTALLMENT_AMOUNT_SCOPE: "O valor muda só na parcela escolhida: use “só esta”.",
   INSTALLMENTS_ON_EDIT: "Para parcelar uma compra já registrada, exclua e registre de novo.",
   SUBSCRIPTION_ON_EDIT:
@@ -250,7 +253,7 @@ export type InvoiceChoice = { invoiceDueDate: CalendarDate; invoiceOverridden: b
 export type EntryRuleResult =
   { ok: true; invoice: InvoiceChoice | null } | { ok: false; error: TransactionError };
 
-/** Checks an expense or income and, for a credit purchase, picks its invoice. */
+/** Checks an expense or income and, on credit (a purchase or a refund), picks its invoice. */
 export function validateEntry(
   input: EntryInput,
   refs: EntryRefs,
