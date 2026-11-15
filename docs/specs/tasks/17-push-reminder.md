@@ -139,6 +139,9 @@ O revisor (Opus, effort high) pediu mudanças. Tudo foi corrigido.
   - o ícone colorido saiu do `badge`;
   - as funções do cliente usadas no "Sair" ganharam testes.
 - **Anterior a esta task (task 3), corrigido aqui:** antes de a página hidratar, o login e o cadastro enviavam por GET, e a senha ia para a URL (histórico, logs da Vercel). Agora os formulários usam `method="post"`. O e2e espera a hidratação, o que resolvia a corrida do CA9 da task 16 sob carga.
+- **Segunda rodada:** a lista ainda aceitava `;`, `'`, `"`, `` ` ``, `{` e `}` no host. O parser do navegador mantém esses caracteres no host, e o do Node encerra o host neles. Agora o host só aceita letras, números, hífen e ponto, com testes para cada caractere. Também:
+  - a seção mostra o lembrete desligado quando a inscrição foi feita com uma chave antiga;
+  - novos testes cobrem o limite de 10 s, o remetente reduzido à origem e a URL normalizada.
 - **Aceito:** um endpoint conhecido por outra pessoa poderia ser reatribuído a ela, mas endpoints não são adivinháveis nem aparecem em lugar nenhum. Também não há limite de inscrições por usuário, porque o cadastro em produção é fechado.
 
 ## Fora do escopo

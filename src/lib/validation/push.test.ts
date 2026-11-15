@@ -16,6 +16,14 @@ describe("pushSubscriptionSchema", () => {
     }
   });
 
+  it("grava a URL normalizada", () => {
+    const parsed = pushSubscriptionSchema.parse({
+      endpoint: "HTTPS://Web.Push.Apple.com/abc",
+      keys,
+    });
+    expect(parsed.endpoint).toBe("https://web.push.apple.com/abc");
+  });
+
   it("recusa outros endereços, http e chaves vazias", () => {
     for (const endpoint of [
       "http://web.push.apple.com/x",
@@ -29,6 +37,8 @@ describe("pushSubscriptionSchema", () => {
       "https://localhost%2Ewns.notify.windows.com/x",
       "https://web.push.apple.com:8443/x",
       "https://web.push.apple.com./x",
+      // Characters the WHATWG parser keeps in a host and Node's legacy parser stops at.
+      ...[";", "'", '"', "`", "{", "}"].map((c) => `https://127.0.0.1${c}web.push.apple.com/x`),
       "nada",
     ]) {
       expect(pushSubscriptionSchema.safeParse({ endpoint, keys }).success, endpoint).toBe(false);

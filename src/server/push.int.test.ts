@@ -175,7 +175,8 @@ describe("lembrete diário", () => {
       "Nenhum lançamento hoje. Teve algum gasto?",
     );
     // TTL of 12 h: a reminder that arrived the next noon would confuse.
-    expect(push.sendNotification.mock.calls[0]![2]).toMatchObject({ TTL: 43_200 });
+    // TTL 12 h and a 10 s limit per send (a stuck push service mustn't hold the cron).
+    expect(push.sendNotification.mock.calls[0]![2]).toMatchObject({ TTL: 43_200, timeout: 10_000 });
     expect(await db.pushSubscription.count({ where: { lastSentAt: { not: null } } })).toBe(3);
   });
 

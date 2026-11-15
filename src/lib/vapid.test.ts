@@ -25,6 +25,10 @@ describe("vapidDetailsFrom", () => {
       vapidDetailsFrom({ ...keys, VAPID_SUBJECT: "https://outro.example", VERCEL_URL: "x.app" })
         ?.subject,
     ).toBe("https://outro.example");
+    // Only the origin, whatever path came with it.
+    expect(
+      vapidDetailsFrom({ ...keys, VAPID_SUBJECT: "https://outro.example/app?x=1" })?.subject,
+    ).toBe("https://outro.example");
   });
 
   it("sem chaves, sem URL, com http ou localhost: indisponível", () => {

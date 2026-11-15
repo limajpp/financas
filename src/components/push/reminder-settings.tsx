@@ -51,7 +51,10 @@ export function ReminderSettings({ publicKey }: { publicKey: string | null }) {
       let on = false;
       if (found.availability === "READY") {
         const subscription = await currentPushSubscription().catch(() => null);
-        if (subscription) on = await pushSubscriptionStatusAction(subscription.endpoint);
+        // A subscription made with a rotated key gets 403 on every send: shown off, to redo.
+        if (subscription && sameServerKey(subscription, publicKey!)) {
+          on = await pushSubscriptionStatusAction(subscription.endpoint);
+        }
       }
       if (alive) setState({ ...found, on });
     })().catch(() => {

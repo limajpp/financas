@@ -21,6 +21,9 @@ export function isPushServiceUrl(value: string) {
     return (
       url.protocol === "https:" &&
       written === url.host &&
+      // Only plain hostname characters: the WHATWG parser keeps ; ' " ` { } in a host, where the
+      // legacy one ends it ("127.0.0.1;web.push.apple.com" would reach 127.0.0.1).
+      /^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(url.hostname) &&
       !url.port &&
       !url.username &&
       !url.password &&
