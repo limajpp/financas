@@ -29,7 +29,8 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
   - as opções de parcelar e de assinatura não aparecem;
   - o botão é "Salvar estorno", e o aviso diz "Estorno de R$ 89,90 salvo", com o "Desfazer".
 - **Na edição (task 14)** vale o mesmo: uma receita pode ir para o crédito e voltar para Pix, TED, dinheiro ou boleto.
-- **Na lista de lançamentos**, o estorno aparece como receita, com a forma "Crédito" e o nome do cartão. O filtro de forma "Crédito" passa a incluir os estornos.
+- **Na lista de lançamentos**, o estorno aparece como receita, com o nome do cartão e "Estorno" ("Cartão Roxo · Estorno"). O filtro de forma "Crédito" passa a incluir os estornos.
+- **Depois de salvar um estorno**, a próxima receita volta a começar na forma de sempre, e não no crédito.
 - O sync offline (task 16) aceita o estorno pela mesma validação, sem mudança no protocolo.
 
 ### Tela `/faturas`
@@ -75,6 +76,8 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
 - **Parcela (novo):** o diálogo de edição de uma parcela ganha o campo "Fatura", com a mesma janela de 3 em torno da fatura calculada para aquela parcela.
   - Trocar a fatura da parcela 3 de 10 move **essa e as seguintes**: elas continuam uma por fatura a partir da escolhida. As anteriores, em geral já pagas, ficam onde estão.
   - As parcelas movidas ficam com `invoiceOverridden: true`, menos a que volta para a fatura calculada.
+  - A parcela não pode ir para a fatura de uma parcela anterior, nem antes dela: "Uma parcela não pode ir para a fatura de uma parcela anterior, nem antes dela."
+  - O diálogo oferece as faturas da janela em torno da fatura calculada da parcela, com a mesma função que o servidor usa para conferir (`installmentInvoiceWindow`).
   - O caso de uso é o banco lançar a parcela uma fatura depois do esperado, e o resto seguir esse atraso.
 - **Depois da troca**, as duas faturas, a de onde saiu e a para onde foi, mostram os totais novos, tanto na lista quanto no detalhe.
 
@@ -113,6 +116,7 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
 - **Assinatura no crédito:** só aparece na fatura depois que a cobrança do mês é gerada (task 13). As cobranças dos meses seguintes não aparecem nas próximas faturas. Projetar o futuro das assinaturas é o "comprometido futuro" (task 23, mostrado no dashboard da task 25).
 - **Mudança de ciclo:** faturas com vencimentos antigos continuam aparecendo enquanto tiverem lançamentos, com o fechamento calculado pela versão do ciclo que as gerou (`closingDateFor`, task 11).
 - **Estorno em cartão arquivado:** recusado num lançamento novo (`CARD_ARCHIVED`), como uma compra. O estorno de uma compra de um cartão já cancelado não deve ser comum, e dá para registrá-lo como receita na conta.
+- **Parcela movida depois de a 1ª ser apagada:** a sequência do grupo parte da menor parcela que sobrou, com a fatura que ela tem. Se essa parcela já tinha sido movida à mão, a janela passa a girar em torno da fatura movida. É raro e não perde dado: é a mesma regra do recálculo da task 12.
 - **Mover a última parcela para fora da janela:** recusado com "Essa fatura não é deste cartão.", como na troca avulsa. As seguintes não são checadas contra a janela: elas só acompanham a parcela movida.
 
 ## Decisões
@@ -124,6 +128,24 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
 - **Parcelas: "essa e as seguintes".** O atraso do banco costuma valer para o resto do parcelamento. Mover só uma parcela deixaria duas parcelas na mesma fatura e um buraco na outra.
 - **A troca de fatura fica no diálogo de edição, e não em um botão "mover" separado.** É onde a troca avulsa já mora, e o detalhe da fatura só precisa abrir o diálogo.
 - **Anteriores limitadas a 6 por padrão.** Seis meses cobrem a conferência do dia a dia, e o resto fica a um toque.
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Corrigido:
+
+- **A janela de faturas de uma parcela era diferente no diálogo e no servidor.** O diálogo partia da data da parcela, e o servidor, da sequência do grupo. Elas divergem quando a data foi encurtada no fim de um mês curto e cruza o fechamento (ex.: fecha dia 30, compra em 29/01 em 3×: a 2ª parcela é de 28/02). Agora os dois usam `installmentInvoiceWindow`, e o diálogo parte da fatura que a parcela já tem quando ela não foi movida à mão. Teste novo com esse caso.
+- **Mover uma parcela para trás podia deixar duas parcelas na mesma fatura**, contra a própria decisão da spec. Agora é recusado (`INSTALLMENT_ORDER`).
+- **Uma parcela apagada no meio da troca de fatura** (outra aba) dava erro 500. Agora devolve "Lançamento não encontrado." e nada muda.
+- **Total negativo** na fatura atual e nas próximas aparecia como "−R$ 50,00". Agora aparece como "R$ 50,00 de crédito", como nas anteriores.
+- **Depois de um estorno, a próxima receita da mesma visita à tela** começava no crédito. Agora volta à forma de sempre.
+- **Testes novos:** editar uma receita do Pix para o crédito e de volta (saldo e fatura), trocar a fatura com "esta e as próximas" junto da categoria, e um estorno vindo da fila offline (`/api/sync`).
+- A janela de 3 faturas das parcelas usa a mesma constante da task 8.
+
+Aceito ou ajustado na spec:
+
+- **"Cartão Roxo · Estorno" na lista**, e não "Crédito": diz o que o lançamento é. A spec foi ajustada.
+- **Âncora movida depois de a 1ª parcela ser apagada:** registrado nos casos de borda.
+- **O e2e do CA4 cobre a compra avulsa.** Mover a parcela 2 de 4 está nos testes de integração e de unidade, e usa o mesmo diálogo.
 
 ## Fora do escopo
 

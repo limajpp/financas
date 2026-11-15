@@ -27,7 +27,10 @@ export async function signUp(page: Page, { name = "Ana Teste", email = uniqueEma
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(PASSWORD);
   await page.getByRole("button", { name: "Criar conta" }).click();
-  await expect(page.getByRole("heading", { name: `Olá, ${name}` })).toBeVisible();
+  // Creating the account hashes the password: under a full parallel run it can take a while.
+  await expect(page.getByRole("heading", { name: `Olá, ${name}` })).toBeVisible({
+    timeout: 15_000,
+  });
   return { name, email };
 }
 

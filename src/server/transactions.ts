@@ -606,7 +606,12 @@ export async function updateTransaction(
   }
 }
 
-class InvalidInvoice extends Error {}
+/** Thrown inside the database transaction to undo it; turned into the error it carries. */
+class Rollback extends Error {
+  constructor(readonly code: "INVALID_INVOICE" | "INSTALLMENT_ORDER" | "NOT_FOUND") {
+    super(code);
+  }
+}
 
 async function updateInstallments(
   spaceId: string,
@@ -684,31 +689,27 @@ async function updateInstallments(
           cycles,
           { number: current.installmentNumber!, invoiceDueDate: moveTo },
         );
-        // Thrown to undo the other changes; turned into the error below.
-        if (!shifted.ok) throw new InvalidInvoice();
+        if (!shifted.ok) throw new Rollback(shifted.error);
         for (const update of shifted.updates) {
-          await tx.transaction.update({
-            where: { id: update.id },
+          // An installment deleted meanwhile (another tab): nothing changes.
+          const moved = await tx.transaction.updateMany({
+            where: { id: update.id, spaceId },
             data: {
               invoiceDueDate: calendarDateToDb(update.invoiceDueDate),
               invoiceOverridden: update.invoiceOverridden,
             },
           });
+          if (moved.count === 0) throw new Rollback("NOT_FOUND");
         }
       }
       return { ok: true as const };
     })
     .catch((error: unknown) => {
-      if (error instanceof InvalidInvoice)
-        return { ok: false as const, error: "INVALID_INVOICE" as const };
+      if (error instanceof Rollback) return { ok: false as const, error: error.code };
       throw error;
     });
   if (!result.ok) return result;
-  const row = await db.transaction.findFirstOrThrow({
-    where: { id, spaceId },
-    select: transactionSelect,
-  });
-  return { ok: true, transaction: toTransaction(row) };
+  return reloadTransaction(spaceId, id);
 }
 
 /** Edits a transfer (its type stays): the same rules as creating one. */

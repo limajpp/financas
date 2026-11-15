@@ -194,6 +194,54 @@ describe("estorno no crédito", () => {
   });
 });
 
+describe("editar o estorno", () => {
+  it("uma receita vai do Pix para o crédito (vira estorno) e volta", async () => {
+    const s = await setup();
+    const pix = await create(s, {
+      type: "INCOME",
+      method: "PIX",
+      cardId: null,
+      accountId: s.accountId,
+      amountCents: 2_500,
+      categoryId: s.reembolsos.id,
+    });
+    expect((await accountBalances(s.spaceId)).get(s.accountId)).toBe(102_500);
+
+    at();
+    const toCredit = await updateTransaction(
+      s.spaceId,
+      pix.id,
+      entry(s, { type: "INCOME", amountCents: 2_500, categoryId: s.reembolsos.id }),
+    );
+    expect(toCredit).toMatchObject({
+      ok: true,
+      transaction: { method: "CREDIT", accountId: null, invoiceDueDate: "2026-12-10" },
+    });
+    expect((await accountBalances(s.spaceId)).get(s.accountId)).toBe(100_000);
+    expect(await totals(s)).toEqual({ "2026-12-10": -2_500 });
+
+    at();
+    const back = await updateTransaction(
+      s.spaceId,
+      pix.id,
+      entry(s, {
+        type: "INCOME",
+        method: "PIX",
+        cardId: null,
+        accountId: s.accountId,
+        amountCents: 2_500,
+        categoryId: s.reembolsos.id,
+      }),
+    );
+    expect(back).toMatchObject({
+      ok: true,
+      transaction: { method: "PIX", cardId: null, invoiceDueDate: null, invoiceOverridden: false },
+    });
+    expect((await accountBalances(s.spaceId)).get(s.accountId)).toBe(102_500);
+    expect(await totals(s)).toEqual({ "2026-12-10": 0 });
+  });
+});
+
 describe("detalhe da fatura", () => {
   it("CA2: lista só os lançamentos e pagamentos daquela fatura, e o total é a soma deles", async () => {
     const s = await setup();
@@ -343,6 +391,44 @@ describe("trocar a fatura", () => {
     expect(after.map((r) => [day(r.invoiceDueDate), r.categoryId])).toEqual(
       rows.map((r) => [day(r.invoiceDueDate), s.mercado.id]),
     );
+  });
+
+  it("CA4: com 'esta e as próximas', a categoria e a fatura mudam juntas", async () => {
+    const s = await setup();
+    const first = await create(s, { amountCents: 30_000, installments: 3 });
+    const rows = await groupRows(first.installmentGroupId!);
+    at();
+    const result = await updateTransaction(
+      s.spaceId,
+      rows[1]!.id,
+      entry(s, {
+        amountCents: 10_000,
+        date: "2026-12-08",
+        categoryId: null,
+        invoiceDueDate: "2027-02-10",
+      }),
+      "following",
+    );
+    expect(result.ok).toBe(true);
+    const after = await groupRows(first.installmentGroupId!);
+    expect(after.map((r) => [day(r.invoiceDueDate), r.categoryId])).toEqual([
+      ["2026-12-10", s.mercado.id],
+      ["2027-02-10", null],
+      ["2027-03-10", null],
+    ]);
+  });
+
+  it("uma parcela não vai para a fatura de uma parcela anterior", async () => {
+    const s = await setup();
+    const first = await create(s, { amountCents: 30_000, installments: 3 });
+    const rows = await groupRows(first.installmentGroupId!);
+    at();
+    const result = await updateTransaction(
+      s.spaceId,
+      rows[2]!.id,
+      entry(s, { amountCents: 10_000, date: "2027-01-08", invoiceDueDate: "2027-01-10" }),
+    );
+    expect(result).toEqual({ ok: false, error: "INSTALLMENT_ORDER" });
   });
 
   it("CA7: mudar o ciclo não recalcula um grupo trocado à mão; os outros grupos, sim", async () => {

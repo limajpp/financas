@@ -56,6 +56,7 @@ export type TransactionError =
   | "TO_ACCOUNT_ARCHIVED"
   | "TOO_SMALL_FOR_INSTALLMENTS"
   | "INSTALLMENT_LOCKED"
+  | "INSTALLMENT_ORDER"
   | "INSTALLMENT_AMOUNT_SCOPE"
   | "INSTALLMENTS_ON_EDIT"
   | "SUBSCRIPTION_ON_EDIT"
@@ -86,6 +87,8 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
   TOO_SMALL_FOR_INSTALLMENTS: "O valor é pequeno demais para tantas parcelas.",
   INSTALLMENT_LOCKED:
     "Para mudar a data ou o cartão de uma compra parcelada, exclua e registre de novo.",
+  INSTALLMENT_ORDER:
+    "Uma parcela não pode ir para a fatura de uma parcela anterior, nem antes dela.",
   INSTALLMENT_AMOUNT_SCOPE: "O valor muda só na parcela escolhida: use “só esta”.",
   INSTALLMENTS_ON_EDIT: "Para parcelar uma compra já registrada, exclua e registre de novo.",
   SUBSCRIPTION_ON_EDIT:

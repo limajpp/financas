@@ -380,6 +380,10 @@ export function RegisterForm({
     setShowDetails(false);
     setError(null);
     setFixing(null);
+    // A refund is rare: the next income starts back on the usual payment (task 18).
+    setPayments((current) =>
+      current.INCOME.method === "CREDIT" ? { ...current, INCOME: byType.INCOME.payment! } : current,
+    );
   }
 
   /**

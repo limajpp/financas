@@ -19,7 +19,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { type CalendarDate, formatCalendarDate } from "@/domain/dates";
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
-import { PAYABLE_PAST_INVOICES } from "@/domain/invoices";
+import { installmentInvoiceWindow } from "@/domain/installments";
+import { PAYABLE_PAST_INVOICES, closingDateFor } from "@/domain/invoices";
 import { formatBRL, formatBRLInput, parseBRL } from "@/domain/money";
 import {
   CARD_PAYMENT_METHODS,
@@ -156,9 +157,20 @@ function EditForm({
       for (let n = -PAYABLE_PAST_INVOICES; n <= 1; n++)
         dues.push(shiftInvoice(cycle, open, n).dueDate);
       if (item.invoiceDueDate) dues.push(item.invoiceDueDate);
+    } else if (installment && item.invoiceDueDate) {
+      // An installment (task 18): the window around its computed invoice, which is the one it has
+      // unless it was moved by hand. Then its own date gives the computed one (the same but for a
+      // date shortened at the end of a short month); the server has the last word.
+      const base = !item.invoiceOverridden
+        ? {
+            dueDate: item.invoiceDueDate,
+            closingDate: closingDateFor(card.cycles, item.invoiceDueDate),
+          }
+        : invoiceFor(cycleOn(card.cycles, date), date);
+      for (const invoice of installmentInvoiceWindow(card.cycles, base)) dues.push(invoice.dueDate);
+      dues.push(item.invoiceDueDate);
     } else if (method === "CREDIT") {
-      // A manual choice: the computed invoice ± the window (task 8). An installment's computed
-      // invoice comes from its own date; the server checks it against the purchase's sequence.
+      // A manual choice: the computed invoice ± the window (task 8).
       const cycle = cycleOn(card.cycles, date);
       const base = invoiceFor(cycle, date);
       for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {

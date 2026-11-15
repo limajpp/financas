@@ -17,6 +17,7 @@ import {
   shiftInvoice,
 } from "./invoice-cycle";
 import { closingDateFor } from "./invoices";
+import { INVOICE_OVERRIDE_WINDOW } from "./transactions";
 
 export const INSTALLMENTS_MIN = 2;
 export const INSTALLMENTS_MAX = 24;
@@ -110,14 +111,28 @@ export function replanGroupInvoices(
   });
 }
 
-/** How many invoices away from the computed one an installment may be moved (as in task 8). */
-const GROUP_OVERRIDE_WINDOW = 3;
+/**
+ * The invoices an installment may be moved to: its computed invoice and up to 3 before and after
+ * (the window of task 8). The edit dialog offers these; the server checks against them.
+ */
+export function installmentInvoiceWindow(
+  cycles: readonly CycleVersion[],
+  computed: Invoice,
+): Invoice[] {
+  const cycle = cycleOn(cycles, computed.closingDate);
+  const window: Invoice[] = [];
+  for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {
+    window.push(n === 0 ? computed : shiftInvoice(cycle, computed, n));
+  }
+  return window;
+}
 
 /**
  * Moves installment `moved.number` to another invoice (task 18): it and the next ones go one per
  * invoice from there, and the earlier ones stay. The chosen invoice must be at most 3 invoices
- * away from the one computed for that installment. Each moved installment is a manual choice
- * unless it lands on its computed invoice.
+ * away from the one computed for that installment (the window of task 8), and after the invoice
+ * of the installment before it: two installments never share an invoice. Each moved installment is
+ * a manual choice unless it lands on its computed invoice.
  */
 export function shiftGroupInvoices(
   rows: readonly GroupRow[],
@@ -128,19 +143,20 @@ export function shiftGroupInvoices(
       ok: true;
       updates: { id: string; invoiceDueDate: CalendarDate; invoiceOverridden: boolean }[];
     }
-  | { ok: false; error: "INVALID_INVOICE" } {
+  | { ok: false; error: "INVALID_INVOICE" | "INSTALLMENT_ORDER" } {
   const sorted = byNumber(rows);
   const planned = plannedGroupInvoices(sorted, cycles);
   const computed = planned.get(moved.number);
   if (!computed) return { ok: false, error: "INVALID_INVOICE" };
 
-  const cycle = cycleOn(cycles, computed.closingDate);
-  let chosen: Invoice | null = null;
-  for (let n = -GROUP_OVERRIDE_WINDOW; n <= GROUP_OVERRIDE_WINDOW && !chosen; n++) {
-    const candidate = n === 0 ? computed : shiftInvoice(cycle, computed, n);
-    if (candidate.dueDate === moved.invoiceDueDate) chosen = candidate;
-  }
+  const chosen = installmentInvoiceWindow(cycles, computed).find(
+    (invoice) => invoice.dueDate === moved.invoiceDueDate,
+  );
   if (!chosen) return { ok: false, error: "INVALID_INVOICE" };
+  const before = sorted.filter((row) => row.number < moved.number).at(-1);
+  if (before && chosen.dueDate <= before.invoiceDueDate) {
+    return { ok: false, error: "INSTALLMENT_ORDER" };
+  }
 
   const following = sorted.filter((row) => row.number >= moved.number);
   const last = following.at(-1)!.number;

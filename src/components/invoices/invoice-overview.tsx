@@ -11,7 +11,7 @@ import { formatCalendarDate } from "@/domain/dates";
 import { type InvoiceSummary, groupInvoices } from "@/domain/invoices";
 import { formatBRL } from "@/domain/money";
 
-import { InvoiceStatus } from "./invoice-status";
+import { InvoiceStatus, formatInvoiceTotal } from "./invoice-status";
 
 /** How many closed invoices show before "Mostrar anteriores". */
 const PAST_SHOWN = 6;
@@ -56,7 +56,7 @@ export function InvoiceOverview({
             Fatura atual
           </h2>
           <p className="mt-1 text-3xl font-semibold tracking-tight tabular-nums">
-            {formatBRL(open.totalCents)}
+            {formatInvoiceTotal(open.totalCents)}
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
             Vence em {formatCalendarDate(open.dueDate)} · fecha em{" "}
@@ -147,7 +147,9 @@ function InvoiceSection({
                     <InvoiceStatus summary={invoice} className="mt-1 justify-self-start" />
                   )}
                 </span>
-                <span className="shrink-0 tabular-nums">{formatBRL(invoice.totalCents)}</span>
+                <span className="shrink-0 tabular-nums">
+                  {formatInvoiceTotal(invoice.totalCents)}
+                </span>
                 <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               </Link>
             </li>

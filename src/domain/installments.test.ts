@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import { CYCLE_EPOCH, type CycleVersion, invoiceFor, shiftInvoice } from "./invoice-cycle";
+import { closingDateFor } from "./invoices";
 import {
   INSTALLMENTS_MAX,
   INSTALLMENTS_MIN,
   planInstallments,
+  installmentInvoiceWindow,
   replanGroupInvoices,
   shiftGroupInvoices,
   splitAmount,
@@ -140,14 +142,33 @@ describe("shiftGroupInvoices (task 18)", () => {
   });
 
   it("moving earlier works the same way", () => {
-    const result = shiftGroupInvoices(rows, cycles, { number: 3, invoiceDueDate: "2026-12-10" });
+    const result = shiftGroupInvoices(rows, cycles, { number: 1, invoiceDueDate: "2026-10-10" });
     expect(result).toEqual({
       ok: true,
       updates: [
+        { id: "a", invoiceDueDate: "2026-10-10", invoiceOverridden: true },
+        { id: "b", invoiceDueDate: "2026-11-10", invoiceOverridden: true },
         { id: "c", invoiceDueDate: "2026-12-10", invoiceOverridden: true },
         { id: "d", invoiceDueDate: "2027-01-10", invoiceOverridden: true },
       ],
     });
+  });
+
+  it("never onto the invoice of the installment before, nor earlier", () => {
+    for (const invoiceDueDate of ["2026-12-10", "2026-11-10"]) {
+      expect(shiftGroupInvoices(rows, cycles, { number: 3, invoiceDueDate })).toEqual({
+        ok: false,
+        error: "INSTALLMENT_ORDER",
+      });
+    }
+    // With the 2nd deleted, the 3rd may take its invoice.
+    expect(
+      shiftGroupInvoices(
+        rows.filter((r) => r.number !== 2),
+        cycles,
+        { number: 3, invoiceDueDate: "2026-12-10" },
+      ).ok,
+    ).toBe(true);
   });
 
   it("moving back to the computed invoice is no longer a manual choice", () => {
@@ -193,6 +214,33 @@ describe("shiftGroupInvoices (task 18)", () => {
     );
     expect(shiftGroupInvoices(moved, cycles, { number: 2, invoiceDueDate: "2027-04-10" }).ok).toBe(
       false,
+    );
+  });
+});
+
+describe("installmentInvoiceWindow (task 18)", () => {
+  it("the window is around the group's sequence, even when the date was shortened in February", () => {
+    // Closes on the 30th, due on the 7th; bought on 2026-01-29 in 3×.
+    const late: CycleVersion[] = [{ closingDay: 30, dueDay: 7, validFrom: CYCLE_EPOCH }];
+    const plan = planInstallments({ date: "2026-01-29", amountCents: 300 }, 3, late);
+    const rows = plan.map((p, i) => ({ id: String(i), ...p }));
+    const second = rows[1]!;
+    expect(second.date).toBe("2026-02-28");
+    // By its own (shortened) date the 2nd would fall one invoice later than in the sequence.
+    expect(invoiceFor(late[0]!, second.date).dueDate).not.toBe(second.invoiceDueDate);
+
+    const window = installmentInvoiceWindow(late, {
+      dueDate: second.invoiceDueDate,
+      closingDate: closingDateFor(late, second.invoiceDueDate), // what the edit dialog uses
+    }).map((i) => i.dueDate);
+    expect(window).toHaveLength(7);
+    expect(window[3]).toBe(second.invoiceDueDate);
+    // Every invoice of the window after the 1st's is accepted by the server.
+    for (const due of window.filter((d) => d > rows[0]!.invoiceDueDate)) {
+      expect(shiftGroupInvoices(rows, late, { number: 2, invoiceDueDate: due }).ok).toBe(true);
+    }
+    expect(shiftGroupInvoices(rows, late, { number: 2, invoiceDueDate: window.at(-1)! }).ok).toBe(
+      true,
     );
   });
 });

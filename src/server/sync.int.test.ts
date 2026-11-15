@@ -152,6 +152,35 @@ describe("syncItems", () => {
     expect(await count(ana.spaceId)).toBe(3);
   });
 
+  it("um estorno no crédito da fila entra na fatura e não mexe no saldo (task 18)", async () => {
+    const ana = await user("ana@example.com");
+    const azul = await account(ana.spaceId);
+    const card = await createCard(
+      ana.spaceId,
+      cardSchema.parse({ name: "Cartão Roxo", accountId: azul.id, closingDay: 5, dueDay: 12 }),
+    );
+    if (!card.ok) throw new Error(card.error);
+    const item = {
+      clientId: randomUUID(),
+      kind: "ENTRY",
+      data: {
+        type: "INCOME",
+        amountCents: 2500,
+        date: "2026-11-09",
+        method: "CREDIT",
+        cardId: card.card.id,
+      },
+    };
+
+    const [result] = await syncItems(ana.spaceId, ana.userId, [item]);
+
+    expect(result.status).toBe("SYNCED");
+    const row = await db.transaction.findFirstOrThrow({ where: { spaceId: ana.spaceId } });
+    expect(row).toMatchObject({ type: "INCOME", method: "CREDIT", accountId: null });
+    expect(row.invoiceDueDate?.toISOString().slice(0, 10)).toBe("2026-12-12");
+    expect((await transactions.accountBalances(ana.spaceId)).get(azul.id)).toBe(100_000);
+  });
+
   it("um item inválido no meio não impede os outros (CA3)", async () => {
     const ana = await user("ana@example.com");
     const azul = await account(ana.spaceId);

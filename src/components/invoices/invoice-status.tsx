@@ -2,6 +2,11 @@ import { formatBRL } from "@/domain/money";
 import { type InvoiceSummary, invoiceBalance } from "@/domain/invoices";
 import { cn } from "@/lib/utils";
 
+/** An invoice's total: a negative one (refunds beyond the purchases) is a credit. */
+export function formatInvoiceTotal(cents: number) {
+  return cents < 0 ? `${formatBRL(-cents)} de crédito` : formatBRL(cents);
+}
+
 /** "Aberta", "Futura", "Paga", "A pagar R$ 120,00" or "R$ 50,00 de crédito". */
 export function invoiceStatusText(summary: InvoiceSummary, { short = false } = {}) {
   if (summary.status === "open") return "Aberta";

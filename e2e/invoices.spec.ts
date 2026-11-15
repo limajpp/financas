@@ -3,10 +3,26 @@ import { expect, type Page, test } from "@playwright/test";
 import { addDays, formatCalendarDate, todayInSaoPaulo } from "../src/domain/dates";
 import { signUp } from "./helpers";
 
+/**
+ * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
+ * aborts that request, and Next answers with a full load of "/" that interrupts the goto (seen in
+ * WebKit). A person moves by tapping links, which don't abort it.
+ */
+async function visit(page: Page, url: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto(url);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
+    }
+  }
+}
+
 /** An account and the "Cartão Roxo" (closes on the 3rd, due on the 10th). */
 async function setup(page: Page) {
   await signUp(page);
-  await page.goto("/contas");
+  await visit(page, "/contas");
   const dialog = page.getByRole("dialog");
   await page.getByRole("button", { name: "Nova conta" }).click();
   await dialog.getByLabel("Nome").fill("Banco Azul");
@@ -32,7 +48,9 @@ async function register(
     saved,
   }: { refund?: boolean; date?: string; installments?: string; saved: string },
 ) {
-  await page.goto("/registrar");
+  // A click, not page.goto: the previous save's trip home may still be under way.
+  await page.getByRole("link", { name: "Registrar", exact: true }).click();
+  await expect(page).toHaveURL(/\/registrar$/);
   if (refund) await page.getByRole("group", { name: "Tipo" }).getByText("Receita").click();
   const sheet = page.getByRole("dialog");
   await page.getByRole("button", { name: /^Forma de pagamento:/ }).click();
@@ -50,6 +68,7 @@ async function register(
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(saved)).toBeVisible();
   await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page).toHaveURL(/:\d+\/$/);
 }
 
 const openInvoice = (page: Page) => page.getByRole("region", { name: "Fatura atual" });
@@ -61,7 +80,7 @@ test("CA3: uma compra em 3× aparece na fatura atual e nas duas próximas", asyn
   await setup(page);
   await register(page, "30000", { installments: "3", saved: "Despesa de R$ 300,00 em 3× salva" });
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await expect(page.getByRole("link", { name: "Cartão Roxo" })).toHaveAttribute(
     "aria-current",
     "page",
@@ -79,7 +98,7 @@ test("CA3: uma compra em 3× aparece na fatura atual e nas duas próximas", asyn
     [0, "2/3"],
     [1, "3/3"],
   ] as const) {
-    await page.goto("/faturas");
+    await visit(page, "/faturas");
     await section(page, "Próximas").getByRole("link").nth(index).click();
     await expect(page.getByRole("heading", { name: "Fatura · Cartão Roxo" })).toBeVisible();
     await expect(page.getByText("Futura")).toBeVisible();
@@ -93,7 +112,7 @@ test("CA6: um estorno no crédito abate a fatura atual", async ({ page }) => {
   await register(page, "10000", { saved: "Despesa de R$ 100,00 salva" });
   await register(page, "2500", { refund: true, saved: "Estorno de R$ 25,00 salvo" });
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await expect(openInvoice(page)).toContainText("R$ 75,00");
   await openInvoice(page).getByRole("link", { name: "Ver fatura" }).click();
   await expect(page.getByRole("heading", { name: "Fatura · Cartão Roxo" })).toBeVisible();
@@ -107,7 +126,7 @@ test("CA4: mover um lançamento para a fatura seguinte atualiza as duas", async 
   await setup(page);
   await register(page, "10000", { saved: "Despesa de R$ 100,00 salva" });
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await openInvoice(page).getByRole("link", { name: "Ver fatura" }).click();
   await expect(page.getByRole("heading", { name: "Fatura · Cartão Roxo" })).toBeVisible();
   await section(page, "Lançamentos").getByRole("button").first().click();
@@ -122,7 +141,7 @@ test("CA4: mover um lançamento para a fatura seguinte atualiza as duas", async 
   await expect(dialog).toBeHidden();
   await expect(page.getByText("Nenhum lançamento nesta fatura.")).toBeVisible();
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await expect(openInvoice(page)).toContainText("R$ 0,00");
   await expect(section(page, "Próximas").getByRole("listitem")).toHaveCount(1);
   await expect(section(page, "Próximas")).toContainText("R$ 100,00");
@@ -135,7 +154,7 @@ test("CA8: pagar uma fatura fechada pelo detalhe a deixa paga", async ({ page })
   const date = addDays(todayInSaoPaulo(), -45);
   await register(page, "5000", { date, saved: "Despesa de R$ 50,00 salva" });
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   const past = section(page, "Anteriores").getByRole("listitem");
   await expect(past).toHaveCount(1);
   await expect(past).toContainText("A pagar R$ 50,00");
@@ -153,13 +172,13 @@ test("CA8: pagar uma fatura fechada pelo detalhe a deixa paga", async ({ page })
   );
   await expect(page.getByRole("button", { name: "Pagar fatura" })).toHaveCount(0);
 
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await expect(section(page, "Anteriores").getByRole("listitem")).toContainText("Paga");
 });
 
 test("sem cartões, a tela leva ao cadastro", async ({ page }) => {
   await signUp(page);
-  await page.goto("/faturas");
+  await visit(page, "/faturas");
   await expect(page.getByText("Você ainda não tem cartões.")).toBeVisible();
   await page.getByRole("link", { name: "Cadastrar cartão" }).click();
   await expect(page).toHaveURL(/\/contas/);
