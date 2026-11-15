@@ -54,12 +54,13 @@ Tocar numa linha abre um diálogo (folha de baixo no celular) com os detalhes e 
 - **`listSubscriptions(spaceId)`:**
   - devolve as regras do espaço com a conta, o cartão, a categoria, o estabelecimento e as mudanças dos últimos 90 dias;
   - roda antes `generateRecurringSafely`, para a tela mostrar as próximas datas em dia.
-- **`updateRecurringRule`** passa a aceitar, além do valor, o dia, a categoria, a forma com a conta ou o cartão e a observação. Ele valida como uma despesa nova:
+- **`editRecurringRule`** (nova; o `updateRecurringRule` da task 13 continua para o "Atualizar a assinatura?") muda o valor, o dia, a categoria, a forma com a conta ou o cartão e a observação. Ela valida como uma despesa nova (`validateRuleEdit`, que usa o `validateEntry` da task 8):
   - conta, cartão e categoria do espaço, ativos, e a categoria do tipo despesa;
   - mas a conta, o cartão ou a categoria que a regra já tinha podem continuar, mesmo arquivados (como na edição de lançamentos);
   - uma regra cancelada não muda (`CANCELED`).
 - **Mudar o dia não duplica nem pula cobranças.** O cursor (`nextMonth`) continua o mesmo: se o mês atual já foi cobrado, o dia novo vale a partir do mês seguinte; se não, a cobrança deste mês sai no dia novo, quando ele chegar (ou na próxima abertura, se já passou).
-- **Server Actions com Zod:** editar (a action da task 13 passa a receber os campos novos), pausar, retomar e cancelar (já existem). Tudo restrito ao espaço.
+- **Server Actions com Zod:** editar (`editRecurringRuleAction`, que substitui a action só de valor da task 13, sem uso na tela), pausar, retomar e cancelar (já existem). Tudo restrito ao espaço.
+- **"Pausada desde":** a regra ganha `pausedAt` (migration `recurring_paused_at`), gravado ao pausar e limpo ao retomar. As regras já pausadas antes recebem a data da última atualização.
 
 ## Critérios de aceite
 
