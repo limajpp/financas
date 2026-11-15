@@ -156,21 +156,25 @@ model Category {
 /// A bank account. Its balance is the initial balance on a calendar day plus the transactions
 /// after it (task 8).
 model Account {
-  id                  String    @id @default(uuid(7))
-  spaceId             String
-  space               Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-  name                String
-  color               String
+  id                     String    @id @default(uuid(7))
+  spaceId                String
+  space                  Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  name                   String
+  color                  String
   /// May be negative (overdraft).
-  initialBalanceCents Int
+  initialBalanceCents    Int
   /// A calendar day, not an instant.
-  initialBalanceDate  DateTime  @db.Date
+  initialBalanceDate     DateTime  @db.Date
   /// When the initial balance (amount or day) was last informed: entries of that same day
   /// registered after it count in the balance (src/domain/balance.ts).
-  initialBalanceSetAt DateTime  @default(now())
-  archivedAt          DateTime?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  initialBalanceSetAt    DateTime  @default(now())
+  /// The last day the balance matched the bank's (task 21), a calendar day, and the bank's
+  /// balance then.
+  reconciledOn           DateTime? @db.Date
+  reconciledBalanceCents Int?
+  archivedAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   cards          Card[]
   transactions   Transaction[]   @relation("AccountTransactions")
@@ -301,6 +305,9 @@ model Transaction {
   recurringRuleId    String?
   recurringRule      RecurringRule?  @relation(fields: [recurringRuleId], references: [id], onDelete: NoAction)
   recurringMonth     String?
+  /// A balance adjustment from reconciling an account with the bank (task 21): an expense or
+  /// income that moves the balance but stays out of the indicators (CHECK in the migration).
+  adjustment         Boolean         @default(false)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
 

@@ -62,7 +62,8 @@ export type TransactionError =
   | "SUBSCRIPTION_ON_EDIT"
   | "SUBSCRIPTION_LOCKED"
   | "MIXED_TYPES"
-  | "NOT_CATEGORIZABLE";
+  | "NOT_CATEGORIZABLE"
+  | "ADJUSTMENT_LOCKED";
 
 export const TRANSACTION_ERROR_MESSAGES: Record<
   TransactionError | "NOT_FOUND" | "NOT_EDITABLE",
@@ -95,7 +96,8 @@ export const TRANSACTION_ERROR_MESSAGES: Record<
     "Para tornar um gasto já registrado uma assinatura, exclua e registre de novo.",
   SUBSCRIPTION_LOCKED: "Uma cobrança de assinatura é sempre uma despesa.",
   MIXED_TYPES: "Selecione só despesas ou só receitas.",
-  NOT_CATEGORIZABLE: "Transferências e pagamentos de fatura não têm categoria.",
+  NOT_CATEGORIZABLE: "Transferências, pagamentos de fatura e ajustes de saldo não têm categoria.",
+  ADJUSTMENT_LOCKED: "Um ajuste de saldo não se edita: exclua e confira o saldo de novo.",
 };
 
 /** Which installments an edit or deletion reaches: the chosen one, or it and the next ones. */

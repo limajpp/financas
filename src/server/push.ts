@@ -139,6 +139,8 @@ export async function sendDailyReminders(now = new Date()) {
       // purchase in installments once, not once per installment.
       NOT: { clientId: { startsWith: GENERATED_CLIENT_ID_PREFIX } },
       OR: [{ installmentNumber: null }, { installmentNumber: 1 }],
+      // Nor a balance adjustment (task 21): it corrects the balance, it isn't an entry.
+      adjustment: false,
     },
     _count: { _all: true },
   });

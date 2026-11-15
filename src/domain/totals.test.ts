@@ -22,6 +22,9 @@ describe("spendingByCategory / incomeByCategory", () => {
     // Even with a category (the database never has one), these are never spending or income.
     entry({ type: "TRANSFER", categoryId: "mercado", amountCents: 99 }),
     entry({ type: "CARD_PAYMENT", categoryId: "salario", amountCents: 99 }),
+    // Balance adjustments (task 21's CA2) are never spending or income either.
+    entry({ categoryId: null, amountCents: 777, adjustment: true }),
+    entry({ type: "INCOME", categoryId: null, amountCents: 888, adjustment: true }),
   ];
 
   it("CA2: sums expenses per category, without transfers or invoice payments", () => {

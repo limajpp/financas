@@ -24,6 +24,7 @@ const base: ListItemView = {
   account: { id: "a", name: "Banco Azul" },
   toAccount: null,
   card: null,
+  adjustment: false,
   category: null,
   counterparty: null,
 };
@@ -71,6 +72,18 @@ describe("describeItem", () => {
     ).toMatchObject({ title: "Pagamento de fatura", line: "Pagamento · Cartão Roxo" });
     expect(describeItem({ ...base, recurringRuleId: "r" }).line).toBe(
       "Banco Azul · Pix · Assinatura",
+    );
+  });
+
+  it("a balance adjustment (task 21) says so, with its sign", () => {
+    expect(describeItem({ ...base, adjustment: true, description: "Ajuste" })).toMatchObject({
+      title: "Ajuste de saldo",
+      line: "Banco Azul · Conferência",
+      method: "Ajuste",
+      amount: `−${formatBRL(10_000)}`,
+    });
+    expect(describeItem({ ...base, type: "INCOME", adjustment: true }).amount).toBe(
+      `+${formatBRL(10_000)}`,
     );
   });
 

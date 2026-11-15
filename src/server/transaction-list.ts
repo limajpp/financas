@@ -27,6 +27,7 @@ const listSelect = {
   installmentNumber: true,
   installmentTotal: true,
   recurringRuleId: true,
+  adjustment: true,
   account: { select: { id: true, name: true } },
   toAccount: { select: { id: true, name: true } },
   card: { select: { id: true, name: true } },
@@ -50,7 +51,8 @@ async function whereFor(spaceId: string, filters: TransactionFilters) {
   if (filters.type) and.push({ type: filters.type });
   if (filters.counterpartyId) and.push({ counterpartyId: filters.counterpartyId });
   if (filters.categoryId === "none") {
-    and.push({ categoryId: null, type: { in: ["EXPENSE", "INCOME"] } });
+    // What can be categorized: a balance adjustment (task 21) never is.
+    and.push({ categoryId: null, type: { in: ["EXPENSE", "INCOME"] }, adjustment: false });
   } else if (filters.categoryId) {
     // A parent includes its children.
     and.push({
@@ -145,6 +147,8 @@ export async function listTransactions(
               where,
               { date: { in: days.map(calendarDateToDb) } },
               { type: { in: ["EXPENSE", "INCOME"] } },
+              // A balance adjustment (task 21) isn't income or spending of the day.
+              { adjustment: false },
             ],
           },
           _sum: { amountCents: true },
