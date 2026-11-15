@@ -20,7 +20,7 @@ export function SignInForm() {
   });
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+    <form method="post" onSubmit={onSubmit} noValidate className="grid gap-4">
       <FormField
         name="email"
         label="E-mail"
