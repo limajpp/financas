@@ -92,7 +92,7 @@ O botão "Editar" abre um diálogo com:
 
 - **O nome novo é igual a um apelido de outro estabelecimento:** é aceito. O nome é que precisa ser único, e no registro o nome vence o apelido (task 10).
 - **Mesclar quando a soma passa de 10 apelidos:** ficam os 10 mais novos, e o nome do absorvido é sempre um deles.
-- **Mesclar com uma corrida no registro:** um lançamento novo com o nome do absorvido, salvo no mesmo instante, ou é movido junto, ou chega depois e cria o estabelecimento de novo pelo nome. O nome do absorvido vira apelido do que fica, então o registro passa a casar com o que fica.
+- **Mesclar com uma corrida no registro:** a mescla trava os dois estabelecimentos até terminar. Um lançamento salvo no mesmo instante com o nome do absorvido espera por ela. Se já tinha achado o absorvido, ele falha, porque o absorvido não existe mais, e aparece o erro de conexão do registro. Ao tentar de novo (o mesmo `clientId`), o nome do absorvido já é apelido do que fica, e o lançamento vai para ele. Na fila offline, é o reenvio automático.
 - **Estabelecimento sem lançamentos** (órfão de uma corrida, task 8): não aparece no ranking nem na busca.
 
 ## Decisões
