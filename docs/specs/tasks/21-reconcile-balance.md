@@ -32,6 +32,7 @@ De vez em quando, você abre o app do banco, digita o saldo que ele mostra e o a
      - a conta conferida, com a forma Pix.
 
      Você completa e salva como sempre. Depois, volta e confere de novo. A conferência só fica gravada quando bate.
+
    - **"Criar ajuste de R$ 34,56"** cria um lançamento de ajuste que zera a diferença, marca a conta como conferida hoje e fecha o diálogo. O aviso "Ajuste de R$ 34,56 criado" tem "Desfazer". Desfazer apaga o ajuste, mas a data da conferência fica.
 4. **"Voltar"** volta ao passo 1, para corrigir o saldo digitado.
 
