@@ -115,7 +115,6 @@ self.addEventListener("push", (event) => {
       body: payload.body,
       tag: payload.tag,
       icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
       data: { url: payload.url },
     }),
   );
@@ -124,14 +123,18 @@ self.addEventListener("push", (event) => {
 // Tapping it opens the screen: in the app's window when it's open, else in a new one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = readPushPayload({ ...REMINDER_DEFAULTS, ...event.notification.data }).url;
+  const path = readPushPayload({ ...REMINDER_DEFAULTS, ...event.notification.data }).url;
+  // Only this app: whatever the payload says, the window opens on this origin.
+  const resolved = new URL(path, self.location.origin);
+  const url =
+    resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/registrar`;
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
       const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
       if (open) {
-        await open.focus();
         try {
+          await open.focus();
           await open.navigate(url);
           return;
         } catch {

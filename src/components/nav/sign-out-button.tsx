@@ -5,29 +5,13 @@ import { useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { endSessionAction, signOutAction } from "@/app/(auth)/actions";
-import { deletePushSubscriptionAction } from "@/app/(app)/configuracoes/actions";
 import { useOutbox } from "@/components/outbox/outbox-provider";
 import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/responsive-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { clearOutbox, listOutbox } from "@/lib/outbox-db";
 import { waitForSend } from "@/lib/outbox-sync";
-import { currentPushSubscription, withTimeout } from "@/lib/push-client";
-
-/** Cancels this device's push subscription, on the server and in the browser; never blocks. */
-async function forgetPushSubscription() {
-  // Without the permission there is no subscription: no need to ask the push manager (which may
-  // take long to answer, delaying the sign-out).
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  try {
-    const subscription = await withTimeout(currentPushSubscription(), 3_000);
-    if (!subscription) return;
-    await withTimeout(deletePushSubscriptionAction(subscription.endpoint), 3_000).catch(() => {});
-    await withTimeout(subscription.unsubscribe(), 3_000);
-  } catch {
-    // The server drops it at the next send (410).
-  }
-}
+import { subscriptionToForget, withTimeout } from "@/lib/push-client";
 
 /**
  * "Sair". Nothing financial stays on the device afterwards: the saved screens go (task 15) and so
@@ -47,14 +31,16 @@ export function SignOutButton({ className }: { className?: string }) {
   async function leave() {
     // In case the page stays (a failed sign-out): the question must not linger.
     setLeft(null);
-    // While the session still exists: this device stops getting this user's reminders.
-    await forgetPushSubscription();
+    // This device stops getting this user's reminders: the server deletes the subscription with
+    // the sign-out, then the browser cancels it.
+    const push = await subscriptionToForget();
     try {
-      await endSessionAction();
+      await endSessionAction(push?.endpoint);
     } catch {
       toast.error("Não foi possível sair. Verifique a conexão.");
       return;
     }
+    if (push) await withTimeout(push.unsubscribe(), 3_000).catch(() => {});
     const userId = outbox.userId();
     if (userId) await clearOutbox(userId).catch(() => {});
     // A full load on purpose, not the router: the screens Next keeps alive in memory go too.

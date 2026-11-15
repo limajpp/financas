@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { isIos } from "@/lib/install-hint";
-import { applicationServerKey, currentPushSubscription } from "@/lib/push-client";
+import { applicationServerKey, currentPushSubscription, sameServerKey } from "@/lib/push-client";
 import {
   availabilityMessage,
   type ReminderAvailability,
@@ -73,12 +73,16 @@ export function ReminderSettings({ publicKey }: { publicKey: string | null }) {
       }
       try {
         const registration = await navigator.serviceWorker.ready;
-        const subscription =
-          (await registration.pushManager.getSubscription()) ??
-          (await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: applicationServerKey(publicKey!),
-          }));
+        let subscription = await registration.pushManager.getSubscription();
+        // Made with an old key (rotated): every send would fail. Start over.
+        if (subscription && !sameServerKey(subscription, publicKey!)) {
+          await subscription.unsubscribe().catch(() => {});
+          subscription = null;
+        }
+        subscription ??= await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: applicationServerKey(publicKey!),
+        });
         const result = await savePushSubscriptionAction(subscription.toJSON());
         if (!result.ok) {
           await subscription.unsubscribe().catch(() => {});
