@@ -1,8 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
+import webpush from "web-push";
 
 // E2E_PORT: for a machine where something else already uses 3000 (BETTER_AUTH_URL must match).
 const PORT = Number(process.env.E2E_PORT ?? 3000);
 const baseURL = `http://localhost:${PORT}`;
+// A throwaway key pair per run, so the reminder settings can be tested (task 17). Nothing is sent.
+const vapid = webpush.generateVAPIDKeys();
 
 export default defineConfig({
   testDir: "./e2e",
@@ -29,7 +32,12 @@ export default defineConfig({
     // CI tests the production build; locally the dev server is enough.
     command: process.env.CI ? "npm run start" : "npm run dev",
     // Many sign-ups from one IP in a few seconds: Better Auth's rate limit would block them.
-    env: { AUTH_RATE_LIMIT: "off", PORT: String(PORT) },
+    env: {
+      AUTH_RATE_LIMIT: "off",
+      PORT: String(PORT),
+      VAPID_PUBLIC_KEY: vapid.publicKey,
+      VAPID_PRIVATE_KEY: vapid.privateKey,
+    },
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

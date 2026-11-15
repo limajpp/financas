@@ -70,7 +70,7 @@ Esquecer de registrar é uma das anti-metas. Todo dia, por volta das 21h, o iPho
 
 ### Aparelho trocado de mãos
 
-- **Ao sair da conta,** a tela de login cancela a inscrição de push deste aparelho, junto com a limpeza dos caches da task 15. O servidor apaga a linha no próximo envio, quando receber o `410`.
+- **Ao sair da conta,** o botão "Sair" cancela a inscrição de push deste aparelho antes de encerrar a sessão: apaga a linha no servidor e cancela no navegador, com limite de 3 s para não travar a saída. Se falhar, o servidor apaga a linha no próximo envio, ao receber o `410`. Uma sessão que só expirou não cancela nada.
 - **Ao salvar uma inscrição** cujo `endpoint` já existe para outro usuário, ela passa para quem está logado.
 
 ### Dados
@@ -83,6 +83,7 @@ Esquecer de registrar é uma das anti-metas. Todo dia, por volta das 21h, o iPho
   - `userAgent` (para o log);
   - `createdAt` e `lastSentAt`.
 - **Sem `spaceId`:** a inscrição é do usuário e do aparelho, não do espaço. O texto do lembrete conta os lançamentos de `createdById` = usuário.
+- **Endpoint só de serviços de push conhecidos** (Apple, Google, Mozilla, Microsoft), em `https`. O servidor faz um POST nesse endereço todo dia, então ele não pode ser um endereço qualquer, como um interno.
 - **Variáveis novas no `.env.example`:** `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `CRON_SECRET`.
   - A chave pública chega ao navegador como prop de um componente do servidor, sem `NEXT_PUBLIC_`.
 
