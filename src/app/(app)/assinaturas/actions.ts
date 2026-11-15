@@ -3,24 +3,20 @@
 import { refresh } from "next/cache";
 import { z } from "zod";
 
-import { MAX_AMOUNT_CENTS } from "@/domain/money";
 import { RULE_STATUSES } from "@/domain/recurring";
 import type { ActionResult } from "@/lib/action-result";
+import { ruleEditSchema } from "@/lib/validation/subscriptions";
 import {
   RULE_ERROR_MESSAGES,
   type RuleError,
+  editRecurringRule,
+  ruleEditMessage,
   setRecurringRuleStatus,
   undoSubscription,
-  updateRecurringRule,
 } from "@/server/recurring";
 import { getCurrentSpace } from "@/server/session";
 
 const ruleIdSchema = z.uuid({ error: "Assinatura não encontrada." });
-const amountSchema = z
-  .number({ error: "Informe o valor." })
-  .int({ error: "Valor inválido." })
-  .min(1, { error: "O valor precisa ser maior que zero." })
-  .max(MAX_AMOUNT_CENTS, { error: "O valor pode ser no máximo R$ 20.000.000,00." });
 
 function done(result: { ok: true } | { ok: false; error: RuleError }): ActionResult {
   if (!result.ok) return { ok: false, error: RULE_ERROR_MESSAGES[result.error] };
@@ -41,21 +37,22 @@ export async function setRecurringRuleStatusAction(
   return done(await setRecurringRuleStatus(space.id, parsedId.data, parsedStatus.data));
 }
 
-/** Changes the amount of the next charges and records the change. */
-export async function updateRecurringRuleAction(
-  id: unknown,
-  amountCents: unknown,
-): Promise<ActionResult> {
+/**
+ * Edits a subscription for its next charges: amount (recorded in the history), day, category,
+ * payment and note.
+ */
+export async function editRecurringRuleAction(id: unknown, input: unknown): Promise<ActionResult> {
   const space = await getCurrentSpace();
   const parsedId = ruleIdSchema.safeParse(id);
   if (!parsedId.success) return { ok: false, error: RULE_ERROR_MESSAGES.NOT_FOUND };
-  const parsedAmount = amountSchema.safeParse(amountCents);
-  if (!parsedAmount.success) {
-    return { ok: false, error: parsedAmount.error.issues[0]?.message ?? "Valor inválido." };
+  const parsed = ruleEditSchema.safeParse(input);
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message ?? "Dados inválidos." };
   }
-  return done(
-    await updateRecurringRule(space.id, parsedId.data, { amountCents: parsedAmount.data }),
-  );
+  const result = await editRecurringRule(space.id, parsedId.data, parsed.data);
+  if (!result.ok) return { ok: false, error: ruleEditMessage(result.error) };
+  refresh();
+  return { ok: true };
 }
 
 /** The "Desfazer" of a new subscription: the charge, and the rule if it had no other charge. */

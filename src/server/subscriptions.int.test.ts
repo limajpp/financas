@@ -10,7 +10,9 @@ import { createAccount } from "@/server/accounts";
 import { createCard } from "@/server/cards";
 import {
   UNDO_WINDOW_MS,
+  editRecurringRule,
   generateRecurring,
+  listSubscriptions,
   setRecurringRuleStatus,
   undoSubscription,
   updateRecurringRule,
@@ -516,5 +518,147 @@ describe("assinaturas", () => {
     await db.user.delete({ where: { id: s.userId } });
     expect(await db.recurringRule.count()).toBe(0);
     expect(await db.recurringRuleChange.count()).toBe(0);
+  });
+});
+
+describe("tela de assinaturas (task 19)", () => {
+  const edit = (s: Setup, over: Record<string, unknown> = {}) => ({
+    amountCents: 3_990,
+    dayOfMonth: 5,
+    method: "PIX" as const,
+    accountId: s.accountId,
+    cardId: null,
+    categoryId: s.lazer.id,
+    description: null,
+    ...over,
+  });
+
+  it("CA4: editar muda a regra para as próximas; as cobranças feitas ficam; o valor vai ao histórico", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-05");
+    const ruleId = first.recurringRuleId!;
+    on("2026-10-10");
+    await generateRecurring(s.spaceId);
+    const mercado = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Mercado" },
+    });
+
+    on("2026-10-12");
+    expect(
+      await editRecurringRule(
+        s.spaceId,
+        ruleId,
+        edit(s, {
+          amountCents: 4_490,
+          dayOfMonth: 20,
+          method: "CREDIT",
+          accountId: null,
+          cardId: s.cardId,
+          categoryId: mercado.id,
+          description: "Plano família",
+        }),
+      ),
+    ).toEqual({ ok: true });
+    expect(await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } })).toMatchObject({
+      amountCents: 4_490,
+      dayOfMonth: 20,
+      method: "CREDIT",
+      accountId: null,
+      cardId: s.cardId,
+      categoryId: mercado.id,
+      description: "Plano família",
+    });
+    const history = await db.recurringRuleChange.findMany({ where: { ruleId } });
+    expect(history.map((h) => [h.previousCents, h.amountCents])).toEqual([[3_990, 4_490]]);
+
+    // The charges already made stay; November's comes on the new day, on the card.
+    on("2026-11-20");
+    await generateRecurring(s.spaceId);
+    const rows = await charges(ruleId);
+    expect(
+      rows.map((r) => [r.recurringMonth, r.date.toISOString().slice(0, 10), r.amountCents]),
+    ).toEqual([
+      ["2026-09", "2026-09-05", 3_990],
+      ["2026-10", "2026-10-05", 3_990],
+      ["2026-11", "2026-11-20", 4_490],
+    ]);
+    expect(rows[2]!.invoiceDueDate?.toISOString().slice(0, 10)).toBe("2026-12-10");
+  });
+
+  it("CA4: mudar o dia no mês já cobrado não cobra de novo", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-05");
+    on("2026-09-10");
+    expect(
+      await editRecurringRule(s.spaceId, first.recurringRuleId!, edit(s, { dayOfMonth: 25 })),
+    ).toEqual({ ok: true });
+    on("2026-09-28");
+    await generateRecurring(s.spaceId);
+    expect((await charges(first.recurringRuleId!)).map((r) => r.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("CA4: recusa categoria de receita, conta de outro espaço e regra cancelada", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    const salario = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Salário" },
+    });
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { categoryId: salario.id }))).toEqual(
+      {
+        ok: false,
+        error: "CATEGORY_TYPE_MISMATCH",
+      },
+    );
+    expect(
+      await editRecurringRule(s.spaceId, ruleId, edit(s, { accountId: bia.accountId })),
+    ).toEqual({
+      ok: false,
+      error: "ACCOUNT_NOT_FOUND",
+    });
+    expect(await editRecurringRule(bia.spaceId, ruleId, edit(bia))).toEqual({
+      ok: false,
+      error: "NOT_FOUND",
+    });
+    await setRecurringRuleStatus(s.spaceId, ruleId, "CANCELED");
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 1 }))).toEqual({
+      ok: false,
+      error: "CANCELED",
+    });
+    expect(await db.recurringRuleChange.count()).toBe(0);
+  });
+
+  it("a lista traz próxima cobrança, mudança recente, pausa e cancelamento, só do espaço", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    await subscribe(bia, "2026-09-05");
+    const caro = await subscribe(s, "2026-09-05", { amountCents: 9_990, counterparty: "Academia" });
+    const pausada = await subscribe(s, "2026-09-07", { counterparty: "Revista" });
+    const cancelada = await subscribe(s, "2026-09-08", { counterparty: "Jornal" });
+    on("2026-10-01");
+    await updateRecurringRule(s.spaceId, caro.recurringRuleId!, { amountCents: 10_990 });
+    await setRecurringRuleStatus(s.spaceId, pausada.recurringRuleId!, "PAUSED");
+    await setRecurringRuleStatus(s.spaceId, cancelada.recurringRuleId!, "CANCELED");
+
+    on("2026-10-02");
+    const list = await listSubscriptions(s.spaceId);
+    expect(list.map((r) => [r.counterparty?.name, r.status, r.nextCharge])).toEqual([
+      ["Academia", "ACTIVE", "2026-10-05"],
+      ["Revista", "PAUSED", null],
+      ["Jornal", "CANCELED", null],
+    ]);
+    expect(list[0]!.change).toEqual({
+      previousCents: 9_990,
+      direction: "up",
+      changedOn: "2026-10-01",
+    });
+    expect(list[1]).toMatchObject({ pausedOn: "2026-10-01", change: null });
+    expect(list[2]).toMatchObject({ canceledOn: "2026-10-01" });
+
+    // Resuming clears the pause.
+    await setRecurringRuleStatus(s.spaceId, pausada.recurringRuleId!, "ACTIVE");
+    expect((await listSubscriptions(s.spaceId))[1]).toMatchObject({ pausedOn: null });
   });
 });

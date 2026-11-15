@@ -1,6 +1,6 @@
 import "server-only";
 
-import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
+import { addDays, calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { cycleOn, invoiceFor } from "@/domain/invoice-cycle";
 import {
   GENERATED_CLIENT_ID_PREFIX,
@@ -10,7 +10,16 @@ import {
   occurrenceDate,
   resumeMonth,
 } from "@/domain/recurring";
+import {
+  type RuleEditInput,
+  nextChargeDate,
+  recentChange,
+  RECENT_CHANGE_DAYS,
+  validateRuleEdit,
+} from "@/domain/subscriptions";
+import { TRANSACTION_ERROR_MESSAGES, type TransactionError } from "@/domain/transactions";
 import { db } from "@/lib/db";
+import { refsFor } from "@/server/transactions";
 
 export type RuleError = "NOT_FOUND" | "CANCELED";
 
@@ -149,12 +158,16 @@ export async function setRecurringRuleStatus(
     const resume = resumeMonth(rule.dayOfMonth, todayInSaoPaulo());
     written = await db.recurringRule.updateMany({
       where: { ...notCanceled, status: "PAUSED" },
-      data: { status, nextMonth: resume > rule.nextMonth ? resume : rule.nextMonth },
+      data: {
+        status,
+        pausedAt: null,
+        nextMonth: resume > rule.nextMonth ? resume : rule.nextMonth,
+      },
     });
   } else {
     written = await db.recurringRule.updateMany({
       where: { ...notCanceled, status: "ACTIVE" },
-      data: { status },
+      data: { status, pausedAt: new Date() },
     });
   }
   if (written.count === 0) {
@@ -206,3 +219,132 @@ export async function undoSubscription(
   });
   return { ok: true };
 }
+
+/**
+ * Edits a subscription (task 19): amount, day, category, payment and note, for the next charges
+ * (the ones already made stay). A new amount goes to the history. The cursor stays: a month already
+ * charged is never charged again, and a month not charged yet is charged on the new day.
+ */
+export async function editRecurringRule(
+  spaceId: string,
+  id: string,
+  input: RuleEditInput,
+): Promise<{ ok: true } | { ok: false; error: RuleError | TransactionError }> {
+  const rule = await db.recurringRule.findFirst({
+    where: { id, spaceId },
+    select: { amountCents: true, status: true, accountId: true, cardId: true, categoryId: true },
+  });
+  if (!rule) return { ok: false, error: "NOT_FOUND" };
+  if (rule.status === "CANCELED") return { ok: false, error: "CANCELED" };
+  const today = todayInSaoPaulo();
+  const refs = await refsFor(spaceId, {
+    type: "EXPENSE",
+    amountCents: input.amountCents,
+    date: today,
+    method: input.method,
+    accountId: input.accountId,
+    cardId: input.cardId,
+    invoiceDueDate: null,
+    categoryId: input.categoryId,
+    counterparty: null,
+    counterpartyAlias: null,
+    counterpartyDocument: null,
+    description: input.description,
+    installments: null,
+    subscription: false,
+  });
+  const checked = validateRuleEdit(input, refs, rule, today);
+  if (!checked.ok) return checked;
+
+  const updated = await db.$transaction(async (tx) => {
+    // Conditional: a cancel in the meantime wins (canceling is final).
+    const written = await tx.recurringRule.updateMany({
+      where: { id, spaceId, status: { not: "CANCELED" } },
+      data: {
+        amountCents: input.amountCents,
+        dayOfMonth: input.dayOfMonth,
+        method: input.method,
+        accountId: input.accountId,
+        cardId: input.cardId,
+        categoryId: input.categoryId,
+        description: input.description,
+      },
+    });
+    if (written.count > 0 && input.amountCents !== rule.amountCents) {
+      await tx.recurringRuleChange.create({
+        data: {
+          ruleId: id,
+          previousCents: rule.amountCents,
+          amountCents: input.amountCents,
+          changedOn: calendarDateToDb(today),
+        },
+      });
+    }
+    return written.count;
+  });
+  if (updated === 0) {
+    const now = await db.recurringRule.findFirst({ where: { id, spaceId }, select: { id: true } });
+    return { ok: false, error: now ? "CANCELED" : "NOT_FOUND" };
+  }
+  return { ok: true };
+}
+
+/** The message of an edit error: the subscription's own, or the one an expense would get. */
+export function ruleEditMessage(error: RuleError | TransactionError) {
+  return error === "NOT_FOUND" || error === "CANCELED"
+    ? RULE_ERROR_MESSAGES[error]
+    : TRANSACTION_ERROR_MESSAGES[error];
+}
+
+/**
+ * The subscriptions screen (task 19): every rule of the space, most expensive first, with where it
+ * charges, its category and counterparty, the next charge (active ones) and a change of amount in
+ * the last 90 days.
+ */
+export async function listSubscriptions(spaceId: string) {
+  const today = todayInSaoPaulo();
+  const rules = await db.recurringRule.findMany({
+    where: { spaceId },
+    orderBy: [{ amountCents: "desc" }, { createdAt: "asc" }],
+    select: {
+      id: true,
+      amountCents: true,
+      dayOfMonth: true,
+      method: true,
+      status: true,
+      description: true,
+      firstMonth: true,
+      nextMonth: true,
+      pausedAt: true,
+      canceledAt: true,
+      account: { select: { id: true, name: true, archivedAt: true } },
+      card: { select: { id: true, name: true, archivedAt: true } },
+      category: { select: { id: true, name: true, icon: true, color: true } },
+      counterparty: { select: { id: true, name: true } },
+      changes: {
+        where: { changedOn: { gte: calendarDateToDb(addDays(today, -RECENT_CHANGE_DAYS)) } },
+        orderBy: { createdAt: "asc" },
+        select: { changedOn: true, previousCents: true, amountCents: true },
+      },
+    },
+  });
+  return rules.map(({ changes, pausedAt, canceledAt, account, card, ...rule }) => ({
+    ...rule,
+    account: account && {
+      id: account.id,
+      name: account.name,
+      archived: account.archivedAt !== null,
+    },
+    card: card && { id: card.id, name: card.name, archived: card.archivedAt !== null },
+    pausedOn: pausedAt && todayInSaoPaulo(pausedAt),
+    canceledOn: canceledAt && todayInSaoPaulo(canceledAt),
+    nextCharge: rule.status === "ACTIVE" ? nextChargeDate(rule) : null,
+    change: recentChange(
+      changes.map((c) => ({ ...c, changedOn: dbToCalendarDate(c.changedOn) })),
+      rule.amountCents,
+      today,
+    ),
+  }));
+}
+
+export type SubscriptionRow = Awaited<ReturnType<typeof listSubscriptions>>[number];
