@@ -10,11 +10,16 @@ export const INSTALL_HINT_KEY = "install-hint-dismissed-at";
  * (or lack "Safari"); an iPad in desktop mode reports a Mac with a touch screen.
  */
 export function isIosSafari(userAgent: string, maxTouchPoints: number) {
-  const ios =
-    /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
-  const safari =
-    /Safari\//.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|DuckDuckGo/.test(userAgent);
-  return ios && safari;
+  return isIos(userAgent, maxTouchPoints) && isSafari(userAgent);
+}
+
+/** An iPhone or iPad, in any browser (an iPad in desktop mode reports a Mac with a touch screen). */
+export function isIos(userAgent: string, maxTouchPoints: number) {
+  return /iPhone|iPad|iPod/.test(userAgent) || (/Macintosh/.test(userAgent) && maxTouchPoints > 1);
+}
+
+function isSafari(userAgent: string) {
+  return /Safari\//.test(userAgent) && !/CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|DuckDuckGo/.test(userAgent);
 }
 
 /** Whether the home screen shows the install card. */
