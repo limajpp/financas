@@ -42,7 +42,7 @@ Esquecer de registrar é uma das anti-metas. Todo dia, por volta das 21h, o iPho
 ### O lembrete
 
 - **Título:** "Registrou tudo hoje?"
-- **Texto:** depende do que o usuário registrou no dia, pela hora de registro (`createdAt`) no fuso de São Paulo:
+- **Texto:** depende do que o usuário registrou no dia, pela hora de registro (`createdAt`) no fuso de São Paulo. Não contam as cobranças de assinatura que o próprio cron gera, e uma compra parcelada conta uma vez, não uma por parcela:
   - nada registrado hoje: "Nenhum lançamento hoje. Teve algum gasto?";
   - 1 lançamento: "Você registrou 1 lançamento hoje. Faltou algum?";
   - N lançamentos: "Você registrou N lançamentos hoje. Faltou algum?".
@@ -56,8 +56,8 @@ Esquecer de registrar é uma das anti-metas. Todo dia, por volta das 21h, o iPho
 
 ### Envio e inscrições expiradas
 
-- **Biblioteca:** `web-push`, com as chaves VAPID das variáveis de ambiente. O `subject` é a URL do app (`BETTER_AUTH_URL`), sem e-mail.
-- **Envio:** em paralelo, com limite de 10 por vez e TTL de 12 h. Se o aparelho ficar desligado até de manhã, o lembrete da noite não chega atrasado.
+- **Biblioteca:** `web-push`, com as chaves VAPID das variáveis de ambiente. O `subject` é a URL pública do app, sem e-mail: na Vercel, o domínio de produção ou a URL do preview (as mesmas variáveis do Better Auth, task 4); fora dela, `VAPID_SUBJECT`. Precisa ser `https` e não pode ser `localhost`, que a Apple recusa: sem isso, o lembrete fica indisponível em vez de falhar toda noite.
+- **Envio:** em paralelo, com limite de 10 por vez, limite de 10 s por envio e TTL de 12 h. Se o aparelho ficar desligado até de manhã, o lembrete da noite não chega atrasado.
 - **Resposta do serviço de push, por inscrição:**
   - `404` ou `410`: a inscrição expirou e é apagada;
   - outros erros (`429`, `5xx`, rede): ficam no log, a inscrição continua e o próximo dia tenta de novo.
@@ -122,6 +122,24 @@ O PR traz esses passos. Sem eles, o app funciona normalmente: a seção mostra "
 - **Sempre enviar, com o texto conforme o dia.** É simples, e não deixa de lembrar quem registrou só parte dos gastos.
 - **TTL de 12 h.** Um lembrete das 21h que chegasse ao meio-dia seguinte confundiria mais do que ajudaria.
 - **`subject` VAPID com a URL do app.** O serviço de push aceita URL ou e-mail, e a URL evita colocar um e-mail pessoal na configuração.
+
+## Revisão
+
+O revisor (Opus, effort high) pediu mudanças. Tudo foi corrigido.
+
+- **Bloqueio: na Vercel, o remetente seria `https://localhost`, e a Apple recusaria todos os envios.** O `BETTER_AUTH_URL` não existe na Vercel (task 4). Agora o remetente vem das mesmas variáveis do Better Auth, e sem um `https` válido o lembrete fica indisponível.
+- **Grave: a lista de serviços de push podia ser contornada com `%2E` no endereço.** O `web-push` entende a URL de outro jeito que o `new URL`, e o servidor faria POST para qualquer host. Agora o host escrito tem que ser igual ao interpretado, sem porta, e a URL é gravada normalizada. Os casos entraram nos testes.
+- **Grave: o lembrete contava o que o usuário não registrou.** Entravam a cobrança de assinatura que o cron gera segundos antes e cada parcela de uma compra. Agora elas ficam de fora, com teste de integração.
+- **Também corrigido:**
+  - cada envio tem limite de 10 s, para um serviço parado não segurar o cron;
+  - uma falha ao apagar ou atualizar uma inscrição não derruba os outros envios;
+  - ao ligar, uma inscrição feita com uma chave antiga é refeita;
+  - "Sair" manda a inscrição junto com a própria saída, numa action só, em vez de uma segunda action que ficaria na fila;
+  - o endereço aberto pela notificação recusa barra invertida e espaço, e o service worker confere a origem;
+  - o ícone colorido saiu do `badge`;
+  - as funções do cliente usadas no "Sair" ganharam testes.
+- **Anterior a esta task (task 3), corrigido aqui:** antes de a página hidratar, o login e o cadastro enviavam por GET, e a senha ia para a URL (histórico, logs da Vercel). Agora os formulários usam `method="post"`. O e2e espera a hidratação, o que resolvia a corrida do CA9 da task 16 sob carga.
+- **Aceito:** um endpoint conhecido por outra pessoa poderia ser reatribuído a ela, mas endpoints não são adivinháveis nem aparecem em lugar nenhum. Também não há limite de inscrições por usuário, porque o cadastro em produção é fechado.
 
 ## Fora do escopo
 
