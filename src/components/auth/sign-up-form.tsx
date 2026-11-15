@@ -18,7 +18,7 @@ export function SignUpForm() {
   });
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+    <form method="post" onSubmit={onSubmit} noValidate className="grid gap-4">
       <FormField name="name" label="Nome" autoComplete="name" error={fieldErrors.name} required />
       <FormField
         name="email"

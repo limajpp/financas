@@ -8,8 +8,21 @@ export function uniqueEmail() {
   return `e2e+${randomUUID()}@example.com`;
 }
 
+/**
+ * Waits until React has hydrated the page's form. The auth forms submit from the client: a click
+ * before that is a native submit, which only reloads the page with the fields empty (seen under
+ * load, right after the full reload of "Sair").
+ */
+export async function waitForHydratedForm(page: Page) {
+  await page.waitForFunction(() => {
+    const form = document.querySelector("main form");
+    return !!form && Object.keys(form).some((key) => key.startsWith("__reactProps"));
+  });
+}
+
 export async function signUp(page: Page, { name = "Ana Teste", email = uniqueEmail() } = {}) {
   await page.goto("/cadastro");
+  await waitForHydratedForm(page);
   await page.getByLabel("Nome").fill(name);
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(PASSWORD);
@@ -19,6 +32,7 @@ export async function signUp(page: Page, { name = "Ana Teste", email = uniqueEma
 }
 
 export async function signIn(page: Page, email: string, password = PASSWORD) {
+  await waitForHydratedForm(page);
   await page.getByLabel("E-mail").fill(email);
   await page.getByLabel("Senha").fill(password);
   await page.getByRole("button", { name: "Entrar" }).click();

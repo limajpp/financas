@@ -2,7 +2,12 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
+import { connection } from "next/server";
+import { Suspense } from "react";
+
 import { SignOutButton } from "@/components/nav/sign-out-button";
+import { ReminderSettings } from "@/components/push/reminder-settings";
+import { vapidPublicKey } from "@/server/push";
 
 export const metadata: Metadata = { title: "Configurações · Finanças" };
 
@@ -46,6 +51,9 @@ export default function ConfiguracoesPage() {
           ))}
         </ul>
       </nav>
+      <Suspense fallback={null}>
+        <Reminder />
+      </Suspense>
       <section aria-labelledby="instalar" className="mt-6 rounded-md border px-4 py-3">
         <h2 id="instalar" className="font-medium">
           Instalar no iPhone
@@ -63,4 +71,10 @@ export default function ConfiguracoesPage() {
       <SignOutButton className="mt-6 md:hidden" />
     </div>
   );
+}
+
+/** At request time: the VAPID key comes from the server's environment, not from the build. */
+async function Reminder() {
+  await connection();
+  return <ReminderSettings publicKey={vapidPublicKey()} />;
 }

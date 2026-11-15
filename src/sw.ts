@@ -4,7 +4,10 @@ import { defaultCache } from "@serwist/turbopack/worker";
 import type { PrecacheEntry, RuntimeCaching, SerwistGlobalConfig, SerwistPlugin } from "serwist";
 import { CacheExpiration, ExpirationPlugin, NetworkFirst, Serwist, Strategy } from "serwist";
 
+import { readPushPayload, reminderPayload } from "@/domain/reminder";
 import { CLEAR_PRIVATE_CACHES, isPrivateCache, OFFLINE_URL, PAGES_CACHE } from "@/lib/pwa";
+
+const REMINDER_DEFAULTS = reminderPayload(0);
 
 declare global {
   interface WorkerGlobalScope extends SerwistGlobalConfig {
@@ -95,6 +98,52 @@ self.addEventListener("message", (event) => {
   const done = clearPrivateCaches();
   event.waitUntil(done);
   void done.then(() => event.ports[0]?.postMessage(true));
+});
+
+// The daily reminder (task 17). Always shows a notification: iOS cancels the subscription of a
+// web app that receives a push without showing one.
+self.addEventListener("push", (event) => {
+  let data: unknown = null;
+  try {
+    data = event.data?.json();
+  } catch {
+    data = null;
+  }
+  const payload = readPushPayload(data);
+  event.waitUntil(
+    self.registration.showNotification(payload.title, {
+      body: payload.body,
+      tag: payload.tag,
+      icon: "/icons/icon-192.png",
+      data: { url: payload.url },
+    }),
+  );
+});
+
+// Tapping it opens the screen: in the app's window when it's open, else in a new one.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const path = readPushPayload({ ...REMINDER_DEFAULTS, ...event.notification.data }).url;
+  // Only this app: whatever the payload says, the window opens on this origin.
+  const resolved = new URL(path, self.location.origin);
+  const url =
+    resolved.origin === self.location.origin ? resolved.href : `${self.location.origin}/registrar`;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
+      if (open) {
+        try {
+          await open.focus();
+          await open.navigate(url);
+          return;
+        } catch {
+          // An uncontrolled window can't be navigated from here: open a new one.
+        }
+      }
+      await self.clients.openWindow(url);
+    })(),
+  );
 });
 
 serwist.addEventListeners();

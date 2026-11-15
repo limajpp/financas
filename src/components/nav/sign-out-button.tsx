@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { clearOutbox, listOutbox } from "@/lib/outbox-db";
 import { waitForSend } from "@/lib/outbox-sync";
+import { subscriptionToForget, withTimeout } from "@/lib/push-client";
 
 /**
  * "Sair". Nothing financial stays on the device afterwards: the saved screens go (task 15) and so
@@ -30,12 +31,16 @@ export function SignOutButton({ className }: { className?: string }) {
   async function leave() {
     // In case the page stays (a failed sign-out): the question must not linger.
     setLeft(null);
+    // This device stops getting this user's reminders: the server deletes the subscription with
+    // the sign-out, then the browser cancels it.
+    const push = await subscriptionToForget();
     try {
-      await endSessionAction();
+      await endSessionAction(push?.endpoint);
     } catch {
       toast.error("Não foi possível sair. Verifique a conexão.");
       return;
     }
+    if (push) await withTimeout(push.unsubscribe(), 3_000).catch(() => {});
     const userId = outbox.userId();
     if (userId) await clearOutbox(userId).catch(() => {});
     // A full load on purpose, not the router: the screens Next keeps alive in memory go too.
