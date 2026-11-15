@@ -23,6 +23,12 @@ describe("pushSubscriptionSchema", () => {
       "https://169.254.169.254/latest",
       "https://push.apple.com.evil.example/x",
       "https://user:pw@web.push.apple.com/x",
+      // Percent-encoded dots: another host for Node's legacy parser, which web-push uses.
+      "https://evil.com%2Epush.apple.com/x",
+      "https://127.0.0.1%2epush.apple.com/x",
+      "https://localhost%2Ewns.notify.windows.com/x",
+      "https://web.push.apple.com:8443/x",
+      "https://web.push.apple.com./x",
       "nada",
     ]) {
       expect(pushSubscriptionSchema.safeParse({ endpoint, keys }).success, endpoint).toBe(false);

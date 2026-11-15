@@ -51,7 +51,7 @@ export function readPushPayload(data: unknown): PushPayload {
     title: text("title", 100) ?? fallback.title,
     body: text("body", 300) ?? fallback.body,
     // Only a path of this app: the payload can't send the user elsewhere.
-    url: url?.startsWith("/") && !url.startsWith("//") ? url : fallback.url,
+    url: url && /^\/(?![/\\])[^\s\\]*$/.test(url) ? url : fallback.url,
     tag: text("tag", 50) ?? fallback.tag,
   };
 }

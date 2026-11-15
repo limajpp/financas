@@ -64,7 +64,14 @@ describe("readPushPayload", () => {
   });
 
   it("só abre caminhos do próprio app", () => {
-    for (const url of ["https://outro.site", "//outro.site/x", "javascript:alert(1)"]) {
+    for (const url of [
+      "https://outro.site",
+      "//outro.site/x",
+      "javascript:alert(1)",
+      "/\\outro.site",
+      "/\t/outro.site",
+      "/ /outro.site",
+    ]) {
       expect(readPushPayload({ ...reminderPayload(0), url }).url).toBe("/registrar");
     }
     expect(readPushPayload({ ...reminderPayload(0), url: "/lancamentos" }).url).toBe(

@@ -37,6 +37,7 @@ export default defineConfig({
       PORT: String(PORT),
       VAPID_PUBLIC_KEY: vapid.publicKey,
       VAPID_PRIVATE_KEY: vapid.privateKey,
+      VAPID_SUBJECT: "https://financas.example",
     },
     url: baseURL,
     reuseExistingServer: !process.env.CI,

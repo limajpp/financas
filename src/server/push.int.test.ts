@@ -7,7 +7,9 @@ import { db } from "@/lib/db";
 import { accountSchema } from "@/lib/validation/accounts";
 import { pushSubscriptionSchema } from "@/lib/validation/push";
 import { entrySchema } from "@/lib/validation/transactions";
+import { cardSchema } from "@/lib/validation/cards";
 import { createAccount } from "@/server/accounts";
+import { createCard } from "@/server/cards";
 import { runDailyCron } from "@/server/cron";
 import {
   deletePushSubscription,
@@ -42,6 +44,7 @@ beforeEach(async () => {
   vi.stubEnv("VAPID_PUBLIC_KEY", "chave-publica-de-teste");
   vi.stubEnv("VAPID_PRIVATE_KEY", "chave-privada-de-teste");
   vi.stubEnv("CRON_SECRET", SECRET);
+  vi.stubEnv("VAPID_SUBJECT", "https://financas.example");
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 afterEach(() => {
@@ -174,6 +177,39 @@ describe("lembrete diário", () => {
     // TTL of 12 h: a reminder that arrived the next noon would confuse.
     expect(push.sendNotification.mock.calls[0]![2]).toMatchObject({ TTL: 43_200 });
     expect(await db.pushSubscription.count({ where: { lastSentAt: { not: null } } })).toBe(3);
+  });
+
+  it("não conta as cobranças geradas pelo cron nem cada parcela de uma compra", async () => {
+    const ana = await user("ana@example.com");
+    const azul = await account(ana.spaceId);
+    at("2026-10-05T15:00:00Z");
+    await expense(ana, azul, {
+      date: "2026-10-05",
+      amountCents: 3_990,
+      counterparty: "Streaming",
+      subscription: true,
+    });
+    const card = await createCard(
+      ana.spaceId,
+      cardSchema.parse({ name: "Cartão Roxo", accountId: azul, closingDay: 3, dueDay: 10 }),
+    );
+    if (!card.ok) throw new Error(card.error);
+    // Today: one purchase in 10 installments.
+    at("2026-11-05T15:00:00Z");
+    await expense(ana, azul, {
+      date: "2026-11-05",
+      method: "CREDIT",
+      accountId: undefined,
+      cardId: card.card.id,
+      installments: 10,
+    });
+    await savePushSubscription(ana.userId, subscription("a"), null);
+
+    // The cron of the charge day: it generates November's charge, then counts.
+    at("2026-11-06T00:10:00Z");
+    await runDailyCron();
+    expect(await db.transaction.count({ where: { recurringMonth: "2026-11" } })).toBe(1);
+    expect(sentTo()[0]!.payload.body).toBe("Você registrou 1 lançamento hoje. Faltou algum?");
   });
 
   it("410 e 404 apagam a inscrição; 500 mantém; uma falha não impede as outras", async () => {

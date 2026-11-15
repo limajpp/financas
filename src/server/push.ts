@@ -3,6 +3,7 @@ import "server-only";
 import webpush from "web-push";
 
 import { saoPauloDayBounds, todayInSaoPaulo } from "@/domain/dates";
+import { GENERATED_CLIENT_ID_PREFIX } from "@/domain/recurring";
 import {
   afterPushFailure,
   type PushPayload,
@@ -13,6 +14,7 @@ import {
 } from "@/domain/reminder";
 import { db } from "@/lib/db";
 import type { PushSubscriptionInput } from "@/lib/validation/push";
+import { vapidDetailsFrom } from "@/lib/vapid";
 
 /** The push service keeps a reminder this long for a device that's off: not until tomorrow noon. */
 const REMINDER_TTL_SECONDS = 12 * 60 * 60;
@@ -20,20 +22,14 @@ const TEST_TTL_SECONDS = 60;
 /** Pushes in flight at once. */
 const CONCURRENCY = 10;
 
+/** A push service that doesn't answer mustn't hold the whole cron. */
+const SEND_TIMEOUT_MS = 10_000;
+
+const vapidDetails = () => vapidDetailsFrom(process.env);
+
 /** The VAPID public key the browser subscribes with, or null when push isn't configured. */
 export function vapidPublicKey() {
-  return process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
-    ? process.env.VAPID_PUBLIC_KEY
-    : null;
-}
-
-function vapidDetails() {
-  const publicKey = process.env.VAPID_PUBLIC_KEY;
-  const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!publicKey || !privateKey) return null;
-  // The app's URL identifies the sender: no personal e-mail in the configuration.
-  const subject = process.env.BETTER_AUTH_URL ?? "https://localhost";
-  return { subject, publicKey, privateKey };
+  return vapidDetails()?.publicKey ?? null;
 }
 
 /** Saves this device's subscription for the user (taking it over if another user had it). */
@@ -74,19 +70,23 @@ async function deliver(row: Row, payload: PushPayload, ttl: number): Promise<Del
     await webpush.sendNotification(
       { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
       JSON.stringify(payload),
-      { TTL: ttl, vapidDetails: vapid, urgency: "normal" },
+      { TTL: ttl, vapidDetails: vapid, urgency: "normal", timeout: SEND_TIMEOUT_MS },
     );
-    await db.pushSubscription.update({ where: { id: row.id }, data: { lastSentAt: new Date() } });
-    return "SENT";
   } catch (error) {
     const status = error instanceof webpush.WebPushError ? error.statusCode : undefined;
     if (afterPushFailure(status) === "REMOVE") {
-      await db.pushSubscription.deleteMany({ where: { id: row.id } });
+      // Best effort: a failing delete mustn't stop the other devices' sends.
+      await db.pushSubscription.deleteMany({ where: { id: row.id } }).catch(() => {});
       return "REMOVED";
     }
     console.error("push failed", { subscription: row.id, status });
     return "FAILED";
   }
+  // updateMany: the row may be gone meanwhile (reminder turned off during the cron).
+  await db.pushSubscription
+    .updateMany({ where: { id: row.id }, data: { lastSentAt: new Date() } })
+    .catch(() => {});
+  return "SENT";
 }
 
 /** Runs `work` over `items`, at most `limit` at a time. */
@@ -135,6 +135,10 @@ export async function sendDailyReminders(now = new Date()) {
     where: {
       createdById: { in: [...new Set(rows.map((r) => r.userId))] },
       createdAt: { gte: start, lt: end },
+      // What the user registered: not the charges the cron itself generates (task 13), and a
+      // purchase in installments once, not once per installment.
+      NOT: { clientId: { startsWith: GENERATED_CLIENT_ID_PREFIX } },
+      OR: [{ installmentNumber: null }, { installmentNumber: 1 }],
     },
     _count: { _all: true },
   });
