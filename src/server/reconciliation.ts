@@ -1,31 +1,47 @@
 import "server-only";
 
-import { calendarDateToDb, todayInSaoPaulo } from "@/domain/dates";
+import {
+  type CalendarDate,
+  calendarDateToDb,
+  dbToCalendarDate,
+  todayInSaoPaulo,
+} from "@/domain/dates";
 import { ADJUSTMENT_DESCRIPTION, adjustmentFor, reconciliationDiff } from "@/domain/reconciliation";
-import { TRANSACTION_DATE_MIN } from "@/domain/transactions";
+import { MAX_AMOUNT_CENTS } from "@/domain/money";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
+import { generateRecurringSafely } from "@/server/recurring";
 import { listTransactions } from "@/server/transaction-list";
 import { accountBalances } from "@/server/transactions";
 
 /** How many recent entries the reconcile dialog shows. */
 export const RECENT_ENTRIES = 10;
 
-export type ReconcileError = "NOT_FOUND" | "ACCOUNT_ARCHIVED";
+export type ReconcileError = "NOT_FOUND" | "ACCOUNT_ARCHIVED" | "TOO_LARGE";
 
 export const RECONCILE_ERROR_MESSAGES: Record<ReconcileError, string> = {
   NOT_FOUND: "Conta não encontrada.",
   ACCOUNT_ARCHIVED: "Essa conta está arquivada.",
+  TOO_LARGE: "A diferença passa de R$ 20.000.000,00. Confira o saldo digitado.",
 };
 
 async function activeAccount(spaceId: string, accountId: string) {
   const account = await db.account.findFirst({
     where: { id: accountId, spaceId },
-    select: { id: true, archivedAt: true },
+    select: { id: true, archivedAt: true, initialBalanceDate: true },
   });
   if (!account) return { ok: false as const, error: "NOT_FOUND" as const };
   if (account.archivedAt) return { ok: false as const, error: "ACCOUNT_ARCHIVED" as const };
-  return { ok: true as const };
+  return { ok: true as const, initialBalanceDate: dbToCalendarDate(account.initialBalanceDate) };
+}
+
+/**
+ * The account's latest entries up to today that move it (from its initial balance's day on),
+ * transfers into it included: what the reconcile dialog shows to help remember.
+ */
+export async function accountRecentEntries(spaceId: string, accountId: string, from: CalendarDate) {
+  const page = await listTransactions(spaceId, { from, to: todayInSaoPaulo(), accountId });
+  return page.items.slice(0, RECENT_ENTRIES);
 }
 
 /**
@@ -35,11 +51,11 @@ async function activeAccount(spaceId: string, accountId: string) {
 export async function compareBalance(spaceId: string, accountId: string, bankBalanceCents: number) {
   const account = await activeAccount(spaceId, accountId);
   if (!account.ok) return account;
-  const today = todayInSaoPaulo();
-  const [balances, page] = await Promise.all([
+  // Today's subscription charges first, so the balance has them (task 13).
+  await generateRecurringSafely(spaceId);
+  const [balances, entries] = await Promise.all([
     accountBalances(spaceId),
-    // The account's entries up to today, transfers into it included.
-    listTransactions(spaceId, { from: TRANSACTION_DATE_MIN, to: today, accountId }),
+    accountRecentEntries(spaceId, accountId, account.initialBalanceDate),
   ]);
   const appBalanceCents = balances.get(accountId) ?? 0;
   return {
@@ -47,81 +63,110 @@ export async function compareBalance(spaceId: string, accountId: string, bankBal
     appBalanceCents,
     bankBalanceCents,
     ...reconciliationDiff(appBalanceCents, bankBalanceCents),
-    entries: page.items.slice(0, RECENT_ENTRIES),
+    entries,
   };
 }
 
 export type Comparison = Extract<Awaited<ReturnType<typeof compareBalance>>, { ok: true }>;
 
+class TooLarge extends Error {}
+
+class Changed extends Error {
+  constructor(readonly appBalanceCents: number) {
+    super("changed");
+  }
+}
+
 /**
- * Records a reconciliation. When the balances match, it marks the account as reconciled today.
- * With `adjust` and a difference, it creates the adjustment that closes it (idempotent by
- * `clientId`) and marks the account, in one database transaction. Without `adjust`, a difference
- * writes nothing. The app's balance is computed here, never taken from the screen.
+ * Records a reconciliation, for the difference the screen showed (`expectedDiffCents`). The
+ * account is locked and its balance computed again inside the database transaction: if the
+ * difference isn't the one shown anymore (an entry came in, another device reconciled), nothing
+ * is written and the new app balance comes back. Otherwise a match marks the account as
+ * reconciled today, and with `adjust` a difference becomes the adjustment that closes it
+ * (idempotent by `clientId`), together with the mark.
  */
 export async function reconcileAccount(
   spaceId: string,
   userId: string,
   accountId: string,
   bankBalanceCents: number,
-  { adjust, clientId }: { adjust: boolean; clientId: string },
+  {
+    adjust,
+    clientId,
+    expectedDiffCents,
+  }: { adjust: boolean; clientId: string; expectedDiffCents: number },
 ): Promise<
-  | { ok: true; reconciled: boolean; diffCents: number; adjustmentId: string | null }
+  | { ok: true; reconciled: true; adjustment: { id: string; amountCents: number } | null }
+  | { ok: true; reconciled: false; appBalanceCents: number }
   | { ok: false; error: ReconcileError }
 > {
   const account = await activeAccount(spaceId, accountId);
   if (!account.ok) return account;
 
   // A retry of an adjustment that already went through answers with it.
-  const existing = await db.transaction.findUnique({
-    where: { spaceId_clientId: { spaceId, clientId } },
-    select: { id: true, adjustment: true, accountId: true },
-  });
-  if (existing?.adjustment && existing.accountId === accountId) {
-    return { ok: true, reconciled: true, diffCents: 0, adjustmentId: existing.id };
-  }
+  const done = await existingAdjustment(spaceId, clientId, accountId);
+  if (done) return { ok: true, reconciled: true, adjustment: done };
 
+  await generateRecurringSafely(spaceId);
   const today = todayInSaoPaulo();
-  const appBalanceCents = (await accountBalances(spaceId)).get(accountId) ?? 0;
-  const { diffCents } = reconciliationDiff(appBalanceCents, bankBalanceCents);
-  const adjustment = adjustmentFor(diffCents);
-  if (adjustment && !adjust) return { ok: true, reconciled: false, diffCents, adjustmentId: null };
-
-  const mark = {
-    reconciledOn: calendarDateToDb(today),
-    reconciledBalanceCents: bankBalanceCents,
-  };
   try {
-    const adjustmentId = await db.$transaction(async (tx) => {
-      await tx.account.update({ where: { id: accountId }, data: mark });
-      if (!adjustment) return null;
+    const adjustment = await db.$transaction(async (tx) => {
+      // Entries pointing to the account wait for this lock (their foreign key needs the row), and
+      // so does another reconciliation: the balance below is the one being closed.
+      await tx.$queryRaw`SELECT "id" FROM "Account" WHERE "id" = ${accountId} FOR UPDATE`;
+      const appBalanceCents = (await accountBalances(spaceId)).get(accountId) ?? 0;
+      const { diffCents } = reconciliationDiff(appBalanceCents, bankBalanceCents);
+      if (diffCents !== expectedDiffCents) throw new Changed(appBalanceCents);
+      const closing = adjustmentFor(diffCents);
+      if (closing && !adjust) throw new Changed(appBalanceCents);
+      if (closing && closing.amountCents > MAX_AMOUNT_CENTS) throw new TooLarge();
+      await tx.account.update({
+        where: { id: accountId },
+        data: {
+          reconciledOn: calendarDateToDb(today),
+          reconciledBalanceCents: bankBalanceCents,
+        },
+      });
+      if (!closing) return null;
       const created = await tx.transaction.create({
         data: {
           spaceId,
           clientId,
           createdById: userId,
-          type: adjustment.type,
-          amountCents: adjustment.amountCents,
+          type: closing.type,
+          amountCents: closing.amountCents,
           date: calendarDateToDb(today),
           method: "PIX",
           accountId,
           description: ADJUSTMENT_DESCRIPTION,
           adjustment: true,
         },
-        select: { id: true },
+        select: { id: true, amountCents: true },
       });
-      return created.id;
+      return created;
     });
-    return { ok: true, reconciled: true, diffCents, adjustmentId };
+    return { ok: true, reconciled: true, adjustment };
   } catch (error) {
+    if (error instanceof TooLarge) return { ok: false, error: "TOO_LARGE" };
+    if (error instanceof Changed) {
+      return { ok: true, reconciled: false, appBalanceCents: error.appBalanceCents };
+    }
     // The same clientId at the same instant (a double tap): the other one went through.
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
-      const winner = await db.transaction.findUnique({
-        where: { spaceId_clientId: { spaceId, clientId } },
-        select: { id: true },
-      });
-      if (winner) return { ok: true, reconciled: true, diffCents: 0, adjustmentId: winner.id };
+      const winner = await existingAdjustment(spaceId, clientId, accountId);
+      if (winner) return { ok: true, reconciled: true, adjustment: winner };
     }
     throw error;
   }
+}
+
+/** The adjustment of this account created with `clientId`, if any (never another entry). */
+async function existingAdjustment(spaceId: string, clientId: string, accountId: string) {
+  const row = await db.transaction.findUnique({
+    where: { spaceId_clientId: { spaceId, clientId } },
+    select: { id: true, amountCents: true, adjustment: true, accountId: true },
+  });
+  return row?.adjustment && row.accountId === accountId
+    ? { id: row.id, amountCents: row.amountCents }
+    : null;
 }

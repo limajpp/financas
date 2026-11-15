@@ -38,13 +38,15 @@ export async function compareBalanceAction(accountId: unknown, bankBalanceCents:
 
 /**
  * Marks the account as reconciled when it matches; with `adjust`, creates the adjustment that
- * closes the difference first. Returns the adjustment's id, for "Desfazer".
+ * closes the difference first. Only for the difference the screen showed: otherwise nothing is
+ * written and the new app balance comes back. Returns the adjustment, for "Desfazer".
  */
 export async function reconcileAccountAction(
   accountId: unknown,
   bankBalanceCents: unknown,
   adjust: unknown,
   clientId: unknown,
+  expectedDiffCents: unknown,
 ) {
   const [user, space] = await Promise.all([getCurrentUser(), getCurrentSpace()]);
   const id = accountIdSchema.safeParse(accountId);
@@ -52,12 +54,14 @@ export async function reconcileAccountAction(
   const balance = bankBalanceSchema.safeParse(bankBalanceCents);
   const parsedAdjust = z.boolean().safeParse(adjust);
   const parsedClientId = clientIdSchema.safeParse(clientId);
-  if (!balance.success || !parsedAdjust.success || !parsedClientId.success) {
+  const expected = z.number().int().safeParse(expectedDiffCents);
+  if (!balance.success || !parsedAdjust.success || !parsedClientId.success || !expected.success) {
     return { ok: false as const, error: "Dados inválidos." };
   }
   const result = await reconcileAccount(space.id, user.id, id.data, balance.data, {
     adjust: parsedAdjust.data,
     clientId: parsedClientId.data,
+    expectedDiffCents: expected.data,
   });
   if (!result.ok) return { ok: false as const, error: RECONCILE_ERROR_MESSAGES[result.error] };
   refresh();

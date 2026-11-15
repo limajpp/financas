@@ -59,8 +59,9 @@ export async function categoryUsage(spaceId: string, type: CategoryType): Promis
 export async function paymentMemory(spaceId: string, type: CategoryType): Promise<PaymentMemory> {
   const latest = (where: Prisma.TransactionWhereInput) =>
     db.transaction.findFirst({
-      // The method you last chose, not a subscription's monthly charge.
-      where: { spaceId, type, ...NOT_GENERATED, ...where },
+      // The method you last chose: not a subscription's monthly charge, nor a balance
+      // adjustment (task 21), whose method nobody chose.
+      where: { spaceId, type, ...NOT_GENERATED, adjustment: false, ...where },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       select: { method: true, accountId: true, cardId: true },
     });

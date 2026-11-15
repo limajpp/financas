@@ -76,6 +76,20 @@ test("CA5: com diferença, o ajuste deixa o saldo igual ao do banco e marca a co
   await expect(azul(page)).toContainText("Saldo atual R$ 850,00");
   await expect(azul(page)).toContainText(`Conferido em ${formatCalendarDate(todayInSaoPaulo())}`);
 
+  // "Desfazer" brings the difference back; the reconciliation date stays.
+  const toastItem = page.getByRole("listitem").filter({ hasText: "Ajuste de R$ 50,00 criado" });
+  await toastItem.hover();
+  await toastItem.getByRole("button", { name: "Desfazer" }).click();
+  await expect(page.getByText("Ajuste desfeito.")).toBeVisible();
+  await expect(azul(page)).toContainText("Saldo atual R$ 900,00");
+  await expect(azul(page)).toContainText("Conferido em");
+  await page.getByRole("button", { name: "Conferir saldo Banco Azul" }).click();
+  await dialog.getByLabel("Saldo no app do banco hoje em reais").fill("850,00");
+  await dialog.getByRole("button", { name: "Comparar" }).click();
+  await dialog.getByRole("button", { name: "Criar ajuste de R$ 50,00" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(azul(page)).toContainText("Saldo atual R$ 850,00");
+
   // Comparing again now matches.
   await page.getByRole("button", { name: "Conferir saldo Banco Azul" }).click();
   await dialog.getByLabel("Saldo no app do banco hoje em reais").fill("850,00");
@@ -86,10 +100,23 @@ test("CA5: com diferença, o ajuste deixa o saldo igual ao do banco e marca a co
   await expect(page.getByText("Conta conferida")).toBeVisible();
 });
 
-test("CA5: registrar o que falta abre o registro com o valor e o tipo", async ({ page }) => {
+test("CA5: registrar o que falta abre o registro com o valor, o tipo e a conta", async ({
+  page,
+}) => {
   test.slow();
   await setup(page);
-  const dialog = await compare(page, "1.020,00");
+  // A second account, so the prefill's account is not just the default one.
+  await visit(page, "/contas");
+  const accountDialog = page.getByRole("dialog");
+  await page.getByRole("button", { name: "Nova conta" }).click();
+  await accountDialog.getByLabel("Nome").fill("Banco Inter");
+  await accountDialog.getByLabel("Saldo inicial em reais").fill("0,00");
+  await accountDialog.getByRole("button", { name: "Salvar" }).click();
+  await expect(accountDialog).toBeHidden();
+  await page.getByRole("button", { name: "Conferir saldo Banco Inter" }).click();
+  await accountDialog.getByLabel("Saldo no app do banco hoje em reais").fill("120,00");
+  await accountDialog.getByRole("button", { name: "Comparar" }).click();
+  const dialog = accountDialog;
   await expect(dialog.getByRole("status")).toHaveText(
     "Faltam R$ 120,00 em entradas: um recebimento que não foi registrado?",
   );
@@ -100,8 +127,13 @@ test("CA5: registrar o que falta abre o registro com o valor e o tipo", async ({
   ).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator('output[aria-label="Valor"]')).toContainText("R$ 120,00");
   await expect(page.getByRole("button", { name: /^Forma de pagamento:/ })).toContainText(
-    "Banco Azul · Pix",
+    "Banco Inter · Pix",
   );
+
+  // An invalid prefill is ignored: a plain register screen.
+  await visit(page, "/registrar?valor=abc&tipo=despesa&conta=nada");
+  await expect(page).toHaveURL(/\/registrar$/);
+  await expect(page.locator('output[aria-label="Valor"]')).toContainText("R$ 0,00");
 });
 
 test("um saldo negativo no banco vira um ajuste de saída", async ({ page }) => {

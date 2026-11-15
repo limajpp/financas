@@ -14,6 +14,7 @@ import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/componen
 import { Label } from "@/components/ui/label";
 import { formatCalendarDate } from "@/domain/dates";
 import { formatBRL, parseBRL } from "@/domain/money";
+import { reconciliationDiff } from "@/domain/reconciliation";
 import { cn } from "@/lib/utils";
 import type { Comparison } from "@/server/reconciliation";
 
@@ -85,19 +86,27 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
           comparison.bankBalanceCents,
           adjust,
           clientId.current,
+          comparison.diffCents,
         );
       } catch {
         return setError(failed);
       }
       if (!result.ok) return setError(result.error);
       if (!result.reconciled) {
-        // Something changed meanwhile (another entry): compare again.
-        setComparison({ ...comparison, diffCents: result.diffCents });
-        return setError("O saldo mudou desde a comparação. Compare de novo.");
+        // An entry came in meanwhile: the comparison shows the new balance, with a new id for an
+        // adjustment of the new difference.
+        clientId.current = null;
+        setComparison({
+          ...comparison,
+          appBalanceCents: result.appBalanceCents,
+          ...reconciliationDiff(result.appBalanceCents, comparison.bankBalanceCents),
+        });
+        return setError("O saldo do app mudou desde a comparação. Confira os valores de novo.");
       }
-      const adjustmentId = result.adjustmentId;
-      if (adjustmentId) {
-        toast(`Ajuste de ${formatBRL(Math.abs(comparison.diffCents))} criado`, {
+      const adjustment = result.adjustment;
+      if (adjustment) {
+        const adjustmentId = adjustment.id;
+        toast(`Ajuste de ${formatBRL(adjustment.amountCents)} criado`, {
           duration: 5_000,
           action: {
             label: "Desfazer",
@@ -226,7 +235,10 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
           ) : (
             <>
               <Button asChild variant="outline" className="h-10">
-                <Link href={register}>Registrar o que falta</Link>
+                {/* The dialog closes: after registering, you come back and compare again. */}
+                <Link href={register} onClick={onDone}>
+                  Registrar o que falta
+                </Link>
               </Button>
               <Button className="h-10" disabled={pending} onClick={() => confirm(true)}>
                 Criar ajuste de {gap}

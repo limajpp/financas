@@ -6,6 +6,7 @@ const entry = (overrides: Partial<TotalsEntry>): TotalsEntry => ({
   type: "EXPENSE",
   amountCents: 1_000,
   categoryId: "mercado",
+  adjustment: false,
   ...overrides,
 });
 

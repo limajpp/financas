@@ -10,8 +10,9 @@ export type TotalsEntry = {
   type: TransactionType;
   amountCents: number;
   categoryId: string | null;
-  /** A balance adjustment (task 21): it moves the balance, never the indicators. */
-  adjustment?: boolean;
+  /** A balance adjustment (task 21): it moves the balance, never the indicators. Required, so no
+   * caller can forget to select it. */
+  adjustment: boolean;
 };
 
 function sumByCategory(entries: readonly TotalsEntry[], type: "EXPENSE" | "INCOME") {

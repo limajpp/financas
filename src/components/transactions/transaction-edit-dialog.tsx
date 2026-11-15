@@ -83,6 +83,7 @@ export function TransactionEditDialog({
 
 /** A balance adjustment (task 21): not edited, only deleted (then reconcile again). */
 function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => void }) {
+  const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -130,15 +131,26 @@ function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => vo
           {error}
         </p>
       )}
-      <ResponsiveDialogFooter>
-        <Button
-          variant="destructive"
-          className="h-10 w-full sm:w-auto"
-          disabled={pending}
-          onClick={remove}
-        >
-          Excluir
-        </Button>
+      <ResponsiveDialogFooter className="gap-2">
+        {confirming ? (
+          <>
+            <p className="self-center text-sm">Excluir este ajuste?</p>
+            <Button variant="ghost" className="h-10" onClick={() => setConfirming(false)}>
+              Cancelar
+            </Button>
+            <Button variant="destructive" className="h-10" disabled={pending} onClick={remove}>
+              Excluir
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="destructive"
+            className="h-10 w-full sm:w-auto"
+            onClick={() => setConfirming(true)}
+          >
+            Excluir
+          </Button>
+        )}
       </ResponsiveDialogFooter>
     </div>
   );

@@ -47,7 +47,8 @@ async function whereFor(spaceId: string, filters: TransactionFilters) {
     and.push({ OR: [{ accountId: filters.accountId }, { toAccountId: filters.accountId }] });
   }
   if (filters.cardId) and.push({ cardId: filters.cardId });
-  if (filters.method) and.push({ method: filters.method });
+  // A balance adjustment's method (task 21) is nobody's choice: it never matches a method filter.
+  if (filters.method) and.push({ method: filters.method, adjustment: false });
   if (filters.type) and.push({ type: filters.type });
   if (filters.counterpartyId) and.push({ counterpartyId: filters.counterpartyId });
   if (filters.categoryId === "none") {

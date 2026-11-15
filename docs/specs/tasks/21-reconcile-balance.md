@@ -69,13 +69,16 @@ De vez em quando, você abre o app do banco, digita o saldo que ele mostra e o a
 - **`src/domain/reconciliation.ts`**, funções puras com testes:
   - `reconciliationDiff(saldoNoApp, saldoNoBanco)` devolve a diferença (banco − app) e a direção: `MISSING_EXPENSE`, `MISSING_INCOME` ou `MATCH`;
   - `adjustmentFor(diferença)` devolve o tipo e o valor do ajuste, ou nada quando bate.
-- **`reconcileAccount(spaceId, contaId, saldoNoBanco, { adjust, clientId })`:**
-  - recalcula o saldo do app no servidor, sem confiar no que a tela mostrou;
+- **`reconcileAccount(spaceId, contaId, saldoNoBanco, { adjust, clientId, expectedDiffCents })`:**
+  - trava a conta e recalcula o saldo do app no servidor, dentro da transação do banco, sem confiar no que a tela mostrou;
+  - se a diferença não é mais a que a tela mostrou (`expectedDiffCents`), não grava nada e devolve o saldo novo. A tela atualiza a comparação e avisa;
   - quando bate, grava a conferência;
   - com `adjust` e diferença, cria o ajuste, idempotente pelo `clientId` como os outros lançamentos, e grava a conferência, na mesma transação do banco;
   - sem `adjust` e com diferença, devolve a diferença e não grava nada;
   - uma conta de outro espaço, ou arquivada, é recusada.
-- **`accountRecentEntries(spaceId, contaId)`:** os 10 lançamentos mais recentes que mexem na conta, até hoje.
+- **`accountRecentEntries(spaceId, contaId, desde)`:** os 10 lançamentos mais recentes da conta, do dia do saldo inicial até hoje.
+- **Antes de comparar e de conferir,** as cobranças de assinatura vencidas são geradas (task 13), para o saldo já ter as de hoje.
+- **O ajuste também fica fora** da forma de pagamento que o registro lembra e do filtro de forma da lista: a forma dele não é escolha de ninguém.
 - **Server Actions com Zod:**
   - comparar: devolve o saldo do app, a diferença e os lançamentos;
   - confirmar: marca como conferido, ou cria o ajuste;
@@ -115,6 +118,34 @@ De vez em quando, você abre o app do banco, digita o saldo que ele mostra e o a
 - **A conferência só é gravada quando bate**, seja por estar certo, seja pelo ajuste. "Conferido em" quer dizer "o app e o banco batiam nesse dia".
 - **"Registrar o que falta" leva ao registro normal** em vez de um formulário no diálogo. O registro já tem a memória, as categorias e a fila offline.
 - **Sem tolerância e sem casar linha a linha.** Casar com o extrato é a fase de importação, fora da v1 (design).
+
+## Revisão
+
+O revisor (Opus, effort high) pediu mudanças, sem bloqueios. Corrigido:
+
+- **O ajuste virava a forma de pagamento padrão do registro** (era o último lançamento do tipo): o registro passava a abrir em "conta · Pix". Agora o ajuste fica fora da memória de pagamento. Há teste.
+- **O diálogo ficava aberto e desatualizado depois de "Registrar o que falta".** Ao voltar para `/contas`, o botão ainda oferecia o ajuste do valor antigo. Agora o diálogo fecha no link. O servidor só confere a diferença que a tela mostrou; se ela mudou, nada é gravado e a tela mostra os valores novos. O aviso usa o valor gravado.
+- **Uma resposta "o saldo mudou"** deixava a tela dizendo "bate". Agora a comparação é refeita com o saldo novo.
+- **Dois aparelhos conferindo ao mesmo tempo** criavam dois ajustes. A conta é travada e o saldo recalculado dentro da transação: o segundo vê a diferença nova e não grava. Há teste.
+- **O `clientId` de um lançamento comum** nunca é tomado como o ajuste.
+- **"Excluir" um ajuste** pede confirmação, como os outros lançamentos.
+- **As assinaturas de hoje** são geradas antes de comparar.
+- **A lista do diálogo** começa no dia do saldo inicial.
+- **O filtro de forma "Pix" da lista** não traz ajustes.
+- **O campo `adjustment` nos totais é obrigatório**, para nenhum chamador futuro (o dashboard, task 23) esquecer de selecioná-lo.
+- **Uma diferença acima de R$ 20.000.000,00** é recusada com mensagem, em vez de estourar o banco.
+- **Testes novos:**
+  - a memória de pagamento;
+  - a corrida entre aparelhos;
+  - o saldo que mudou;
+  - o `clientId` de outro lançamento;
+  - a conta arquivada na comparação;
+  - o `CHECK` conferido pelo nome, incluindo uma transferência;
+  - no e2e, o "Desfazer" do ajuste, o preenchimento com uma segunda conta e uma URL inválida no registro.
+
+Aceito:
+
+- **O resultado é anunciado pelo `role="status"`**, sem mover o foco para ele. Alguns leitores de tela podem não ler um status montado já com o texto. Fica para a revisão de acessibilidade (task 26).
 
 ## Fora do escopo
 
