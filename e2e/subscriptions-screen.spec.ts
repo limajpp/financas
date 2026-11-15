@@ -65,6 +65,11 @@ test("CA6: totais por mês e por ano; pausar e cancelar tiram dos totais", async
   await section(page, "Ativas")
     .getByRole("button", { name: /Streaming/ })
     .click();
+  // "Ver cobranças": the counterparty, from the 1st charge's month up to today.
+  await expect(dialog.getByRole("link", { name: "Ver cobranças" })).toHaveAttribute(
+    "href",
+    /^\/lancamentos\?estabelecimento=[\w-]+&de=\d{4}-\d{2}-01&ate=\d{4}-\d{2}-\d{2}$/,
+  );
   await dialog.getByRole("button", { name: "Pausar" }).click();
   await expect(dialog).toContainText("Os meses pausados não são cobrados.");
   await dialog.getByRole("button", { name: "Pausar" }).click();
@@ -84,6 +89,10 @@ test("CA6: totais por mês e por ano; pausar e cancelar tiram dos totais", async
   await expect(totals(page)).toContainText("R$ 0,00");
   await expect(page.getByText("Nenhuma assinatura ativa.")).toBeVisible();
   await page.getByRole("button", { name: /^Mostrar canceladas/ }).click();
+  await expect(page.getByRole("button", { name: "Ocultar canceladas" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
   await expect(section(page, "Canceladas")).toContainText("Academia");
   await expect(section(page, "Canceladas")).toContainText("Cancelada em");
 });

@@ -5,7 +5,7 @@ import { Suspense } from "react";
 import { SubscriptionList } from "@/components/subscriptions/subscription-list";
 import { Button } from "@/components/ui/button";
 import { listOptions } from "@/server/list-options";
-import { generateRecurringSafely, listSubscriptions } from "@/server/recurring";
+import { listSubscriptions } from "@/server/recurring";
 import { getCurrentSpace } from "@/server/session";
 
 export const metadata: Metadata = { title: "Assinaturas · Finanças" };
@@ -23,8 +23,6 @@ export default function AssinaturasPage() {
 
 async function Subscriptions() {
   const space = await getCurrentSpace();
-  // The charges up to today first, so each next date is the real next one (task 13).
-  await generateRecurringSafely(space.id);
   const [subscriptions, options] = await Promise.all([
     listSubscriptions(space.id),
     listOptions(space.id),

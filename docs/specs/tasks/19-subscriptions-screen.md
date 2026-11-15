@@ -92,6 +92,25 @@ Tocar numa linha abre um diálogo (folha de baixo no celular) com os detalhes e 
 - **Mudar o dia mantém o cursor.** É a forma de nunca cobrar duas vezes o mesmo mês, que o banco também garante (task 13).
 - **Canceladas escondidas por padrão.** Viram ruído rápido, mas o histórico continua lá.
 
+## Revisão
+
+O revisor (Opus, effort high) pediu mudanças, sem bloqueios. Corrigido:
+
+- **"Ver cobranças" mostrava só o mês da 1ª cobrança:** sem `ate`, a lista fecha o período no fim do mês de `de`. O link agora vai até hoje. O e2e confere o endereço.
+- **A linha não dizia a categoria** quando a assinatura tem estabelecimento (o ícone é decorativo). Agora a linha é "Todo dia 8 · Cartão Roxo · Lazer".
+- **Editar com a tela aberta há dias** podia lançar o mês já vencido nos termos novos. A edição gera antes as cobranças vencidas, nos termos antigos. Há teste.
+- **O "valor anterior" do histórico podia sair errado** se outra aba mudasse o valor no meio da edição. A gravação só acontece se o valor ainda for o lido, e senão a edição relê (até 3 vezes, e então "A assinatura mudou enquanto você editava. Tente de novo.").
+- **`listSubscriptions` gera as cobranças vencidas** ela mesma, e não só a página.
+- **"Mostrar canceladas"** virou um botão que alterna, com `aria-expanded` e "Ocultar canceladas".
+- **Testes novos:** a próxima cobrança com o mês atual já cobrado, o cartão de outro espaço e a conta arquivada mantida.
+
+Aceito:
+
+- **A confirmação diz "Pausar Netflix?"**, sem artigo. O app não sabe o gênero do nome.
+- **"Ver cobranças" também nas canceladas.** Não muda nada, e o histórico delas continua útil.
+- **A tela carrega as opções completas da lista de lançamentos** (`listOptions`). Elas sobram um pouco, mas evitam uma segunda consulta parecida.
+- **`refsFor` continua em `server/transactions`**, com uma importação circular segura: as duas pontas só usam funções na hora da chamada.
+
 ## Fora do escopo
 
 - Criar assinatura pela tela (continua pelo registro, task 13).

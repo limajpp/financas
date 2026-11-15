@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatCalendarDate } from "@/domain/dates";
+import { formatCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { formatBRL, formatBRLInput, parseBRL } from "@/domain/money";
 import { subscriptionTotals } from "@/domain/subscriptions";
 import {
@@ -90,18 +90,19 @@ export function SubscriptionList({
 
       <Section title="Ativas" empty="Nenhuma assinatura ativa." rules={active} onOpen={setOpenId} />
       {paused.length > 0 && <Section title="Pausadas" rules={paused} onOpen={setOpenId} />}
-      {canceled.length > 0 &&
-        (showCanceled ? (
-          <Section title="Canceladas" rules={canceled} onOpen={setOpenId} />
-        ) : (
+      {canceled.length > 0 && (
+        <>
           <Button
             variant="ghost"
             className="h-10 justify-self-start"
-            onClick={() => setShowCanceled(true)}
+            aria-expanded={showCanceled}
+            onClick={() => setShowCanceled((shown) => !shown)}
           >
-            Mostrar canceladas ({canceled.length})
+            {showCanceled ? "Ocultar canceladas" : `Mostrar canceladas (${canceled.length})`}
           </Button>
-        ))}
+          {showCanceled && <Section title="Canceladas" rules={canceled} onOpen={setOpenId} />}
+        </>
+      )}
 
       <SubscriptionDialog rule={open} options={options} onClose={() => setOpenId(null)} />
     </div>
@@ -152,6 +153,7 @@ function Section({
                   <span className="truncate font-medium">{nameOf(rule)}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     Todo dia {rule.dayOfMonth} · {placeOf(rule)}
+                    {rule.category && ` · ${rule.category.name}`}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     <StatusLine rule={rule} />
@@ -268,6 +270,7 @@ function DialogBody({
     `/lancamentos?${new URLSearchParams({
       [FILTER_PARAMS.counterpartyId]: rule.counterparty.id,
       [FILTER_PARAMS.from]: `${rule.firstMonth}-01`,
+      [FILTER_PARAMS.to]: todayInSaoPaulo(),
     })}`;
 
   return (

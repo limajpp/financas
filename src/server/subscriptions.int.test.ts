@@ -630,6 +630,48 @@ describe("tela de assinaturas (task 19)", () => {
     expect(await db.recurringRuleChange.count()).toBe(0);
   });
 
+  it("CA3: com o mês atual já cobrado, a próxima cobrança é no mês seguinte", async () => {
+    const s = await setup();
+    await subscribe(s, "2026-09-05");
+    on("2026-10-10");
+    const [rule] = await listSubscriptions(s.spaceId);
+    expect(rule!.nextCharge).toBe("2026-11-05");
+  });
+
+  it("CA4: recusa cartão de outro espaço; mantém conta arquivada que a regra já tinha", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    expect(
+      await editRecurringRule(
+        s.spaceId,
+        ruleId,
+        edit(s, { method: "CREDIT", accountId: null, cardId: bia.cardId }),
+      ),
+    ).toEqual({ ok: false, error: "CARD_NOT_FOUND" });
+    await db.account.update({ where: { id: s.accountId }, data: { archivedAt: new Date() } });
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 4_990 }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it("editar com a tela aberta há dias cobra antes o mês vencido nos termos antigos", async () => {
+    const s = await setup();
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    // October's charge (05/10) is due, but nothing generated it yet.
+    on("2026-10-15");
+    expect(
+      await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 4_990, dayOfMonth: 20 })),
+    ).toEqual({ ok: true });
+    const rows = await charges(ruleId);
+    expect(
+      rows.map((r) => [r.recurringMonth, r.date.toISOString().slice(0, 10), r.amountCents]),
+    ).toEqual([
+      ["2026-09", "2026-09-05", 3_990],
+      ["2026-10", "2026-10-05", 3_990],
+    ]);
+  });
+
   it("a lista traz próxima cobrança, mudança recente, pausa e cancelamento, só do espaço", async () => {
     const s = await setup();
     const bia = await setup("bia@example.com");

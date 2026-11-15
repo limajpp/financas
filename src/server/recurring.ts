@@ -21,11 +21,12 @@ import { TRANSACTION_ERROR_MESSAGES, type TransactionError } from "@/domain/tran
 import { db } from "@/lib/db";
 import { refsFor } from "@/server/transactions";
 
-export type RuleError = "NOT_FOUND" | "CANCELED";
+export type RuleError = "NOT_FOUND" | "CANCELED" | "CHANGED";
 
 export const RULE_ERROR_MESSAGES: Record<RuleError, string> = {
   NOT_FOUND: "Assinatura não encontrada.",
   CANCELED: "Essa assinatura foi cancelada.",
+  CHANGED: "A assinatura mudou enquanto você editava. Tente de novo.",
 };
 
 /**
@@ -230,6 +231,22 @@ export async function editRecurringRule(
   id: string,
   input: RuleEditInput,
 ): Promise<{ ok: true } | { ok: false; error: RuleError | TransactionError }> {
+  // The charges already due go out on the old terms first: the edit is for the next ones.
+  await generateRecurringSafely(spaceId);
+  // The amount is read, then written only if unchanged (the history's "previous" must be right);
+  // an amount changed in between (another tab's "Atualizar a assinatura?") means reading again.
+  for (let attempt = 1; ; attempt++) {
+    const result = await editOnce(spaceId, id, input);
+    if (result !== "RETRY") return result;
+    if (attempt >= 3) return { ok: false, error: "CHANGED" };
+  }
+}
+
+async function editOnce(
+  spaceId: string,
+  id: string,
+  input: RuleEditInput,
+): Promise<{ ok: true } | { ok: false; error: RuleError | TransactionError } | "RETRY"> {
   const rule = await db.recurringRule.findFirst({
     where: { id, spaceId },
     select: { amountCents: true, status: true, accountId: true, cardId: true, categoryId: true },
@@ -257,9 +274,10 @@ export async function editRecurringRule(
   if (!checked.ok) return checked;
 
   const updated = await db.$transaction(async (tx) => {
-    // Conditional: a cancel in the meantime wins (canceling is final).
+    // Conditional: a cancel in the meantime wins (canceling is final), and the amount is the one
+    // read above.
     const written = await tx.recurringRule.updateMany({
-      where: { id, spaceId, status: { not: "CANCELED" } },
+      where: { id, spaceId, status: { not: "CANCELED" }, amountCents: rule.amountCents },
       data: {
         amountCents: input.amountCents,
         dayOfMonth: input.dayOfMonth,
@@ -283,15 +301,19 @@ export async function editRecurringRule(
     return written.count;
   });
   if (updated === 0) {
-    const now = await db.recurringRule.findFirst({ where: { id, spaceId }, select: { id: true } });
-    return { ok: false, error: now ? "CANCELED" : "NOT_FOUND" };
+    const now = await db.recurringRule.findFirst({
+      where: { id, spaceId },
+      select: { status: true },
+    });
+    if (!now) return { ok: false, error: "NOT_FOUND" };
+    return now.status === "CANCELED" ? { ok: false, error: "CANCELED" } : "RETRY";
   }
   return { ok: true };
 }
 
 /** The message of an edit error: the subscription's own, or the one an expense would get. */
 export function ruleEditMessage(error: RuleError | TransactionError) {
-  return error === "NOT_FOUND" || error === "CANCELED"
+  return error === "NOT_FOUND" || error === "CANCELED" || error === "CHANGED"
     ? RULE_ERROR_MESSAGES[error]
     : TRANSACTION_ERROR_MESSAGES[error];
 }
@@ -302,6 +324,8 @@ export function ruleEditMessage(error: RuleError | TransactionError) {
  * the last 90 days.
  */
 export async function listSubscriptions(spaceId: string) {
+  // The charges up to today first, so each next date is the real next one (task 13).
+  await generateRecurringSafely(spaceId);
   const today = todayInSaoPaulo();
   const rules = await db.recurringRule.findMany({
     where: { spaceId },
