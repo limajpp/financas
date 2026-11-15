@@ -9,5 +9,7 @@ export type AccountView = {
   initialBalanceDate: CalendarDate;
   /** Today's balance: the initial one plus the entries after its day (src/domain/balance.ts). */
   currentBalanceCents: number;
+  /** The last day the balance matched the bank's (task 21), or null when never reconciled. */
+  reconciledOn: CalendarDate | null;
   archived: boolean;
 };

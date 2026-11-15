@@ -33,7 +33,12 @@ import { INSTALLMENTS_MAX, INSTALLMENTS_MIN, splitAmount } from "@/domain/instal
 import { cycleOn, invoiceFor, shiftInvoice } from "@/domain/invoice-cycle";
 import { formatBRL } from "@/domain/money";
 import type { OutboxItem } from "@/domain/outbox";
-import type { PaymentChoice, TransferChoice } from "@/domain/register";
+import {
+  type PaymentChoice,
+  type RegisterPrefill,
+  type TransferChoice,
+  parsePrefill,
+} from "@/domain/register";
 import {
   COUNTERPARTY_NAME_MAX,
   DESCRIPTION_MAX,
@@ -136,7 +141,10 @@ export function RegisterForm({
   );
   const today = deviceToday > serverToday ? deviceToday : serverToday;
   // "Corrigir" on an entry the server refused (task 16): the queue item being fixed.
-  const fixId = useSearchParams().get("corrigir");
+  const searchParams = useSearchParams();
+  const fixId = searchParams.get("corrigir");
+  // "Registrar o que falta" (task 21): the amount, type and account come in the URL.
+  const prefillKey = ["valor", "tipo", "conta"].map((k) => searchParams.get(k) ?? "").join("|");
   const [fixing, setFixing] = useState<OutboxItem | null>(null);
   const [kind, setKind] = useState<Kind>("EXPENSE");
   // The entry type behind the expense/income parts (hidden while on a transfer).
@@ -432,10 +440,30 @@ export function RegisterForm({
     }
     setError(item.error ?? null);
   }
+  /** Starts a blank entry with the amount, type and account a reconciliation asked for. */
+  function startFromUrl(next: RegisterPrefill) {
+    reset();
+    setKind(next.type);
+    setCents(next.cents);
+    setPayments((current) => ({
+      ...current,
+      [next.type]: { method: "PIX", accountId: next.accountId, cardId: current[next.type].cardId },
+    }));
+  }
   const fillRef = useRef(fill);
+  const startFromUrlRef = useRef(startFromUrl);
   useEffect(() => {
     fillRef.current = fill;
+    startFromUrlRef.current = startFromUrl;
   });
+  useEffect(() => {
+    if (prefillKey === "||") return;
+    const [valor, tipo, conta] = prefillKey.split("|");
+    const next = parsePrefill({ valor: valor!, tipo: tipo!, conta: conta! }, accounts);
+    if (next) startFromUrlRef.current(next);
+    // Applied once: a later visit to the screen starts blank.
+    router.replace("/registrar");
+  }, [prefillKey, accounts, router]);
   useEffect(() => {
     if (!fixId) return;
     let stale = false;

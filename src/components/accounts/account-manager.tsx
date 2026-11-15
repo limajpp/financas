@@ -17,6 +17,7 @@ import { CardManager } from "@/components/cards/card-manager";
 import type { CardView } from "@/components/cards/types";
 
 import { AccountDialog, type AccountDialogState } from "./account-dialog";
+import { ReconcileDialog } from "./reconcile-dialog";
 import type { AccountView } from "./types";
 
 /** The accounts screen: accounts first, then the credit cards they pay. One archived toggle for both. */
@@ -29,6 +30,7 @@ export function AccountManager({
 }) {
   const [showArchived, setShowArchived] = useState(false);
   const [dialog, setDialog] = useState<AccountDialogState | null>(null);
+  const [reconciling, setReconciling] = useState<AccountView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -105,6 +107,22 @@ export function AccountManager({
                   </span>{" "}
                   em {formatCalendarDate(account.initialBalanceDate)}
                 </p>
+                <p className="text-sm text-muted-foreground">
+                  {account.reconciledOn
+                    ? `Conferido em ${formatCalendarDate(account.reconciledOn)}`
+                    : "Nunca conferido"}
+                </p>
+                {!account.archived && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mt-2"
+                    aria-label={`Conferir saldo ${account.name}`}
+                    onClick={() => setReconciling(account)}
+                  >
+                    Conferir saldo
+                  </Button>
+                )}
               </div>
               <p
                 className={cn(
@@ -140,6 +158,7 @@ export function AccountManager({
       )}
 
       <AccountDialog state={dialog} onClose={() => setDialog(null)} />
+      <ReconcileDialog account={reconciling} onClose={() => setReconciling(null)} />
 
       <CardManager
         cards={cards}

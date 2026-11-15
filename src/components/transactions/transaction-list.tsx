@@ -55,7 +55,9 @@ function periodLabel(filters: TransactionFilters) {
   return `${formatCalendarDate(filters.from)} – ${formatCalendarDate(filters.to)}`;
 }
 
-const selectable = (item: ListItemView) => item.type === "EXPENSE" || item.type === "INCOME";
+/** What bulk categorization takes: expenses and incomes, never a balance adjustment (task 21). */
+const selectable = (item: ListItemView) =>
+  (item.type === "EXPENSE" || item.type === "INCOME") && !item.adjustment;
 
 export function TransactionList({
   filters,
@@ -307,7 +309,7 @@ export function TransactionList({
 }
 
 function categoryName(item: ListItemView) {
-  if (item.type !== "EXPENSE" && item.type !== "INCOME")
+  if ((item.type !== "EXPENSE" && item.type !== "INCOME") || item.adjustment)
     return <span className="text-muted-foreground">—</span>;
   if (!item.category) return <span className="text-muted-foreground">Sem categoria</span>;
   return (

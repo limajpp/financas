@@ -64,11 +64,83 @@ export function TransactionEditDialog({
   return (
     <Dialog open={item !== null} onOpenChange={(open) => !open && onClose()}>
       <ResponsiveDialogContent>
-        {shown && (
-          <EditForm key={shown.id} item={shown} options={options} today={today} onDone={onClose} />
-        )}
+        {shown &&
+          (shown.adjustment ? (
+            <AdjustmentView key={shown.id} item={shown} onDone={onClose} />
+          ) : (
+            <EditForm
+              key={shown.id}
+              item={shown}
+              options={options}
+              today={today}
+              onDone={onClose}
+            />
+          ))}
       </ResponsiveDialogContent>
     </Dialog>
+  );
+}
+
+/** A balance adjustment (task 21): not edited, only deleted (then reconcile again). */
+function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function remove() {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const result = await deleteTransactionAction(item.id);
+        if (!result.ok) return setError(result.error);
+      } catch {
+        return setError("Não foi possível excluir. Verifique a conexão e tente de novo.");
+      }
+      toast("Ajuste excluído");
+      onDone();
+    });
+  }
+
+  return (
+    <div className="grid gap-4">
+      <DialogHeader>
+        <DialogTitle>Ajuste de saldo</DialogTitle>
+        <DialogDescription>
+          Criado na conferência de saldo. Não se edita: para mudar, exclua e confira de novo.
+        </DialogDescription>
+      </DialogHeader>
+      <dl className="grid gap-2 text-sm">
+        <div className="flex gap-2">
+          <dt className="w-20 text-muted-foreground">Conta</dt>
+          <dd>{item.account?.name}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="w-20 text-muted-foreground">Data</dt>
+          <dd>{formatCalendarDate(item.date)}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="w-20 text-muted-foreground">Valor</dt>
+          <dd className="tabular-nums">
+            {item.type === "EXPENSE" ? "−" : "+"}
+            {formatBRL(item.amountCents)}
+          </dd>
+        </div>
+      </dl>
+      {error && (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      )}
+      <ResponsiveDialogFooter>
+        <Button
+          variant="destructive"
+          className="h-10 w-full sm:w-auto"
+          disabled={pending}
+          onClick={remove}
+        >
+          Excluir
+        </Button>
+      </ResponsiveDialogFooter>
+    </div>
   );
 }
 
