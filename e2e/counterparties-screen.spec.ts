@@ -61,15 +61,27 @@ test("CA5: o ranking por valor e por frequência, e o detalhe com total e ticket
   await expect(ranking(page).nth(1)).toContainText("Padaria");
   await expect(ranking(page).nth(1)).toContainText("3 compras");
 
+  // The search finds any counterparty in use.
+  await page.getByPlaceholder("Buscar estabelecimento").fill("merc");
+  await expect(
+    page.getByRole("list", { name: "Resultados da busca" }).getByRole("link"),
+  ).toHaveText(["Mercado Central"]);
+  await page.getByPlaceholder("Buscar estabelecimento").fill("");
+
   await page.getByRole("group", { name: "Ordem" }).getByText("Por frequência").click();
   await expect(ranking(page).nth(0)).toContainText("Padaria");
 
   await ranking(page).nth(0).getByRole("link").click();
   await expect(page.getByRole("heading", { name: "Padaria", level: 1 })).toBeVisible();
   const numbers = page.getByRole("region", { name: "Números do período" });
-  await expect(numbers).toContainText("R$ 30,00");
-  await expect(numbers).toContainText("3");
-  await expect(numbers).toContainText("R$ 10,00");
+  const stat = (label: string) =>
+    numbers
+      .locator("div")
+      .filter({ has: page.getByText(label, { exact: true }) })
+      .locator("dd");
+  await expect(stat("Total")).toHaveText("R$ 30,00");
+  await expect(stat("Compras")).toHaveText("3");
+  await expect(stat("Ticket médio")).toHaveText("R$ 10,00");
   await expect(page.getByRole("list", { name: "Lançamentos" }).getByRole("listitem")).toHaveCount(
     3,
   );

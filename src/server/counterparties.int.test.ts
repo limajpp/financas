@@ -230,6 +230,57 @@ describe("editar a memória", () => {
   });
 });
 
+describe("editar a memória: casos de borda", () => {
+  const memory = (over: Record<string, unknown> = {}) =>
+    memorySchema.parse({ name: "Padaria do bairro", aliases: [], defaultCategoryId: "", ...over });
+
+  it("nome repetido só por acento também é recusado", async () => {
+    const s = await setup();
+    await spend(s, "Padaria", 1_000);
+    await spend(s, "Padaria São João", 1_000);
+    const id = await idOf(s, "Padaria");
+    expect(await updateCounterparty(s.spaceId, id, memory({ name: "padaria sao joao" }))).toEqual({
+      ok: false,
+      error: "NAME_TAKEN",
+    });
+  });
+
+  it("um órfão (sem lançamentos) com o nome não impede renomear: ele sai", async () => {
+    const s = await setup();
+    await spend(s, "Padaria", 1_000);
+    const orphan = await db.counterparty.create({
+      data: { spaceId: s.spaceId, name: "Padaria do bairro", nameKey: "padaria do bairro" },
+    });
+    const id = await idOf(s, "Padaria");
+    expect(await updateCounterparty(s.spaceId, id, memory())).toEqual({ ok: true });
+    expect(await db.counterparty.findUnique({ where: { id: orphan.id } })).toBeNull();
+  });
+
+  it("categoria arquivada é recusada, a não ser que já fosse a padrão", async () => {
+    const s = await setup();
+    await spend(s, "Padaria", 1_000);
+    const id = await idOf(s, "Padaria");
+    expect(
+      await updateCounterparty(s.spaceId, id, memory({ defaultCategoryId: s.lazer.id })),
+    ).toEqual({ ok: true });
+    await db.category.update({ where: { id: s.lazer.id }, data: { archivedAt: new Date() } });
+    expect(
+      await updateCounterparty(
+        s.spaceId,
+        id,
+        memory({ defaultCategoryId: s.lazer.id, defaultDescription: "Pão" }),
+      ),
+    ).toEqual({ ok: true });
+    const other = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Transporte" },
+    });
+    await db.category.update({ where: { id: other.id }, data: { archivedAt: new Date() } });
+    expect(
+      await updateCounterparty(s.spaceId, id, memory({ defaultCategoryId: other.id })),
+    ).toEqual({ ok: false, error: "CATEGORY_ARCHIVED" });
+  });
+});
+
 describe("mesclar", () => {
   it("CA3: move lançamentos e assinaturas, junta apelidos, herda o que falta e apaga o absorvido", async () => {
     const s = await setup();
@@ -241,6 +292,10 @@ describe("mesclar", () => {
     await spend(s, "Padaria Sao Joao", 3_000, { date: "2026-10-05", subscription: true });
     const keep = await idOf(s, "Padaria do bairro");
     const absorbed = await idOf(s, "Padaria Sao Joao");
+    await db.counterparty.update({
+      where: { id: absorbed },
+      data: { defaultCategoryId: s.lazer.id, defaultDescription: "Pão francês" },
+    });
 
     expect(await mergePreview(s.spaceId, keep, absorbed)).toMatchObject({
       ok: true,
@@ -256,6 +311,8 @@ describe("mesclar", () => {
     expect(await db.counterparty.findUniqueOrThrow({ where: { id: keep } })).toMatchObject({
       aliases: ["PAG*PADARIA SJ", "Padaria Sao Joao"],
       document: "12345678000195",
+      defaultCategoryId: s.lazer.id,
+      defaultDescription: "Pão francês",
     });
     // The old name now finds the kept one.
     const again = await spend(s, "Padaria Sao Joao", 500);

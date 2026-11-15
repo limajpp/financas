@@ -2,6 +2,7 @@ import "server-only";
 
 import { type Period, averageTicket, mergeMemory, periodRange } from "@/domain/counterparties";
 import { calendarDateToDb, todayInSaoPaulo } from "@/domain/dates";
+import { GENERATED_CLIENT_ID_PREFIX } from "@/domain/recurring";
 import { normalizeName } from "@/domain/names";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "@/lib/db";
@@ -40,9 +41,16 @@ export async function counterpartyRanking(spaceId: string, period: Period) {
       where: { ...where, ...ONE_PER_PURCHASE },
       _count: { _all: true },
     }),
+    // The most used category counts like the register's usage (task 10): a purchase in
+    // installments once, and no charge the generation made.
     db.transaction.groupBy({
       by: ["counterpartyId", "categoryId"],
-      where: { ...where, categoryId: { not: null } },
+      where: {
+        ...where,
+        ...ONE_PER_PURCHASE,
+        categoryId: { not: null },
+        NOT: { clientId: { startsWith: GENERATED_CLIENT_ID_PREFIX } },
+      },
       _count: { _all: true },
       _max: { createdAt: true },
     }),
@@ -174,12 +182,28 @@ export async function updateCounterparty(
       return { ok: false, error: "CATEGORY_ARCHIVED" };
     }
   }
+  const nameKey = normalizeName(input.name);
   try {
-    const { count } = await db.counterparty.updateMany({
-      where: { id, spaceId },
-      data: { ...input, nameKey: normalizeName(input.name) },
+    return await db.$transaction(async (tx) => {
+      // An orphan (no entries, no subscriptions: a lost race of task 8) holding the name gives it
+      // up: it shows nowhere, so nothing could be merged with it.
+      await tx.counterparty.deleteMany({
+        where: {
+          spaceId,
+          nameKey,
+          id: { not: id },
+          transactions: { none: {} },
+          recurringRules: { none: {} },
+        },
+      });
+      const { count } = await tx.counterparty.updateMany({
+        where: { id, spaceId },
+        data: { ...input, nameKey },
+      });
+      return count > 0
+        ? { ok: true as const }
+        : { ok: false as const, error: "NOT_FOUND" as const };
     });
-    return count > 0 ? { ok: true } : { ok: false, error: "NOT_FOUND" };
   } catch (error) {
     if (isUniqueViolation(error)) return { ok: false, error: "NAME_TAKEN" };
     throw error;
@@ -234,7 +258,16 @@ export async function mergeCounterparties(
 ): Promise<{ ok: true; moved: number } | { ok: false; error: CounterpartyError }> {
   if (keepId === absorbedId) return { ok: false, error: "SAME_COUNTERPARTY" };
   return db.$transaction(async (tx) => {
-    // Locks both rows (in id order, so two opposite merges can't deadlock) until the end.
+    // The absorbed one's subscriptions first: the generation (task 13) locks a rule and then
+    // inserts a charge pointing to its counterparty. Taking the rules before the counterparty
+    // keeps the same order, so the two can't deadlock.
+    await tx.$queryRaw`
+      SELECT "id" FROM "RecurringRule"
+      WHERE "spaceId" = ${spaceId} AND "counterpartyId" = ${absorbedId}
+      ORDER BY "id" FOR UPDATE
+    `;
+    // Then both counterparties until the end (in id order, so two opposite merges can't
+    // deadlock).
     const locked = await tx.$queryRaw<{ id: string }[]>`
       SELECT "id" FROM "Counterparty"
       WHERE "spaceId" = ${spaceId} AND "id" IN (${keepId}, ${absorbedId})

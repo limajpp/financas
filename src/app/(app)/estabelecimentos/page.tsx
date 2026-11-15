@@ -30,11 +30,6 @@ async function Ranking({ searchParams }: { searchParams: Promise<Params> }) {
     listOptions(space.id),
   ]);
   return (
-    <CounterpartyRanking
-      key={period}
-      period={period}
-      rows={rows}
-      counterparties={options.counterparties}
-    />
+    <CounterpartyRanking period={period} rows={rows} counterparties={options.counterparties} />
   );
 }

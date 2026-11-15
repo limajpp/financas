@@ -69,7 +69,7 @@ O botão "Editar" abre um diálogo com:
   - `periodRange(período, hoje)`: o intervalo de datas de cada opção. "Últimos 3 meses" é o mês atual e os 2 anteriores; "Este ano" vai de 1º de janeiro até o fim do ano;
   - `averageTicket(total, compras)`: o ticket médio, ou nulo sem compras;
   - `mergeMemory(fica, absorvido)`: os apelidos, o documento e os padrões resultantes;
-  - `validateMemoryEdit`: nome, apelidos e documento.
+  - `cleanAliases(nome, apelidos)`: tira os vazios, os repetidos e o próprio nome. O resto da validação (nome, documento, limites) fica no schema Zod `memorySchema`, que usa `parseDocument`.
 - **`counterpartyRanking(spaceId, período)`:** uma agregação no banco (`groupBy` por estabelecimento) para o total e outra para as compras. A categoria mais usada vem de uma terceira consulta, sem trazer todos os lançamentos.
 - **`counterpartyDetail(spaceId, id, período)`, `updateCounterparty` e `mergeCounterparties`,** sempre restritos ao espaço.
 - **Server Actions com Zod:** editar e mesclar.
@@ -97,11 +97,36 @@ O botão "Editar" abre um diálogo com:
 
 ## Decisões
 
+- **Na tela, "apelido" aparece como "nome no extrato",** o mesmo termo do registro (task 10).
+- **Um período com só parcelas antigas** (a 2ª em diante de uma compra de antes) mostra o valor delas e "0 compras", e o ticket médio fica "—". A compra conta no mês da 1ª parcela.
+- **A categoria mais usada do ranking conta como o registro:** uma compra parcelada uma vez, e sem as cobranças geradas.
+
 - **Só despesas no ranking.** É a pergunta "onde mais gasto". As receitas por fonte são outra visão, e a busca resolve a edição delas.
 - **A compra parcelada conta uma vez na frequência, mas cada parcela conta no valor do mês dela.** O valor segue a regra de competência do design. A frequência é sobre ir à loja.
 - **Mesclar só move:** não apaga lançamento, não muda valores nem categorias já gravadas. A categoria dos lançamentos antigos é sua escolha de cada vez.
 - **O nome do absorvido vira apelido.** É o que garante que o próximo registro com o nome antigo caia no estabelecimento certo.
 - **Não há desfazer da mescla.** Ela pede confirmação, com o resumo do que vai acontecer.
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Corrigido:
+
+- **Um estabelecimento órfão** (sem lançamentos nem assinaturas, de uma corrida da task 8) com o mesmo nome impedia renomear, e não aparecia na mescla. Agora ele sai ao renomear. Há teste.
+- **Mescla e geração das assinaturas podiam travar uma à outra** (deadlock): a geração trava a regra e depois aponta para o estabelecimento, e a mescla fazia o contrário. A mescla agora trava primeiro as assinaturas do absorvido, na mesma ordem da geração.
+- **A categoria mais usada do ranking** contava cada parcela e cada cobrança gerada. Agora conta como o registro.
+- **Edição dos apelidos:** o Enter respeita o limite de 10, e repetidos ou iguais ao nome não entram na lista.
+- **Trocar o período mantém a aba** (valor ou frequência). "Voltar" fica desativado durante a mescla, e o botão "Mesclar" tem o estilo de ação destrutiva.
+- **Testes novos:**
+  - nome repetido só por acento;
+  - renomear com um órfão;
+  - categoria arquivada (e a padrão que já era arquivada continua);
+  - a mescla herdando a categoria e a observação padrão;
+  - no e2e, cada número do detalhe no seu campo e a busca.
+
+Aceito:
+
+- **Salvar a edição depois de uma mescla feita em outra aba** usa a lista de apelidos que o formulário tinha, e o nome do absorvido pode sumir dela. É raro, com uma pessoa por espaço, e os lançamentos já estão no lugar certo.
+- **A tela do ranking carrega as opções completas** (`listOptions`) só para a busca. Sobra um pouco de dado, mas evita uma consulta parecida.
 
 ## Fora do escopo
 

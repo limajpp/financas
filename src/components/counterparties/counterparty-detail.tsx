@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { Period } from "@/domain/counterparties";
+import { type Period, cleanAliases } from "@/domain/counterparties";
 import { ALIAS_MAX, MAX_ALIASES } from "@/domain/counterparty-memory";
 import { searchCounterparties } from "@/domain/counterparty-search";
 import { type CalendarDate, formatCalendarDate } from "@/domain/dates";
@@ -220,8 +220,9 @@ function MemoryForm({
 
   function addAlias() {
     const value = alias.trim();
-    if (value === "") return;
-    setAliases((current) => [...current, value]);
+    if (value === "" || aliases.length >= MAX_ALIASES) return;
+    // A repeat, or the name itself, isn't another alias (the server drops them too).
+    setAliases((current) => cleanAliases(name, [...current, value]));
     setAlias("");
   }
 
@@ -463,10 +464,15 @@ function MergeForm({
           </p>
         )}
         <ResponsiveDialogFooter className="gap-2">
-          <Button variant="ghost" className="h-10" onClick={() => setPreview(null)}>
+          <Button
+            variant="ghost"
+            className="h-10"
+            disabled={pending}
+            onClick={() => setPreview(null)}
+          >
             Voltar
           </Button>
-          <Button className="h-10" disabled={pending} onClick={merge}>
+          <Button variant="destructive" className="h-10" disabled={pending} onClick={merge}>
             Mesclar
           </Button>
         </ResponsiveDialogFooter>
