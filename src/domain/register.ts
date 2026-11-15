@@ -2,6 +2,7 @@
  * Defaults of the register screen: the category buttons and the payment that comes selected.
  * Pure functions only. Spec: docs/specs/tasks/09-register.md.
  */
+import { MAX_AMOUNT_CENTS } from "./money";
 import { normalizeName } from "./names";
 import {
   type EntryType,
@@ -114,4 +115,22 @@ export function defaultTransfer(
     ? (memory.method as TransferChoice["method"])
     : "PIX";
   return { accountId: from, toAccountId: to, method };
+}
+
+/** What `/registrar?valor=3456&tipo=despesa|receita&conta=<id>` asks (task 21's "Registrar o que falta"). */
+export type RegisterPrefill = { type: EntryType; cents: number; accountId: string };
+
+/**
+ * The register screen's prefill from its URL: a positive amount in cents, the type and an active
+ * account. Anything invalid, or an account that isn't active, means no prefill.
+ */
+export function parsePrefill(
+  params: { valor: string | null; tipo: string | null; conta: string | null },
+  accounts: readonly { id: string }[],
+): RegisterPrefill | null {
+  const type = params.tipo === "despesa" ? "EXPENSE" : params.tipo === "receita" ? "INCOME" : null;
+  const cents = /^\d{1,10}$/.test(params.valor ?? "") ? Number(params.valor) : 0;
+  const account = accounts.find((a) => a.id === params.conta);
+  if (!type || cents <= 0 || cents > MAX_AMOUNT_CENTS || !account) return null;
+  return { type, cents, accountId: account.id };
 }

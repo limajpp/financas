@@ -546,9 +546,12 @@ export async function updateTransaction(
       installmentGroupId: true,
       installmentNumber: true,
       recurringRuleId: true,
+      adjustment: true,
     },
   });
   if (!current) return { ok: false, error: "NOT_FOUND" };
+  // A balance adjustment (task 21) isn't edited: delete it and reconcile again.
+  if (current.adjustment) return { ok: false, error: "ADJUSTMENT_LOCKED" };
   if (input.subscription && current.recurringRuleId === null) {
     return { ok: false, error: "SUBSCRIPTION_ON_EDIT" };
   }
@@ -816,11 +819,11 @@ export async function bulkSetCategory(
   const unique = [...new Set(ids)];
   const rows = await db.transaction.findMany({
     where: { spaceId, id: { in: unique } },
-    select: { type: true },
+    select: { type: true, adjustment: true },
   });
   if (unique.length === 0 || rows.length !== unique.length)
     return { ok: false, error: "NOT_FOUND" };
-  if (rows.some((r) => r.type !== "EXPENSE" && r.type !== "INCOME")) {
+  if (rows.some((r) => (r.type !== "EXPENSE" && r.type !== "INCOME") || r.adjustment)) {
     return { ok: false, error: "NOT_CATEGORIZABLE" };
   }
   const type = rows[0]!.type as "EXPENSE" | "INCOME";
@@ -841,7 +844,7 @@ export async function bulkSetCategory(
   try {
     const count = await db.$transaction(async (tx) => {
       const updated = await tx.transaction.updateMany({
-        where: { spaceId, id: { in: unique }, type },
+        where: { spaceId, id: { in: unique }, type, adjustment: false },
         data: { categoryId },
       });
       if (updated.count !== unique.length) throw new BulkMismatch();
@@ -881,10 +884,14 @@ export async function deleteTransaction(
 }
 
 /** Today's balance (end of day in São Paulo) of every account in the space, by account id. */
-export async function accountBalances(spaceId: string): Promise<Map<string, number>> {
+export async function accountBalances(
+  spaceId: string,
+  /** A database transaction to read in (the reconciliation, task 21); the default client else. */
+  client: Pick<typeof db, "account" | "transaction"> = db,
+): Promise<Map<string, number>> {
   const today = todayInSaoPaulo();
   const [accounts, rows] = await Promise.all([
-    db.account.findMany({
+    client.account.findMany({
       where: { spaceId },
       select: {
         id: true,
@@ -894,7 +901,7 @@ export async function accountBalances(spaceId: string): Promise<Map<string, numb
       },
     }),
     // Only what can move an account: credit purchases point to a card instead.
-    db.transaction.findMany({
+    client.transaction.findMany({
       where: {
         spaceId,
         date: { lte: calendarDateToDb(today) },

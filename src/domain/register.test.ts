@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { defaultPayment, defaultTransfer, topCategories } from "./register";
+import { defaultPayment, defaultTransfer, parsePrefill, topCategories } from "./register";
 
 describe("topCategories", () => {
   // Selectable expense categories, flat (parents and children).
@@ -180,5 +180,33 @@ describe("defaultTransfer", () => {
 
   it("fewer than two active accounts: no transfer", () => {
     expect(defaultTransfer(none, [{ id: "azul" }])).toBeNull();
+  });
+});
+
+describe("parsePrefill (task 21)", () => {
+  const accounts = [{ id: "azul" }];
+  it("the amount, the type and an active account", () => {
+    expect(parsePrefill({ valor: "3456", tipo: "despesa", conta: "azul" }, accounts)).toEqual({
+      type: "EXPENSE",
+      cents: 3_456,
+      accountId: "azul",
+    });
+    expect(parsePrefill({ valor: "1", tipo: "receita", conta: "azul" }, accounts)).toMatchObject({
+      type: "INCOME",
+    });
+  });
+
+  it("anything invalid means no prefill", () => {
+    for (const params of [
+      { valor: "0", tipo: "despesa", conta: "azul" },
+      { valor: "-10", tipo: "despesa", conta: "azul" },
+      { valor: "12,50", tipo: "despesa", conta: "azul" },
+      { valor: "100", tipo: "transferencia", conta: "azul" },
+      { valor: "100", tipo: "despesa", conta: "outra" },
+      { valor: "9999999999", tipo: "despesa", conta: "azul" },
+      { valor: null, tipo: null, conta: null },
+    ]) {
+      expect(parsePrefill(params, accounts)).toBeNull();
+    }
   });
 });

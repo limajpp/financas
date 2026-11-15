@@ -1,16 +1,24 @@
 /**
  * Spending and income sums. The one rule kept here: transfers and invoice payments move money
- * between your own places, so they are never spending or income. Credit purchases are spending
+ * between your own places, so they are never spending or income; nor are balance adjustments
+ * (task 21), which only correct the balance. Credit purchases are spending
  * on the purchase date (design). The dashboard metrics (task 23) build on these.
  */
 import type { TransactionType } from "./transactions";
 
-export type TotalsEntry = { type: TransactionType; amountCents: number; categoryId: string | null };
+export type TotalsEntry = {
+  type: TransactionType;
+  amountCents: number;
+  categoryId: string | null;
+  /** A balance adjustment (task 21): it moves the balance, never the indicators. Required, so no
+   * caller can forget to select it. */
+  adjustment: boolean;
+};
 
 function sumByCategory(entries: readonly TotalsEntry[], type: "EXPENSE" | "INCOME") {
   const totals = new Map<string | null, number>();
   for (const entry of entries) {
-    if (entry.type !== type) continue;
+    if (entry.type !== type || entry.adjustment) continue;
     totals.set(entry.categoryId, (totals.get(entry.categoryId) ?? 0) + entry.amountCents);
   }
   return totals;

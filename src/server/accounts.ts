@@ -16,6 +16,8 @@ const accountSelect = {
   color: true,
   initialBalanceCents: true,
   initialBalanceDate: true,
+  reconciledOn: true,
+  reconciledBalanceCents: true,
   archivedAt: true,
 } as const;
 
@@ -24,8 +26,12 @@ async function spaceAccounts(spaceId: string) {
   return rows.map(toAccount);
 }
 
-function toAccount<T extends { initialBalanceDate: Date }>(row: T) {
-  return { ...row, initialBalanceDate: dbToCalendarDate(row.initialBalanceDate) };
+function toAccount<T extends { initialBalanceDate: Date; reconciledOn: Date | null }>(row: T) {
+  return {
+    ...row,
+    initialBalanceDate: dbToCalendarDate(row.initialBalanceDate),
+    reconciledOn: row.reconciledOn && dbToCalendarDate(row.reconciledOn),
+  };
 }
 
 export type AccountRow = Awaited<ReturnType<typeof spaceAccounts>>[number];

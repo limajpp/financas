@@ -13,14 +13,17 @@ export const TYPE_LABELS = {
 
 /** What a row says: its title, the line under it and the signed amount. */
 export function describeItem(item: ListItemView) {
-  const title =
-    item.counterparty?.name ??
-    item.description ??
-    (item.type === "TRANSFER" || item.type === "CARD_PAYMENT"
-      ? TYPE_LABELS[item.type]
-      : (item.category?.name ?? TYPE_LABELS[item.type]));
+  const title = item.adjustment
+    ? "Ajuste de saldo"
+    : (item.counterparty?.name ??
+      item.description ??
+      (item.type === "TRANSFER" || item.type === "CARD_PAYMENT"
+        ? TYPE_LABELS[item.type]
+        : (item.category?.name ?? TYPE_LABELS[item.type])));
   let line: string;
-  if (item.type === "TRANSFER") {
+  if (item.adjustment) {
+    line = `${item.account?.name} · Conferência`;
+  } else if (item.type === "TRANSFER") {
     line = `${item.account?.name} → ${item.toAccount?.name}`;
   } else if (item.type === "CARD_PAYMENT") {
     line = `Pagamento · ${item.card?.name}`;
@@ -46,7 +49,7 @@ export function describeItem(item: ListItemView) {
     title,
     line,
     place,
-    method: PAYMENT_METHOD_LABELS[item.method],
+    method: item.adjustment ? "Ajuste" : PAYMENT_METHOD_LABELS[item.method],
     amount: `${sign}${formatBRL(item.amountCents)}`,
   };
 }
