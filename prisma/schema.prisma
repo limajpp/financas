@@ -9,19 +9,20 @@ datasource db {
 
 // Fields match Better Auth's core user model, so task 3 only adds the session tables.
 model User {
-  id             String          @id @default(uuid(7))
-  name           String
-  email          String          @unique
-  emailVerified  Boolean         @default(false)
-  image          String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  memberships    SpaceMember[]
-  personalSpace  Space?          @relation("PersonalSpace")
-  sessions       Session[]
-  authAccounts   AuthAccount[]
-  transactions   Transaction[]
-  recurringRules RecurringRule[]
+  id                String             @id @default(uuid(7))
+  name              String
+  email             String             @unique
+  emailVerified     Boolean            @default(false)
+  image             String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  memberships       SpaceMember[]
+  personalSpace     Space?             @relation("PersonalSpace")
+  sessions          Session[]
+  authAccounts      AuthAccount[]
+  transactions      Transaction[]
+  recurringRules    RecurringRule[]
+  pushSubscriptions PushSubscription[]
 }
 
 // Better Auth tables. Field names follow its core schema.
@@ -373,4 +374,19 @@ model RecurringRuleChange {
   createdAt     DateTime      @default(now())
 
   @@index([ruleId, createdAt])
+}
+
+// A device that receives the daily reminder (task 17). It belongs to the user, not to a space.
+model PushSubscription {
+  id         String    @id @default(uuid(7))
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+
+  @@index([userId])
 }

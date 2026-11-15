@@ -69,3 +69,14 @@ export function addMonths(date: CalendarDate, n: number): CalendarDate {
   const day = Math.min(d, lastDay);
   return `${String(year).padStart(4, "0")}-${String(monthIndex + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
+
+/**
+ * The instants where a São Paulo day starts and the next one starts, for `createdAt` ranges.
+ * São Paulo is UTC−3 all year (Brazil dropped daylight saving time in 2019).
+ */
+export function saoPauloDayBounds(date: CalendarDate): { start: Date; end: Date } {
+  return {
+    start: new Date(`${date}T00:00:00-03:00`),
+    end: new Date(`${addDays(date, 1)}T00:00:00-03:00`),
+  };
+}
