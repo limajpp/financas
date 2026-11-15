@@ -71,7 +71,7 @@ function isUniqueViolation(error: unknown) {
 }
 
 /** The account, card and category the entry names, looked up in the space only. */
-async function refsFor(spaceId: string, input: EntryInput): Promise<EntryRefs> {
+export async function refsFor(spaceId: string, input: EntryInput): Promise<EntryRefs> {
   const [accounts, cards, categories] = await Promise.all([
     input.accountId
       ? db.account.findMany({

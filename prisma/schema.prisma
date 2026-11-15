@@ -345,6 +345,8 @@ model RecurringRule {
   description    String?
   status         RuleStatus            @default(ACTIVE)
   canceledAt     DateTime?
+  /// When it was paused (task 19); null while active.
+  pausedAt       DateTime?
   /// The month of the first charge ("YYYY-MM").
   firstMonth     String
   /// The first month the generation hasn't looked at yet (src/domain/recurring.ts).
