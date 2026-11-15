@@ -245,7 +245,13 @@ export async function mergeCounterparties(
       tx.counterparty.findUniqueOrThrow({ where: { id: keepId } }),
       tx.counterparty.findUniqueOrThrow({ where: { id: absorbedId } }),
     ]);
-    const { documentDropped: _, ...memory } = mergeMemory(keep, absorbed);
+    const merged = mergeMemory(keep, absorbed);
+    const memory = {
+      aliases: merged.aliases,
+      document: merged.document,
+      defaultCategoryId: merged.defaultCategoryId,
+      defaultDescription: merged.defaultDescription,
+    };
     const moved = await tx.transaction.updateMany({
       where: { spaceId, counterpartyId: absorbedId },
       data: { counterpartyId: keepId },
