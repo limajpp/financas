@@ -16,6 +16,7 @@ const FIELD_OF_ERROR: Partial<Record<TransactionErrorCode, string>> = {
   CATEGORY_ARCHIVED: "categoryId",
   CATEGORY_TYPE_MISMATCH: "categoryId",
   INVALID_INVOICE: "invoiceDueDate",
+  INSTALLMENT_ORDER: "invoiceDueDate",
   SAME_ACCOUNT: "toAccountId",
   TO_ACCOUNT_NOT_FOUND: "toAccountId",
   TO_ACCOUNT_ARCHIVED: "toAccountId",

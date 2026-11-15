@@ -167,7 +167,12 @@ function EditForm({
             closingDate: closingDateFor(card.cycles, item.invoiceDueDate),
           }
         : invoiceFor(cycleOn(card.cycles, date), date);
-      for (const invoice of installmentInvoiceWindow(card.cycles, base)) dues.push(invoice.dueDate);
+      // From the 2nd on, the one before already sits on an earlier invoice: only this one and later
+      // (INSTALLMENT_ORDER).
+      const later = (item.installmentNumber ?? 1) > 1;
+      for (const invoice of installmentInvoiceWindow(card.cycles, base)) {
+        if (!later || invoice.dueDate >= item.invoiceDueDate) dues.push(invoice.dueDate);
+      }
       dues.push(item.invoiceDueDate);
     } else if (method === "CREDIT") {
       // A manual choice: the computed invoice ± the window (task 8).

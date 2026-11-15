@@ -145,6 +145,9 @@ Aceito ou ajustado na spec:
 
 - **"Cartão Roxo · Estorno" na lista**, e não "Crédito": diz o que o lançamento é. A spec foi ajustada.
 - **Âncora movida depois de a 1ª parcela ser apagada:** registrado nos casos de borda.
+- **Segunda rodada: aprovado com nits, aplicados.** Da 2ª parcela em diante, o diálogo oferece só a fatura atual e as seguintes (as anteriores sempre esbarram na regra de ordem), e esse erro aparece junto do campo da fatura.
+- **Aceito:** em dois casos raros o diálogo ainda pode oferecer uma fatura que o servidor recusa, com "Essa fatura não é deste cartão.", sem mexer em nada: uma parcela não movida num grupo que ficou fora de uma mudança de ciclo (por ter outra parcela movida), e uma parcela já movida com a data encurtada num mês curto. A correção completa seria o servidor mandar a fatura calculada de cada parcela na lista.
+- **Também corrigido, por causa de um e2e instável antigo:** o diálogo "Novo cartão" aberto logo depois de criar a primeira conta abria sem conta escolhida, e salvar pedia "Escolha a conta que paga a fatura.". Agora a primeira conta vira o padrão assim que a lista chega.
 - **O e2e do CA4 cobre a compra avulsa.** Mover a parcela 2 de 4 está nos testes de integração e de unidade, e usa o mesmo diálogo.
 
 ## Fora do escopo
