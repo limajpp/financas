@@ -115,22 +115,33 @@ export async function updateRecurringRule(
   id: string,
   { amountCents }: { amountCents: number },
 ): Promise<{ ok: true } | { ok: false; error: RuleError }> {
-  const rule = await findRule(spaceId, id);
-  if (!rule) return { ok: false, error: "NOT_FOUND" };
-  if (rule.status === "CANCELED") return { ok: false, error: "CANCELED" };
-  if (rule.amountCents === amountCents) return { ok: true };
-  await db.$transaction([
-    db.recurringRule.update({ where: { id }, data: { amountCents } }),
-    db.recurringRuleChange.create({
-      data: {
-        ruleId: id,
-        previousCents: rule.amountCents,
-        amountCents,
-        changedOn: calendarDateToDb(todayInSaoPaulo()),
-      },
-    }),
-  ]);
-  return { ok: true };
+  // Written only if the amount is still the one read, so the history's "previous" is right; an
+  // edit in between (the subscriptions screen, task 19) means reading again.
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const rule = await findRule(spaceId, id);
+    if (!rule) return { ok: false, error: "NOT_FOUND" };
+    if (rule.status === "CANCELED") return { ok: false, error: "CANCELED" };
+    if (rule.amountCents === amountCents) return { ok: true };
+    const written = await db.$transaction(async (tx) => {
+      const updated = await tx.recurringRule.updateMany({
+        where: { id, spaceId, status: { not: "CANCELED" }, amountCents: rule.amountCents },
+        data: { amountCents },
+      });
+      if (updated.count > 0) {
+        await tx.recurringRuleChange.create({
+          data: {
+            ruleId: id,
+            previousCents: rule.amountCents,
+            amountCents,
+            changedOn: calendarDateToDb(todayInSaoPaulo()),
+          },
+        });
+      }
+      return updated.count;
+    });
+    if (written > 0) return { ok: true };
+  }
+  return { ok: false, error: "CHANGED" };
 }
 
 /**

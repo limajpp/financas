@@ -104,6 +104,8 @@ O revisor (Opus, effort high) pediu mudanças, sem bloqueios. Corrigido:
 - **"Mostrar canceladas"** virou um botão que alterna, com `aria-expanded` e "Ocultar canceladas".
 - **Testes novos:** a próxima cobrança com o mês atual já cobrado, o cartão de outro espaço e a conta arquivada mantida.
 
+- **Segunda rodada: aprovado com nits, aplicado.** O "Atualizar a assinatura?" da task 14 (`updateRecurringRule`) ganhou a mesma proteção: grava só se o valor ainda for o lido.
+
 Aceito:
 
 - **A confirmação diz "Pausar Netflix?"**, sem artigo. O app não sabe o gênero do nome.
