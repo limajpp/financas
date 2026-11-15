@@ -6,6 +6,7 @@ import {
   INSTALLMENTS_MIN,
   planInstallments,
   replanGroupInvoices,
+  shiftGroupInvoices,
   splitAmount,
 } from "./installments";
 
@@ -115,5 +116,83 @@ describe("replanGroupInvoices", () => {
     expect(replanGroupInvoices(rows.slice(2), changed)).toEqual([
       { id: "d", invoiceDueDate: "2027-01-27" },
     ]);
+  });
+});
+
+describe("shiftGroupInvoices (task 18)", () => {
+  // Bought 2026-10-20 in 4×: due 11-10, 12-10, 01-10, 02-10.
+  const rows = [
+    { id: "a", number: 1, date: "2026-10-20", invoiceDueDate: "2026-11-10" },
+    { id: "b", number: 2, date: "2026-11-20", invoiceDueDate: "2026-12-10" },
+    { id: "c", number: 3, date: "2026-12-20", invoiceDueDate: "2027-01-10" },
+    { id: "d", number: 4, date: "2027-01-20", invoiceDueDate: "2027-02-10" },
+  ];
+
+  it("CA4: moving the 2nd one invoice later takes the 3rd and the 4th along; the 1st stays", () => {
+    expect(shiftGroupInvoices(rows, cycles, { number: 2, invoiceDueDate: "2027-01-10" })).toEqual({
+      ok: true,
+      updates: [
+        { id: "b", invoiceDueDate: "2027-01-10", invoiceOverridden: true },
+        { id: "c", invoiceDueDate: "2027-02-10", invoiceOverridden: true },
+        { id: "d", invoiceDueDate: "2027-03-10", invoiceOverridden: true },
+      ],
+    });
+  });
+
+  it("moving earlier works the same way", () => {
+    const result = shiftGroupInvoices(rows, cycles, { number: 3, invoiceDueDate: "2026-12-10" });
+    expect(result).toEqual({
+      ok: true,
+      updates: [
+        { id: "c", invoiceDueDate: "2026-12-10", invoiceOverridden: true },
+        { id: "d", invoiceDueDate: "2027-01-10", invoiceOverridden: true },
+      ],
+    });
+  });
+
+  it("moving back to the computed invoice is no longer a manual choice", () => {
+    const moved = [
+      rows[0]!,
+      { ...rows[1]!, invoiceDueDate: "2027-01-10" },
+      { ...rows[2]!, invoiceDueDate: "2027-02-10" },
+      { ...rows[3]!, invoiceDueDate: "2027-03-10" },
+    ];
+    expect(shiftGroupInvoices(moved, cycles, { number: 2, invoiceDueDate: "2026-12-10" })).toEqual({
+      ok: true,
+      updates: [
+        { id: "b", invoiceDueDate: "2026-12-10", invoiceOverridden: false },
+        { id: "c", invoiceDueDate: "2027-01-10", invoiceOverridden: false },
+        { id: "d", invoiceDueDate: "2027-02-10", invoiceOverridden: false },
+      ],
+    });
+  });
+
+  it("the chosen invoice must be up to 3 invoices away from the computed one", () => {
+    expect(shiftGroupInvoices(rows, cycles, { number: 2, invoiceDueDate: "2027-03-10" }).ok).toBe(
+      true,
+    );
+    expect(shiftGroupInvoices(rows, cycles, { number: 2, invoiceDueDate: "2027-04-10" })).toEqual({
+      ok: false,
+      error: "INVALID_INVOICE",
+    });
+    expect(shiftGroupInvoices(rows, cycles, { number: 2, invoiceDueDate: "2026-12-11" })).toEqual({
+      ok: false,
+      error: "INVALID_INVOICE",
+    });
+  });
+
+  it("the window is around the computed invoice, not the current one", () => {
+    // Already 3 invoices later: one more is out of the window.
+    const moved = rows.map((r) =>
+      r.number >= 2
+        ? {
+            ...r,
+            invoiceDueDate: shiftInvoice(cycles[0]!, invoiceFor(cycles[0]!, r.date), 3).dueDate,
+          }
+        : r,
+    );
+    expect(shiftGroupInvoices(moved, cycles, { number: 2, invoiceDueDate: "2027-04-10" }).ok).toBe(
+      false,
+    );
   });
 });

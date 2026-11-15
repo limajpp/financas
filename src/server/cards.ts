@@ -96,8 +96,8 @@ export async function createCard(spaceId: string, input: CardInput): Promise<Car
 /**
  * Changes name, account, limit and days. New days apply to purchases from today on: they go in a
  * new cycle version (replacing one that already starts today); older purchases keep theirs.
- * Purchases already registered from the version's start on get their invoice recomputed, except
- * the ones whose invoice was chosen by hand.
+ * Purchases and refunds already registered from the version's start on get their invoice
+ * recomputed, except the ones whose invoice was chosen by hand.
  */
 export async function updateCard(
   spaceId: string,
@@ -135,7 +135,7 @@ export async function updateCard(
       const purchases = await tx.transaction.findMany({
         where: {
           cardId: id,
-          type: "EXPENSE",
+          type: { in: ["EXPENSE", "INCOME"] },
           method: "CREDIT",
           invoiceOverridden: false,
           installmentGroupId: null,
@@ -154,7 +154,8 @@ export async function updateCard(
       );
 
       // Installments (task 12): the groups with an installment whose invoice is due from the
-      // change on get their sequence redone; installments due before it stay.
+      // change on get their sequence redone; installments due before it stay. A group with an
+      // installment moved by hand (task 18) stays as it is, like a single purchase.
       const touched = await tx.transaction.findMany({
         where: {
           cardId: id,
@@ -164,10 +165,22 @@ export async function updateCard(
         distinct: ["installmentGroupId"],
         select: { installmentGroupId: true },
       });
-      const groups = await tx.transaction.findMany({
+      const moved = await tx.transaction.findMany({
         where: {
           cardId: id,
           installmentGroupId: { in: touched.map((t) => t.installmentGroupId!) },
+          invoiceOverridden: true,
+        },
+        distinct: ["installmentGroupId"],
+        select: { installmentGroupId: true },
+      });
+      const movedGroups = new Set(moved.map((m) => m.installmentGroupId!));
+      const groups = await tx.transaction.findMany({
+        where: {
+          cardId: id,
+          installmentGroupId: {
+            in: touched.map((t) => t.installmentGroupId!).filter((g) => !movedGroups.has(g)),
+          },
         },
         select: {
           id: true,

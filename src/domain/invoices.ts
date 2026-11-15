@@ -1,6 +1,6 @@
 /**
  * A card's invoices: what each one adds up to, what was paid and what's left. Pure functions only.
- * Spec: docs/specs/tasks/11-transfers-card-payments.md.
+ * Specs: docs/specs/tasks/11-transfers-card-payments.md, docs/specs/tasks/18-invoices.md.
  */
 import type { CalendarDate } from "./dates";
 import {
@@ -50,14 +50,16 @@ export function closingDateFor(
 }
 
 /**
- * One summary per invoice that has purchases or payments, plus today's open invoice; oldest
- * first. `purchases` are the card's credit purchases, `payments` its invoice payments.
+ * One summary per invoice that has purchases, refunds or payments, plus today's open invoice;
+ * oldest first. `purchases` are the card's credit purchases, `payments` its invoice payments and
+ * `refunds` the incomes on the card (task 18), which come off the total: it may go negative.
  */
 export function invoiceSummaries(
   purchases: readonly Amount[],
   payments: readonly Amount[],
   cycles: readonly CycleVersion[],
   today: CalendarDate,
+  refunds: readonly Amount[] = [],
 ): InvoiceSummary[] {
   const totals = new Map<CalendarDate, { total: number; paid: number }>();
   const add = (dueDate: CalendarDate, field: "total" | "paid", cents: number) => {
@@ -66,6 +68,7 @@ export function invoiceSummaries(
     totals.set(dueDate, entry);
   };
   for (const p of purchases) add(p.invoiceDueDate, "total", p.amountCents);
+  for (const r of refunds) add(r.invoiceDueDate, "total", -r.amountCents);
   for (const p of payments) add(p.invoiceDueDate, "paid", p.amountCents);
   const openDueDate = invoiceFor(cycleOn(cycles, today), today).dueDate;
   add(openDueDate, "total", 0);
@@ -115,4 +118,22 @@ export function defaultInvoiceToPay(summaries: readonly InvoiceSummary[]): Calen
   return (
     (unpaid ?? summaries.find((s) => s.status === "open") ?? summaries.at(-1))?.dueDate ?? null
   );
+}
+
+/** Where an invoice stands: nothing left to pay, something left, or paid beyond the total. */
+export function invoiceBalance(summary: InvoiceSummary): "paid" | "due" | "credit" {
+  if (summary.remainingCents > 0) return "due";
+  return summary.remainingCents < 0 ? "credit" : "paid";
+}
+
+/**
+ * The invoices screen's sections: the open invoice, the future ones nearest first and the closed
+ * ones newest first.
+ */
+export function groupInvoices(summaries: readonly InvoiceSummary[]) {
+  return {
+    open: summaries.find((s) => s.status === "open") ?? null,
+    upcoming: summaries.filter((s) => s.status === "future"),
+    past: summaries.filter((s) => s.status === "closed").reverse(),
+  };
 }

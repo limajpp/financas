@@ -94,16 +94,33 @@ describe("validateEntry", () => {
     expect(validateEntry(pix({ date: today }), refs, { today }).ok).toBe(true);
   });
 
-  it("an income takes Pix, TED, cash or boleto; not credit or debit", () => {
+  it("an income takes Pix, TED, cash or boleto; not debit", () => {
     const income = (method: EntryInput["method"]) =>
       validateEntry(pix({ type: "INCOME", method, categoryId: "salario" }), refs, { today });
     for (const method of ["PIX", "TED", "CASH", "BOLETO"] as const) {
       expect(income(method).ok).toBe(true);
     }
     expect(income("DEBIT")).toEqual({ ok: false, error: "METHOD_NOT_ALLOWED" });
-    expect(
-      validateEntry(credit({ type: "INCOME", categoryId: "salario" }), refs, { today }),
-    ).toEqual({ ok: false, error: "METHOD_NOT_ALLOWED" });
+  });
+
+  it("CA5: a refund (income on credit) goes on the invoice of its date, like a purchase", () => {
+    const refund = (overrides: Partial<EntryInput>) =>
+      validateEntry(credit({ type: "INCOME", categoryId: "salario", ...overrides }), refs, {
+        today,
+      });
+    expect(refund({ date: "2026-10-04" })).toEqual({
+      ok: true,
+      invoice: { invoiceDueDate: "2026-10-12", invoiceOverridden: false },
+    });
+    expect(refund({ date: "2026-10-04", invoiceDueDate: "2026-11-12" })).toEqual({
+      ok: true,
+      invoice: { invoiceDueDate: "2026-11-12", invoiceOverridden: true },
+    });
+    expect(refund({ cardId: "velho" })).toEqual({ ok: false, error: "CARD_ARCHIVED" });
+    expect(refund({ categoryId: "mercado" })).toEqual({
+      ok: false,
+      error: "CATEGORY_TYPE_MISMATCH",
+    });
   });
 
   it("refuses an account or card outside the space, and archived ones on a new choice", () => {

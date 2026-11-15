@@ -506,11 +506,11 @@ describe("lançamentos", () => {
     expect(row.invoiceDueDate?.toISOString().slice(0, 10)).toBe("2026-11-05");
   });
 
-  it("CA6: recusa categoria de outro tipo, categoria/conta arquivada, receita no crédito e data futura", async () => {
+  it("CA6: recusa categoria de outro tipo, categoria/conta arquivada, receita no débito e data futura", async () => {
     today("2026-10-31");
     const ana = await user("ana@example.com");
     const azul = await account(ana.spaceId);
-    const roxo = await card(ana.spaceId, azul.id);
+    await card(ana.spaceId, azul.id);
     const antiga = await account(ana.spaceId, "Antiga");
     await setAccountArchived(ana.spaceId, antiga.id, true);
     const extinta = await db.category.findFirstOrThrow({
@@ -536,7 +536,7 @@ describe("lançamentos", () => {
       ok: false,
       error: "ACCOUNT_ARCHIVED",
     });
-    expect(await attempt({ type: "INCOME", method: "CREDIT", cardId: roxo.id })).toEqual({
+    expect(await attempt({ type: "INCOME", method: "DEBIT", accountId: azul.id })).toEqual({
       ok: false,
       error: "METHOD_NOT_ALLOWED",
     });
@@ -726,7 +726,7 @@ describe("lançamentos", () => {
         },
       }),
     ).rejects.toThrow();
-    // An income on credit.
+    // An income on credit (a refund, task 18) that also points to an account.
     await expect(
       db.transaction.create({
         data: {
@@ -735,6 +735,7 @@ describe("lançamentos", () => {
           type: "INCOME",
           method: "CREDIT",
           cardId: roxo.id,
+          accountId: azul.id,
           invoiceDueDate: calendarDateToDb("2026-11-12"),
         },
       }),
