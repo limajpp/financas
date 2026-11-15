@@ -1,6 +1,7 @@
 "use client";
 
 import { Archive, ArchiveRestore, CreditCard, Pencil, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { setCardArchivedAction } from "@/app/(app)/contas/card-actions";
@@ -96,15 +97,24 @@ export function CardManager({
                     </>
                   )}
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="mt-2"
-                  aria-label={`Pagar fatura ${card.name}`}
-                  onClick={() => setPaying(card)}
-                >
-                  Pagar fatura
-                </Button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    aria-label={`Pagar fatura ${card.name}`}
+                    onClick={() => setPaying(card)}
+                  >
+                    Pagar fatura
+                  </Button>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link
+                      href={`/faturas?cartao=${card.id}`}
+                      aria-label={`Ver faturas ${card.name}`}
+                    >
+                      Ver faturas
+                    </Link>
+                  </Button>
+                </div>
               </div>
               <div className="flex shrink-0 items-center">
                 <Button

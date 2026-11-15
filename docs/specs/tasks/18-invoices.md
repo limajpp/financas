@@ -52,6 +52,7 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
 - Cada linha abre o detalhe daquela fatura.
 - **Sem cartões:** "Você ainda não tem cartões." e um link "Cadastrar cartão" para `/contas`.
 - **Acesso:** a tela já está no menu lateral do desktop e em Configurações no celular. Em `/contas`, cada cartão ganha o link "Ver faturas".
+- **Navegação com rota dinâmica:** o detalhe é a primeira página com um segmento dinâmico. Os links do menu e o componente que guarda as telas visitadas leem o endereço, e por isso ficam dentro de um `Suspense`, como o Cache Components exige. Nessa página, o item do menu aparece marcado só depois que ela carrega.
 
 ### Detalhe da fatura (`/faturas/<cardId>/<vencimento>`)
 
@@ -65,15 +66,15 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
   - estornos com sinal de menos e a cor de receita;
   - tocar num lançamento abre o diálogo de edição da task 14.
 - **Pagamentos:** os pagamentos desta fatura, com data, conta e valor. Tocar abre a edição do pagamento.
-- **Endereço inválido:** um cartão de outro espaço, uma data inválida ou uma fatura que o cartão não tem respondem "não encontrada" (404). O cartão tem a fatura se algum lançamento cai nela, ou se ela é uma das faturas pagáveis (task 11).
+- **Endereço inválido:** um cartão de outro espaço, uma data inválida ou uma fatura que o cartão não tem mostram "Fatura não encontrada", com um link para `/faturas`. O cartão tem a fatura se algum lançamento cai nela, ou se ela é uma das faturas pagáveis (task 11).
 - Todo o resto da tela vem dos mesmos dados do resumo. O total do cabeçalho é sempre a soma da lista.
 
 ### Trocar a fatura de um lançamento
 
 - **Compra ou estorno avulso:** já é possível no diálogo de edição (task 8), dentro da janela de 3 faturas. O detalhe da fatura só leva até ele.
 - **Parcela (novo):** o diálogo de edição de uma parcela ganha o campo "Fatura", com a mesma janela de 3 em torno da fatura calculada para aquela parcela.
-  - Trocar a fatura da parcela 3 de 10 move **essa e as seguintes**, o mesmo número de faturas. As anteriores, em geral já pagas, ficam onde estão.
-  - Todas as parcelas movidas ficam com `invoiceOverridden: true`.
+  - Trocar a fatura da parcela 3 de 10 move **essa e as seguintes**: elas continuam uma por fatura a partir da escolhida. As anteriores, em geral já pagas, ficam onde estão.
+  - As parcelas movidas ficam com `invoiceOverridden: true`, menos a que volta para a fatura calculada.
   - O caso de uso é o banco lançar a parcela uma fatura depois do esperado, e o resto seguir esse atraso.
 - **Depois da troca**, as duas faturas, a de onde saiu e a para onde foi, mostram os totais novos, tanto na lista quanto no detalhe.
 
@@ -88,7 +89,7 @@ Estorno é dinheiro que volta para o cartão: uma compra devolvida ou cancelada.
 - **`cardsOverview(spaceId)`** devolve os cartões, com os resumos de todas as faturas, para a tela `/faturas`, numa quantidade fixa de consultas, qualquer que seja o número de cartões.
 - **Validação do estorno:** `METHODS_BY_TYPE.INCOME` ganha `CREDIT`. `validateEntry` trata o crédito igual para despesa e receita. Parcelas e assinatura numa receita continuam recusadas.
 - **Troca de fatura de parcelas:**
-  - `updateInstallments` aceita `invoiceDueDate` com `scope: "this"` e move as seguintes, numa transação do banco;
+  - `updateInstallments` aceita `invoiceDueDate`, com qualquer escopo, e move as seguintes na mesma transação do banco que as outras mudanças. Uma fatura recusada desfaz tudo;
   - a nova função pura `shiftGroupInvoices` (em `installments.ts`) calcula as faturas novas;
   - mudar o valor e a fatura juntos segue as regras da task 12 para o valor.
 - **Mudança de ciclo do cartão (task 7):** um grupo de parcelas com alguma parcela trocada à mão não é recalculado, do mesmo jeito que uma compra avulsa trocada à mão.

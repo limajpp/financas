@@ -115,10 +115,13 @@ function EditForm({
   const [toAccountId, setToAccountId] = useState(item.toAccount?.id ?? "");
   const [cardId, setCardId] = useState(item.card?.id ?? "");
   const [date, setDate] = useState(item.date);
-  // A payment's invoice; for a credit purchase, only a manual choice (task 8): the computed one
-  // follows the date and card.
+  // A payment's invoice, and an installment's (moving it takes the next ones along, task 18); for
+  // any other credit entry, only a manual choice (task 8): the computed one follows the date and
+  // card.
   const [invoiceDueDate, setInvoiceDueDate] = useState(
-    item.type === "CARD_PAYMENT" || item.invoiceOverridden ? (item.invoiceDueDate ?? "") : "",
+    item.type === "CARD_PAYMENT" || item.invoiceOverridden || item.installmentGroupId !== null
+      ? (item.invoiceDueDate ?? "")
+      : "",
   );
   const [description, setDescription] = useState(item.description ?? "");
   const [scope, setScope] = useState<InstallmentScope>("this");
@@ -154,7 +157,8 @@ function EditForm({
         dues.push(shiftInvoice(cycle, open, n).dueDate);
       if (item.invoiceDueDate) dues.push(item.invoiceDueDate);
     } else if (method === "CREDIT") {
-      // A purchase's manual choice: the computed invoice ± the window (task 8).
+      // A manual choice: the computed invoice ± the window (task 8). An installment's computed
+      // invoice comes from its own date; the server checks it against the purchase's sequence.
       const cycle = cycleOn(card.cycles, date);
       const base = invoiceFor(cycle, date);
       for (let n = -INVOICE_OVERRIDE_WINDOW; n <= INVOICE_OVERRIDE_WINDOW; n++) {
@@ -213,11 +217,14 @@ function EditForm({
             type,
             accountId: credit ? null : accountId,
             cardId: credit ? cardId : null,
-            // A manual invoice goes only when it isn't the computed one (task 8).
+            // A manual invoice goes only when it isn't the computed one (task 8). An installment
+            // always sends its invoice: the server moves the group only when it changed.
             invoiceDueDate:
-              credit && !installment && invoiceDueDate && invoiceDueDate !== computedInvoice
-                ? invoiceDueDate
-                : null,
+              credit && installment
+                ? invoiceDueDate || null
+                : credit && invoiceDueDate && invoiceDueDate !== computedInvoice
+                  ? invoiceDueDate
+                  : null,
             categoryId: categoryId || null,
             counterparty,
           },
@@ -420,16 +427,19 @@ function EditForm({
         </FormField>
       )}
 
-      {invoiceChoices.length > 0 && !installment && (
+      {invoiceChoices.length > 0 && (
         <FormField
           id={ids.invoice}
           label={type === "CARD_PAYMENT" ? "Fatura paga (vencimento)" : "Fatura (vencimento)"}
+          hint={installment ? "Mudar a fatura de uma parcela leva as próximas junto." : undefined}
         >
           <NativeSelect
             id={ids.invoice}
             value={invoiceDueDate || computedInvoice || ""}
             onChange={(e) =>
-              setInvoiceDueDate(e.target.value === computedInvoice ? "" : e.target.value)
+              setInvoiceDueDate(
+                !installment && e.target.value === computedInvoice ? "" : e.target.value,
+              )
             }
           >
             {invoiceChoices.map((due) => (

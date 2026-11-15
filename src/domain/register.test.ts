@@ -135,6 +135,15 @@ describe("defaultPayment", () => {
         cards,
       ),
     ).toMatchObject({ method: "PIX" });
+    // After a refund (task 18): the next income starts on Pix, not on the card.
+    expect(
+      defaultPayment(
+        "INCOME",
+        { method: "CREDIT", accountId: "inter", cardId: "preto" },
+        accounts,
+        cards,
+      ),
+    ).toEqual({ method: "PIX", accountId: "inter", cardId: "preto" });
   });
 
   it("no active account: nothing to register on", () => {

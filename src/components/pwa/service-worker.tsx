@@ -2,7 +2,7 @@
 
 import { SerwistProvider, useSerwist } from "@serwist/turbopack/react";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 
 /**
  * Registers the service worker (production builds only: in `next dev` it would serve stale code).
@@ -16,7 +16,10 @@ export function ServiceWorker({ children }: { children: React.ReactNode }) {
       cacheOnNavigation={false}
       reloadOnOnline={false}
     >
-      <CacheVisitedScreens />
+      {/* Its pathname is request-time data on a page with a dynamic segment (task 18). */}
+      <Suspense fallback={null}>
+        <CacheVisitedScreens />
+      </Suspense>
       {children}
     </SerwistProvider>
   );
