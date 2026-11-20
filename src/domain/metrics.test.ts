@@ -351,7 +351,7 @@ describe("categoryBreakdown", () => {
       children: [
         { id: "mercado", totalCents: 30_000 },
         { id: "restaurante", totalCents: 12_000 },
-        { id: "alimentacao", name: "Alimentação", totalCents: 5_000 },
+        { id: "alimentacao", name: "Alimentação", totalCents: 5_000, direct: true },
       ],
     });
   });

@@ -232,10 +232,10 @@ export type CategoryTotal = {
   averageCents: number | null;
   /**
    * The subcategories' totals in the month, largest first. When there are any, the expenses
-   * booked on the main category itself are a row too (with its id and name): they add up to the
-   * total.
+   * booked on the main category itself are a row too (its id and name, `direct: true`), so they
+   * add up to the total.
    */
-  children: { id: string; name: string; totalCents: number }[];
+  children: { id: string; name: string; totalCents: number; direct?: true }[];
 };
 
 export const UNCATEGORIZED = "Sem categoria";
@@ -302,7 +302,7 @@ export function categoryBreakdown(
     .map(({ previousCents, directCents, childMap, ...row }) => {
       const children = [...childMap.values()];
       if (children.length > 0 && directCents > 0 && row.id !== null) {
-        children.push({ id: row.id, name: row.name, totalCents: directCents });
+        children.push({ id: row.id, name: row.name, totalCents: directCents, direct: true });
       }
       return {
         ...row,

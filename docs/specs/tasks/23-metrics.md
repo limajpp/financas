@@ -63,7 +63,7 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
 
 - **O total das despesas do mês por categoria principal:** uma subcategoria soma na mãe. Por exemplo, Mercado e Restaurante somam em Alimentação.
   - "Sem categoria" é uma linha à parte.
-  - Cada linha também tem as subcategorias, para o detalhe. Quando há subcategorias, o que foi lançado na própria categoria principal vira mais uma linha, com o nome dela, e as linhas somam o total.
+  - Cada linha também tem as subcategorias, para o detalhe. Quando há subcategorias, o que foi lançado na própria categoria principal vira mais uma linha, com o nome dela e marcada como direta (`direct`), e as linhas somam o total.
 - **A média dos 3 meses anteriores** de cada categoria: a soma dos 3 meses ÷ 3, arredondada para o centavo. Um mês sem gasto na categoria conta como zero.
 - **Uma categoria sem gasto no mês** aparece quando a média dela não é zero: é o "este mês você não gastou com isso".
 - **A ordem:** o maior total primeiro, depois a maior média, depois o nome.
@@ -151,6 +151,7 @@ O revisor (Opus, effort high) aprovou com nits. Ele refez à mão todos os núme
   - as assinaturas de outro espaço;
   - o início do histórico perto da meia-noite UTC;
   - os meses fora do intervalo.
+- **Segunda rodada: aprovado.** O nit aplicado: a linha da própria categoria principal vem marcada (`direct`), para a tela distingui-la.
 
 Para o João decidir (anotado aqui, nada mudou):
 
