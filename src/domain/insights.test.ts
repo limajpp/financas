@@ -136,6 +136,19 @@ describe("categoryInsights (regra 1)", () => {
     expect(categoryInsights([category("Viagem", 4_999, 0)], period)).toEqual([]);
   });
 
+  it("a partir de 3 vezes a média, diz 'N vezes' em vez de uma porcentagem absurda", () => {
+    expect(categoryInsights([category("Presentes", 20_000, 333)], period)[0]?.text).toBe(
+      `Presentes: ${brl(20_000)} este mês, 60 vezes a média de ${brl(333)}.`,
+    );
+    expect(categoryInsights([category("Lazer", 30_000, 10_000)], period)[0]?.text).toBe(
+      `Lazer: ${brl(30_000)} este mês, 3 vezes a média de ${brl(10_000)}.`,
+    );
+    // Just under 3×: still a percentage (199,99% → 199%).
+    expect(categoryInsights([category("Lazer", 29_999, 10_000)], period)[0]?.text).toBe(
+      `Lazer: ${brl(29_999)} este mês, 199% acima da média de ${brl(10_000)}.`,
+    );
+  });
+
   it("'Sem categoria' e uma categoria abaixo da média não disparam", () => {
     expect(
       categoryInsights(
@@ -376,6 +389,24 @@ describe("topCounterpartyInsight (regra 5)", () => {
     );
   });
 
+  it("as cobranças de assinatura não fazem um lugar ser 'onde mais gastou'", () => {
+    const entries = [
+      expense("2026-11-05", 200_000, {
+        counterparty: { id: "imob", name: "Imobiliária Lar" },
+        subscription: true,
+      }),
+      expense("2026-11-03", 30_000, { counterparty: mercadoBom }),
+      rest(70_000),
+    ];
+    // The market: 300,00 of 3.000,00 (the rent still counts in the month's expenses), 10% → no.
+    expect(topCounterpartyInsight(entries, NOV, "este mês")).toBeNull();
+    const more = [...entries, expense("2026-11-04", 40_000, { counterparty: mercadoBom })];
+    expect(topCounterpartyInsight(more, NOV, "este mês")?.subject).toEqual({
+      type: "counterparty",
+      id: "mercado-bom",
+    });
+  });
+
   it("um mês sem despesas não dispara", () => {
     expect(topCounterpartyInsight([], NOV, "este mês")).toBeNull();
   });
@@ -454,6 +485,29 @@ describe("monthInsights", () => {
       "TOP_COUNTERPARTY",
     ]);
     expect(insights.every((i) => i.text.includes("em outubro"))).toBe(true);
+  });
+
+  it("um mês passado não tem as regras de assinatura, mesmo com vaga sobrando", () => {
+    const insights = monthInsights({
+      month: "2026-10",
+      today: TODAY,
+      entries: [],
+      categories: [category("Alimentação", 97_000, 56_000, "alimentacao")],
+      rules,
+    })!;
+    expect(insights.map((i) => i.kind)).toEqual(["CATEGORY_ABOVE_AVERAGE"]);
+  });
+
+  it("o lugar das compras pequenas não volta como 'onde mais gastou'", () => {
+    const bakery = [...several(8, 2_900, { counterparty: padaria }), expense("2026-11-09", 5_000)];
+    const insights = monthInsights({
+      month: NOV,
+      today: TODAY,
+      entries: bakery,
+      categories: [],
+      rules: [],
+    })!;
+    expect(insights.map((i) => i.kind)).toEqual(["SMALL_PURCHASES"]);
   });
 
   it("CA4: um mês futuro não tem insights", () => {

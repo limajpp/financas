@@ -10,6 +10,8 @@ import {
   MIN_IMPACT_CENTS,
   SMALL_PURCHASE_MAX_CENTS,
   SMALL_PURCHASES_MIN_COUNT,
+  SUBSCRIPTION_CHANGE_DAYS,
+  TIMES_AVERAGE_FROM,
   TOP_COUNTERPARTY_MIN_SHARE,
 } from "./insight-limits";
 import { AVERAGE_MONTHS, type CategoryTotal, type MetricsEntry } from "./metrics";
@@ -94,11 +96,17 @@ export function categoryInsights(categories: readonly CategoryTotal[], period: s
       continue;
     }
     if (excess <= c.averageCents * CATEGORY_ABOVE_AVERAGE_RATIO) continue;
+    // A tiny average makes a percentage absurd ("5906%"): from 3× on, "N vezes", rounded down.
+    const times = Math.floor(c.totalCents / c.averageCents);
+    const comparison =
+      times >= TIMES_AVERAGE_FROM
+        ? `${times} vezes a média de ${brl(c.averageCents)}`
+        : `${percent(excess, c.averageCents)} acima da média de ${brl(c.averageCents)}`;
     insights.push({
       kind: "CATEGORY_ABOVE_AVERAGE",
       group: "alert",
       impactCents: excess,
-      text: `${c.name}: ${brl(c.totalCents)} ${period}, ${percent(excess, c.averageCents)} acima da média de ${brl(c.averageCents)}.`,
+      text: `${c.name}: ${brl(c.totalCents)} ${period}, ${comparison}.`,
       subject: { type: "category", id: c.id },
     });
   }
@@ -177,7 +185,7 @@ export function subscriptionRaiseInsights(
 ): Insight[] {
   return rules.flatMap((rule): Insight[] => {
     if (rule.status !== "ACTIVE") return [];
-    const change = recentChange(rule.changes, rule.amountCents, today);
+    const change = recentChange(rule.changes, rule.amountCents, today, SUBSCRIPTION_CHANGE_DAYS);
     if (change?.direction !== "up") return [];
     const yearly = (rule.amountCents - change.previousCents) * 12;
     return [
@@ -213,7 +221,9 @@ const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });
 
 /**
  * Rule 5: the counterparty with the most expenses in the month (each installment in its month),
- * when it takes more than 20% of them and at least R$ 50,00. A tie goes by name.
+ * when it takes more than 20% of them and at least R$ 50,00. A tie goes by name. Subscription
+ * charges don't make a counterparty "where you spent most" (a rent set as a subscription would
+ * win every month), but they still count in the month's expenses.
  */
 export function topCounterpartyInsight(
   entries: readonly InsightEntry[],
@@ -222,7 +232,10 @@ export function topCounterpartyInsight(
 ): Insight | null {
   const expenses = entries.filter((e) => isExpense(e) && monthOf(e.date) === month);
   const all = total(expenses);
-  const [top] = groupBy(expenses, (e) => e.counterparty && { ...e.counterparty, entries: [] })
+  const [top] = groupBy(
+    expenses.filter((e) => !e.subscription),
+    (e) => e.counterparty && { ...e.counterparty, entries: [] },
+  )
     .map((g) => ({ ...g, totalCents: total(g.entries) }))
     .sort((a, b) => b.totalCents - a.totalCents || collator.compare(a.name, b.name));
   if (!top || top.totalCents < MIN_IMPACT_CENTS) return null;
@@ -269,11 +282,14 @@ export function monthInsights(input: {
   const period = periodText(month, today);
   const yearly = month === current ? subscriptionsYearlyInsight(rules) : null;
   const top = topCounterpartyInsight(entries, month, period);
-  return rankInsights([
+  const alerts = [
     ...categoryInsights(categories, period),
     ...smallPurchaseInsights(entries, month, period),
     ...(month === current ? subscriptionRaiseInsights(rules, today) : []),
-    ...(yearly ? [yearly] : []),
-    ...(top ? [top] : []),
-  ]);
+  ];
+  // The top counterparty already in an alert (its small purchases) would say the same twice.
+  const same = (a: InsightSubject, b: InsightSubject) =>
+    a.type === b.type && ("id" in a ? a.id : null) === ("id" in b ? b.id : null);
+  const repeated = top !== null && alerts.some((a) => same(a.subject, top.subject));
+  return rankInsights([...alerts, ...(yearly ? [yearly] : []), ...(top && !repeated ? [top] : [])]);
 }

@@ -274,13 +274,13 @@ describe("dashboardMetrics", () => {
       ["2026-11", false, 309_990],
     ]);
 
-    // Task 24: Lazer is 106,57 over its average of 33,33; the year of the two active
+    // Task 24: Lazer is 106,57 over its average of 33,33 (4,2 times it); the year of the two active
     // subscriptions (39,90 and Academia's 99,00) fills the next slot. No counterparty spent.
     expect(m.insights).toEqual([
       expect.objectContaining({
         kind: "CATEGORY_ABOVE_AVERAGE",
         impactCents: 10_657,
-        text: "Lazer: R$\u00a0139,90 este mês, 319% acima da média de R$\u00a033,33.",
+        text: "Lazer: R$\u00a0139,90 este mês, 4 vezes a média de R$\u00a033,33.",
       }),
       expect.objectContaining({ kind: "SUBSCRIPTIONS_YEARLY", impactCents: 166_680 }),
     ]);

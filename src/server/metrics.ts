@@ -12,6 +12,7 @@ import {
   monthlyEvolution,
 } from "@/domain/metrics";
 import { type Month, addMonthsToMonth, monthOf } from "@/domain/recurring";
+import { subscriptionName } from "@/domain/subscriptions";
 import { db } from "@/lib/db";
 import { generateRecurringSafely } from "@/server/recurring";
 
@@ -28,15 +29,6 @@ async function historyStart(spaceId: string) {
     select: { createdAt: true },
   });
   return todayInSaoPaulo(space.createdAt);
-}
-
-/** The subscriptions screen's name (task 19): the counterparty, the note, the category. */
-function ruleName(rule: {
-  counterparty: { name: string } | null;
-  description: string | null;
-  category: { name: string } | null;
-}) {
-  return rule.counterparty?.name ?? rule.description ?? rule.category?.name ?? "Assinatura";
 }
 
 /**
@@ -113,7 +105,7 @@ export async function dashboardMetrics(spaceId: string, month: string) {
   }));
   const insightRules: InsightRule[] = rules.map((rule) => ({
     id: rule.id,
-    name: ruleName(rule),
+    name: subscriptionName(rule),
     status: rule.status,
     amountCents: rule.amountCents,
     changes: rule.changes.map((c) => ({ ...c, changedOn: dbToCalendarDate(c.changedOn) })),

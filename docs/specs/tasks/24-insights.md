@@ -22,17 +22,18 @@ A consulta da task 23 passa a trazer o estabelecimento de cada lançamento, e as
 
 Ficam todos em `src/domain/insight-limits.ts`, e nenhuma regra tem número solto:
 
-| Constante                      | Valor    | Uso                                                   |
-| ------------------------------ | -------- | ----------------------------------------------------- |
-| `CATEGORY_ABOVE_AVERAGE_RATIO` | 0,25     | Variação mínima sobre a média (25%)                   |
-| `MIN_IMPACT_CENTS`             | R$ 50,00 | Impacto mínimo da categoria e dos gastos pequenos     |
-| `SMALL_PURCHASE_MAX_CENTS`     | R$ 30,00 | Uma compra "pequena" é de até esse valor, inclusive   |
-| `SMALL_PURCHASES_MIN_COUNT`    | 5        | Compras pequenas no mesmo lugar para virar insight    |
-| `SUBSCRIPTION_CHANGE_DAYS`     | 90       | Por quanto tempo uma mudança de valor vira insight    |
-| `TOP_COUNTERPARTY_MIN_SHARE`   | 0,20     | Fatia mínima das despesas do mês no maior lugar (20%) |
-| `MAX_INSIGHTS`                 | 3        | Quantos insights o dashboard mostra                   |
+| Constante                      | Valor    | Uso                                                     |
+| ------------------------------ | -------- | ------------------------------------------------------- |
+| `CATEGORY_ABOVE_AVERAGE_RATIO` | 0,25     | Variação mínima sobre a média (25%)                     |
+| `MIN_IMPACT_CENTS`             | R$ 50,00 | Impacto mínimo da categoria e dos gastos pequenos       |
+| `SMALL_PURCHASE_MAX_CENTS`     | R$ 30,00 | Uma compra "pequena" é de até esse valor, inclusive     |
+| `SMALL_PURCHASES_MIN_COUNT`    | 5        | Compras pequenas no mesmo lugar para virar insight      |
+| `SUBSCRIPTION_CHANGE_DAYS`     | 90       | Por quanto tempo uma mudança de valor vira insight      |
+| `TOP_COUNTERPARTY_MIN_SHARE`   | 0,20     | Fatia mínima das despesas do mês no maior lugar (20%)   |
+| `TIMES_AVERAGE_FROM`           | 3        | A partir de quantas vezes a média o texto diz "N vezes" |
+| `MAX_INSIGHTS`                 | 3        | Quantos insights o dashboard mostra                     |
 
-`SUBSCRIPTION_CHANGE_DAYS` reaproveita o `RECENT_CHANGE_DAYS` da task 19, para a tela de assinaturas e o insight concordarem.
+`SUBSCRIPTION_CHANGE_DAYS` começa igual ao `RECENT_CHANGE_DAYS` da task 19, para a tela de assinaturas e o insight concordarem. Ele é passado ao `recentChange`, então mudá-lo aqui muda o insight.
 
 ## As regras
 
@@ -53,6 +54,7 @@ Todas são de um mês (`YYYY-MM`), com hoje no fuso de São Paulo. "Este mês" n
   - "Alimentação: R$ 820,00 este mês, 46% acima da média de R$ 560,00."
   - Com a média zero: "Viagem: R$ 600,00 este mês, sem gastos nos 3 meses anteriores."
 - **A porcentagem é arredondada para inteiro,** sempre para baixo, para nunca anunciar o limite sem tê-lo passado.
+- **A partir de 3 vezes a média,** o texto diz "N vezes", também arredondado para baixo. Uma média baixa daria uma porcentagem absurda: "Presentes: R$ 200,00 este mês, 60 vezes a média de R$ 3,33."
 
 ### 2. Gastos pequenos recorrentes (alerta)
 
@@ -87,6 +89,8 @@ Todas são de um mês (`YYYY-MM`), com hoje no fuso de São Paulo. "Este mês" n
 ### 5. Onde você mais gastou (informativo)
 
 - **O estabelecimento com o maior total de despesas no mês.** Cada parcela conta no mês dela, como no ranking da task 20.
+- **As cobranças de assinatura não contam para escolher o lugar.** Um aluguel cadastrado como assinatura ganharia todo mês. Elas continuam no total de despesas do mês, que é a base da fatia.
+- **Um lugar que já está num alerta de compras pequenas** não volta aqui: seria a mesma frase duas vezes.
 - **Dispara quando** ele passa de 20% das despesas do mês e de R$ 50,00. Um empate no total vai pelo nome.
 - **O impacto é o total.**
 - **O texto:** "Onde você mais gastou este mês: Mercado Bom Preço, R$ 820,00 em 6 compras (23% das despesas)."
@@ -109,7 +113,7 @@ Todas são de um mês (`YYYY-MM`), com hoje no fuso de São Paulo. "Este mês" n
     - o grupo (`alert` ou `info`);
     - o impacto em centavos;
     - o texto pt-BR;
-    - o assunto (`{ type: "category" | "counterparty" | "subscription", id }`), para a tela da task 25 virar um link.
+    - o assunto (`{ type: "category" | "counterparty" | "subscription", id }`, ou `{ type: "subscriptions" }` para o total das assinaturas), para a tela da task 25 virar um link.
 - **O dinheiro do texto usa o `formatBRL`,** e a porcentagem é um inteiro com "%".
 - **O mês no texto** é o nome em pt-BR, minúsculo ("em outubro"), com o ano quando não é o de hoje.
 - **`src/server/metrics.ts`:** o `dashboardMetrics` ganha o campo `insights`. Ele usa os lançamentos e as categorias já carregados, sem consulta nova de lançamentos.
@@ -152,6 +156,24 @@ Todas são de um mês (`YYYY-MM`), com hoje no fuso de São Paulo. "Este mês" n
 - **"Onde mais gastou" só com mais de 20% das despesas.** Senão o insight vira uma lista, que já existe na tela de estabelecimentos (task 20).
 - **As regras de assinatura só no mês atual.** Elas falam do agora, e não de um mês passado.
 - **Sem IA, e sem palpites sobre o que falta registrar,** por exemplo o aluguel que costuma cair e ainda não caiu. Isso fica para depois.
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Ele conferiu todas as fronteiras e comparou a fatia de 20% por força bruta com a conta inteira. Corrigido:
+
+- **O mesmo lugar ocupava duas vagas:** o alerta de compras pequenas da padaria e o "onde mais gastou" da mesma padaria. Agora o informativo sai quando um alerta já fala do mesmo lugar. Há teste.
+- **Uma média baixa dava "5906% acima da média de R$ 3,33".** A partir de 3 vezes a média, o texto diz "N vezes".
+- **O `SUBSCRIPTION_CHANGE_DAYS` não era usado:** a regra chamava o `recentChange` com os 90 dias dele. Agora a constante é passada.
+- **O nome da assinatura estava em dois lugares** (a tela e o servidor). Agora é o `subscriptionName`, uma função pura em `src/domain/subscriptions.ts`.
+- **O teste do mês passado não provava** que a regra das assinaturas no ano fica de fora. Ganhou um caso com vaga sobrando.
+- **O aluguel cadastrado como assinatura** viraria "onde você mais gastou" todo mês. As cobranças de assinatura não escolhem mais o lugar.
+- **O assunto do total das assinaturas** (`{ type: "subscriptions" }`) entrou na spec.
+
+Anotado, sem mudança:
+
+- **Um alerta de categoria (Alimentação) e um de compras pequenas numa subcategoria dela** (Lanches) podem contar o mesmo dinheiro. Eles dizem coisas diferentes, o total e o hábito, e a regra 2 só proíbe contar duas vezes dentro dela.
+- **Uma média que arredonda para zero** (1 centavo em 3 meses) diz "sem gastos". É improvável.
+- **O onboarding nomeia a assinatura sem a categoria** como último recurso (`src/server/onboarding.ts`). Isso fica fora deste diff, e a tela de lá sempre tem um estabelecimento ou uma observação.
 
 ## Fora do escopo
 
