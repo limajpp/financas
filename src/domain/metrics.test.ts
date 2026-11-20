@@ -180,6 +180,7 @@ describe("monthProjection", () => {
     // Still to come: the installment on 28/11 (100) + the subscription on 20/11 (99); not the one
     // charged on 08/11, the paused one or the one starting in February. 199,00.
     // Projected: 2.999,90 + 460 + 199 = 3.658,90; leftover 8.050 − 3.658,90 = 4.391,10.
+    // So far (task 25): 8.050 − 2.999,90 = 5.050,10, of 8.050.
     expect(monthProjection(entries, rules, "2026-11", TODAY)).toEqual({
       expenseToDateCents: 299_990,
       variableToDateCents: 46_000,
@@ -189,7 +190,14 @@ describe("monthProjection", () => {
       upcomingFixedCents: 19_900,
       projectedExpenseCents: 365_890,
       projectedLeftoverCents: 439_110,
+      leftoverToDateCents: 505_010,
+      savingsRateToDate: 505_010 / 805_000,
     });
+  });
+
+  it("sem receita, a taxa até agora é null", () => {
+    const projection = monthProjection([expense("2026-11-01", 3_000)], [], "2026-11", TODAY);
+    expect(projection).toMatchObject({ leftoverToDateCents: -3_000, savingsRateToDate: null });
   });
 
   it("CA6: no 1º dia, o ritmo é o do dia", () => {

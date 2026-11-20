@@ -191,6 +191,20 @@ async function withGroupTotals(
 }
 
 /**
+ * The latest entries of the space up to `today` (the home's list, task 25), newest first like the
+ * list: later-dated installments haven't happened yet and stay out.
+ */
+export async function recentItems(spaceId: string, today: string, take: number) {
+  const rows = await db.transaction.findMany({
+    where: { spaceId, date: { lte: calendarDateToDb(today) } },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    take,
+    select: listSelect,
+  });
+  return withGroupTotals(spaceId, rows.map(toItem));
+}
+
+/**
  * The entries of one card's invoice (task 18): its purchases, refunds and payments, as list items
  * newest first. The card must already be known to be in the space.
  */

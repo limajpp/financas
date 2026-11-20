@@ -1,6 +1,9 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
+import { dayExpense, topCounterparty } from "@/domain/dashboard";
 import { type InsightEntry, type InsightRule, monthInsights } from "@/domain/insights";
 import {
   EVOLUTION_MONTHS,
@@ -14,22 +17,22 @@ import {
 import { type Month, addMonthsToMonth, monthOf } from "@/domain/recurring";
 import { subscriptionName } from "@/domain/subscriptions";
 import { db } from "@/lib/db";
-import { generateRecurringSafely } from "@/server/recurring";
+import { generateRecurringOnce } from "@/server/recurring";
 
-const categorySelect = { id: true, name: true, isFixed: true } as const;
+const categorySelect = { id: true, name: true, isFixed: true, icon: true, color: true } as const;
 
 /**
  * When the space started using the app: its creation day, in São Paulo. Averages and the
  * evolution only trust months from then on. An account's initial balance doesn't count (decided
  * in task 24): one added later with an old balance would unlock months nobody followed.
  */
-async function historyStart(spaceId: string) {
+export const spaceHistoryStart = cache(async (spaceId: string) => {
   const space = await db.space.findUniqueOrThrow({
     where: { id: spaceId },
     select: { createdAt: true },
   });
   return todayInSaoPaulo(space.createdAt);
-}
+});
 
 /**
  * The dashboard's numbers for `month` ("YYYY-MM"), with today in São Paulo (task 23): the month's
@@ -41,7 +44,7 @@ async function historyStart(spaceId: string) {
 export async function dashboardMetrics(spaceId: string, month: string) {
   if (!isMonth(month)) return null;
   // Subscription charges due up to today first (task 13).
-  await generateRecurringSafely(spaceId);
+  await generateRecurringOnce(spaceId);
   const today = todayInSaoPaulo();
   const future = month > monthOf(today);
   const first: Month = addMonthsToMonth(month, -(EVOLUTION_MONTHS - 1));
@@ -91,7 +94,7 @@ export async function dashboardMetrics(spaceId: string, month: string) {
         },
       },
     }),
-    historyStart(spaceId),
+    spaceHistoryStart(spaceId),
   ]);
   const entries: InsightEntry[] = rows.map((row) => ({
     type: row.type,
@@ -110,7 +113,16 @@ export async function dashboardMetrics(spaceId: string, month: string) {
     amountCents: rule.amountCents,
     changes: rule.changes.map((c) => ({ ...c, changedOn: dbToCalendarDate(c.changedOn) })),
   }));
-  const categories = future ? null : categoryBreakdown(entries, month, start);
+  const breakdown = future ? null : categoryBreakdown(entries, month, start);
+  // Each main category's icon and color, for the dashboard's rows (task 25).
+  const looks = new Map<string, { icon: string; color: string }>();
+  for (const row of rows) {
+    const top = row.category?.parent ?? row.category;
+    if (top) looks.set(top.id, { icon: top.icon, color: top.color });
+  }
+  const categories =
+    breakdown?.map((c) => ({ ...c, look: c.id === null ? null : (looks.get(c.id) ?? null) })) ??
+    null;
   return {
     month,
     today,
@@ -122,6 +134,9 @@ export async function dashboardMetrics(spaceId: string, month: string) {
     // that haven't happened, and every category would read as "nothing spent".
     categories,
     evolution: future ? null : monthlyEvolution(entries, month, start),
+    // Task 25: today's expense (today's month only) and the month's top counterparty.
+    todayExpenseCents: monthOf(today) === month ? dayExpense(entries, today) : null,
+    topCounterparty: future ? null : topCounterparty(entries, month),
     // Task 24: the 3 insights, from the data already loaded. Null for a future month too.
     insights: categories
       ? monthInsights({ month, today, entries, categories, rules: insightRules })

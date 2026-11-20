@@ -126,6 +126,13 @@ export type MonthProjection = {
   projectedExpenseCents: number;
   /** The month's registered income − the projected expense. */
   projectedLeftoverCents: number;
+  /**
+   * The month's registered income − the expense up to today: the "so far" leftover the dashboard
+   * shows for the current month (task 25). Installments dated later this month aren't in it.
+   */
+  leftoverToDateCents: number;
+  /** leftoverToDateCents ÷ the income; null without income. */
+  savingsRateToDate: number | null;
 };
 
 /**
@@ -154,6 +161,8 @@ export function monthProjection(
   // From the exact pace, not the rounded one shown: rounded once, at the end.
   const projectedVariableCents = Math.round((variableToDateCents * remainingDays) / elapsedDays);
   const projectedExpenseCents = expenseToDateCents + projectedVariableCents + upcomingFixedCents;
+  const incomeCents = sum(of.filter(isIncome));
+  const leftoverToDateCents = incomeCents - expenseToDateCents;
   return {
     expenseToDateCents,
     variableToDateCents,
@@ -162,7 +171,9 @@ export function monthProjection(
     projectedVariableCents,
     upcomingFixedCents,
     projectedExpenseCents,
-    projectedLeftoverCents: sum(of.filter(isIncome)) - projectedExpenseCents,
+    projectedLeftoverCents: incomeCents - projectedExpenseCents,
+    leftoverToDateCents,
+    savingsRateToDate: incomeCents > 0 ? leftoverToDateCents / incomeCents : null,
   };
 }
 

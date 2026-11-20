@@ -254,6 +254,8 @@ describe("dashboardMetrics", () => {
       upcomingFixedCents: 19_900,
       projectedExpenseCents: 365_890,
       projectedLeftoverCents: 439_110,
+      leftoverToDateCents: 505_010,
+      savingsRateToDate: 505_010 / 805_000,
     });
     // Without the subscription starting in February of the unit data set: 100 + 138,90 a month.
     expect(m.commitments.months.map((c) => c.totalCents)).toEqual(Array(6).fill(23_890));
