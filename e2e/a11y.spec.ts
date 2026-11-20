@@ -18,6 +18,15 @@ async function visit(page: Page, url: string) {
   }
 }
 
+/**
+ * The screen as the person sees it: the title shown and nothing still loading. Not "networkidle":
+ * the app keeps requests open (WebKit never got there).
+ */
+async function settled(page: Page) {
+  await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
+  await expect(page.getByText(/^Carregando/)).toHaveCount(0);
+}
+
 /** The WCAG 2.1 A and AA rules; only serious and critical violations fail (task 26). */
 async function violations(page: Page) {
   const { violations } = await new AxeBuilder({ page })
@@ -85,7 +94,7 @@ test("CA5: as telas principais não têm violação séria nem crítica, no clar
     await page.emulateMedia({ colorScheme: scheme });
     for (const url of SCREENS) {
       await visit(page, url);
-      await page.waitForLoadState("networkidle");
+      await settled(page);
       const list = await violations(page);
       if (list.length > 0) found[`${scheme} ${url}`] = list;
     }
@@ -99,7 +108,7 @@ test("CA5: a entrada e a página não encontrada, no claro e no escuro", async (
     await page.emulateMedia({ colorScheme: scheme });
     for (const url of ["/entrar", "/cadastro", "/nao-existe"]) {
       await visit(page, url);
-      await page.waitForLoadState("networkidle");
+      await settled(page);
       const list = await violations(page);
       if (list.length > 0) found[`${scheme} ${url}`] = list;
     }

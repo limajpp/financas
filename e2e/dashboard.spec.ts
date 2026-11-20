@@ -186,6 +186,10 @@ test("CA2, CA4: uma conta nova, o convite e o seletor no primeiro mês", async (
     await expect(summary.getByRole("heading", { level: 2 })).toHaveText(title!);
   }
 
-  await page.getByRole("link", { name: "Registrar o primeiro gasto" }).click();
-  await expect(page).toHaveURL(/\/registrar$/);
+  // A click while the page still hydrates may land on a link React then takes over (WebKit):
+  // clicking again until the register opens.
+  await expect(async () => {
+    await page.getByRole("link", { name: "Registrar o primeiro gasto" }).click();
+    await expect(page).toHaveURL(/\/registrar$/, { timeout: 2_000 });
+  }).toPass();
 });

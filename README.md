@@ -3,7 +3,7 @@
 > App de finanças pessoais para registrar cada gasto **no momento em que ele acontece** e entender o mês com poucos números claros.
 > Web para análise, PWA no iPhone para registrar em segundos, até offline.
 
-![status](https://img.shields.io/badge/status-em%20desenvolvimento-orange) ![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-blue)
+![status](https://img.shields.io/badge/status-v1%20conclu%C3%ADda-brightgreen) ![licença](https://img.shields.io/badge/licen%C3%A7a-MIT-blue)
 
 ---
 
@@ -36,6 +36,10 @@ Este projeto ataca as duas pontas:
 - Funciona **offline**: o lançamento entra numa fila local e sincroniza quando a conexão volta.
 - Lembrete diário por push às 21h: "registrou tudo hoje?".
 
+**Primeiro uso**
+
+- Um passo a passo ("Começar") traz o que já existia antes do app: as contas com o saldo de hoje, a fatura aberta de cada cartão, as compras parceladas em curso e as assinaturas.
+
 **Contas e cartões**
 
 - Qualquer conta aceita qualquer forma de pagamento (Pix, débito, crédito, boleto, TED, dinheiro).
@@ -44,7 +48,7 @@ Este projeto ataca as duas pontas:
 
 **Visões**
 
-- **Dashboard:** sobra do mês, taxa de poupança, projeção do mês e comprometido futuro; 2–3 insights em linguagem simples; categorias vs média; evolução de 6 meses.
+- **Dashboard** (o início, no celular): sobra do mês, taxa de poupança, projeção do mês e comprometido futuro; 2–3 destaques em linguagem simples; categorias vs média; evolução de 6 meses; seletor de mês. No celular, antes disso: o gasto de hoje, a fatura atual de cada cartão e os últimos lançamentos.
 - **Faturas** por cartão e vencimento, com as parcelas futuras.
 - **Assinaturas:** total por mês e por ano, alerta de mudança de valor.
 - **Estabelecimentos:** onde mais gasto, por valor e por frequência.
@@ -53,17 +57,23 @@ Este projeto ataca as duas pontas:
 **Insights por regras (sem IA na v1)**
 
 - Categoria acima da média dos últimos 3 meses.
-- Gastos pequenos recorrentes ("23 cafés este mês, R$ 210").
-- Assinaturas anualizadas e mudança de valor.
-- Fixos × variáveis.
+- Gastos pequenos recorrentes ("Café da Esquina: 23 compras de até R$ 30,00 somaram R$ 210,00 este mês").
+- Assinatura que subiu de valor, e o custo das assinaturas no ano.
+- Onde você mais gastou no mês.
+- Os limites de cada regra ficam num só módulo, fáceis de ajustar.
+
+**No dia a dia**
+
+- Modo escuro, que acompanha o tema do aparelho.
+- Acessível por teclado e leitor de tela nos fluxos principais (checado pelo axe nos testes).
 
 ## Roadmap
 
-| Fase        | Escopo                                                                                                                 | Status                                           |
-| ----------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| **v1**      | Fundação, cadastros, registro rápido, PWA offline + lembrete, visões, dashboard                                        | 🚧 em andamento ([milestone](../../milestone/1)) |
-| **Fase 2**  | Espaço compartilhado do casal: "um paga e divide" (estilo Splitwise), saldo entre os dois, métricas individual × casal | planejada                                        |
-| **Fase 3+** | Limites por categoria sugeridos pela média, metas, reserva de emergência, importação OFX/Open Finance, insights com IA | ideias                                           |
+| Fase        | Escopo                                                                                                                 | Status                                        |
+| ----------- | ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
+| **v1**      | Fundação, cadastros, registro rápido, PWA offline + lembrete, visões, dashboard                                        | ✅ concluída ([milestone](../../milestone/1)) |
+| **Fase 2**  | Espaço compartilhado do casal: "um paga e divide" (estilo Splitwise), saldo entre os dois, métricas individual × casal | planejada                                     |
+| **Fase 3+** | Limites por categoria sugeridos pela média, metas, reserva de emergência, importação OFX/Open Finance, insights com IA | ideias                                        |
 
 O backlog completo está nas [issues](../../issues) (label `futuro` = depois da v1).
 
@@ -94,7 +104,7 @@ Por que **PWA** e não app nativo: um único código, sem App Store, instalaçã
                  Next.js 16 na Vercel
                   ├─ Server Actions (CRUD)
                   ├─ /api/sync  (fila offline, idempotente por clientId)
-                  ├─ /api/cron/reminder (push diário, 21h BRT)
+                  ├─ /api/cron/daily (push diário, 21h BRT)
                   └─ src/domain/  ← regras puras e testadas:
                        ciclo da fatura · parcelas · saldo · métricas · insights
                             │
@@ -185,7 +195,7 @@ O desenvolvimento é **orientado a spec** e feito task por task, em parceria com
 3. Os critérios de aceite viram **testes primeiro** (TDD), depois a implementação.
 4. Lint, testes e build precisam passar; telas são conferidas no navegador.
 5. Um **agente revisor** independente lê a spec e o diff procurando bugs, desvios e testes fracos.
-6. Um **PR para a `develop`** fecha a issue; o merge é feito por um humano. A `main` só recebe releases vindas da `develop`.
+6. Um **PR para a `develop`** fecha a issue. Com o revisor aprovando e o CI verde, o merge é feito por squash; o João acompanha pelos PRs. A `main` só recebe releases vindas da `develop`, quando ele decide.
 
 Commits seguem `<gitmoji> <type>(<scope>)?: <description>`, em inglês (ex.: `✨ feat(cards): add invoice cycle module`), validados por um hook `commit-msg` versionado em `.githooks/`.
 
@@ -193,7 +203,7 @@ O processo completo está em [`docs/specs/README.md`](docs/specs/README.md).
 
 ## Status
 
-🚧 Em desenvolvimento: v1, etapa 1 (fundação). Acompanhe pela [milestone v1](../../milestone/1).
+✅ **v1 concluída.** As 26 tasks da [milestone v1](../../milestone/1) estão na `develop`. A verificação manual de ponta a ponta está em [`docs/verificacao-v1.md`](docs/verificacao-v1.md): a parte do computador foi feita, e a do iPhone é conferida com o app instalado da produção. Próximo passo: a fase 2 (o espaço do casal).
 
 ## Licença
 

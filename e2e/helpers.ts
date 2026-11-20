@@ -59,3 +59,18 @@ export async function signOut(page: Page, isMobile: boolean) {
 export function formAlert(page: Page) {
   return page.getByRole("main").getByRole("alert");
 }
+
+/**
+ * page.goto that survives Next's fallback: a page shows before its data request ends, a goto then
+ * aborts that request, and Next answers with a full load of "/" that interrupts the goto (WebKit).
+ */
+export async function visit(page: Page, url: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto(url);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
+    }
+  }
+}

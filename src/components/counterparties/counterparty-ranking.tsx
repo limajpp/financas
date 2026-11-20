@@ -2,7 +2,7 @@
 
 import { ChevronRight, Search } from "lucide-react";
 import Link from "next/link";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { CategoryIcon } from "@/components/categories/category-icon";
 import type { CounterpartyOption } from "@/components/register/types";
@@ -34,6 +34,13 @@ export function CounterpartyRanking({
   const [showAll, setShowAll] = useState(false);
   const [query, setQuery] = useState("");
   const searchId = useId();
+  // Typed before the page hydrated (a slow phone, task 26): the text is in the field but not in
+  // the state, and the search wouldn't run. On mount, the state takes what's already there.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const typed = searchRef.current?.value ?? "";
+    if (typed !== "") setQuery(typed);
+  }, []);
   const ranked = rankCounterparties(rows, order);
   const shown = showAll ? ranked : ranked.slice(0, SHOWN);
   const href = (id: string) => `/estabelecimentos/${id}?periodo=${period}`;
@@ -51,6 +58,7 @@ export function CounterpartyRanking({
             className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
           />
           <Input
+            ref={searchRef}
             id={searchId}
             type="search"
             value={query}

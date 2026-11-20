@@ -102,16 +102,65 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
 
 ## Critérios de aceite
 
-- [ ] CA1 — O modo escuro segue o sistema em todas as telas, e as barras do navegador e do PWA acompanham. Há screenshots do celular e do computador nos dois temas, mandadas ao João.
-- [ ] CA2 — Uma tela de erro e uma página não encontrada, com testes e2e: um endereço inexistente, e um lançamento de outro espaço.
-- [ ] CA3 — Os estados vazios de todas as telas da lista, conferidos com uma conta nova (e2e onde ainda não houver).
-- [ ] CA4 — Há o link "Pular para o conteúdo" e o foco visível. A conferência de saldo anuncia o resultado, os seletores de ícone e cor andam pelas setas, e arquivar deixa o foco no título da lista. Cada um tem teste.
-- [ ] CA5 — O axe no e2e, sobre as telas principais nos dois temas, sem violação séria nem crítica.
+- [x] CA1 — O modo escuro segue o sistema em todas as telas, e as barras do navegador e do PWA acompanham. Há screenshots do celular e do computador nos dois temas, mandadas ao João.
+- [x] CA2 — Uma tela de erro e uma página não encontrada:
+  - teste unitário da tela de erro;
+  - e2e de um endereço inexistente (404), e de um estabelecimento e uma fatura de fora do espaço. O app não tem endereço próprio para um lançamento, que abre num diálogo.
+- [x] CA3 — Os estados vazios de todas as telas da lista, conferidos com uma conta nova (e2e onde ainda não houver).
+- [x] CA4 — Há o link "Pular para o conteúdo" e o foco visível. A conferência de saldo anuncia o resultado, os seletores de ícone e cor andam pelas setas, e arquivar deixa o foco no título da lista. Cada um tem teste.
+- [x] CA5 — O axe no e2e, sobre as telas principais nos dois temas, sem violação séria nem crítica.
 - [ ] CA6 — O Lighthouse mobile dá pelo menos 90 em desempenho e acessibilidade nas 5 telas principais. Os números ficam na spec.
-- [ ] CA7 — Duas rodadas completas do e2e seguidas, com `--retries=0`, sem falha.
-- [ ] CA8 — `docs/verificacao-v1.md` está escrito e a parte do computador foi executada e registrada. A parte do iPhone fica com o João, depois do release.
-- [ ] CA9 — O README diz "v1 concluída" e descreve o app de hoje.
+- [x] CA7 — Duas rodadas completas do e2e seguidas, com `--retries=0`, sem falha.
+- [x] CA8 — `docs/verificacao-v1.md` está escrito e a parte do computador foi executada e registrada. A parte do iPhone fica com o João, depois do release.
+- [x] CA9 — O README diz "v1 concluída" e descreve o app de hoje.
 - [ ] CA10 — Lint, format, test, build e CI verdes.
+
+## Implementação
+
+- **Modo escuro:**
+  - a variante `dark:` e os tokens escuros seguem `prefers-color-scheme`;
+  - o `color-scheme: light dark` faz os controles nativos acompanharem (data, select, rolagem);
+  - o `themeColor` tem uma cor por tema.
+  - A auditoria percorreu todas as telas, com uma conta nova e com dados, nos dois temas, no celular e no computador. As cores já tinham variante escura; nada ficou com cor fixa clara.
+- **O contraste do texto apagado:** o axe achou o `muted-foreground` do shadcn (0,556) a 4,3:1 sobre os fundos cinza dos botões de alternância. Ele passou a 0,52, com pelo menos 5:1 em todo fundo claro. O escuro já tinha 5,8:1.
+- **Estados vazios:** quase todas as telas já tinham. Ganharam o próximo passo:
+  - a lista de lançamentos vazia, sem filtro, com "Registrar um lançamento";
+  - os estabelecimentos vazios, com a dica de dizer o lugar em "O que foi?".
+- **Erros:** a página não encontrada (`app/not-found.tsx`) cobre os endereços que não existem. A tela de erro (`(app)/error.tsx`, com o `retry` do Next 16) cobre as telas logadas. As telas de detalhe continuam com o "não encontrado" próprio delas, que já existia e diz mais.
+- **Teclado:**
+  - `radioKeys` em `src/components/radio-keys.ts`, o padrão de radio do WAI-ARIA, com teste;
+  - `focusHeading` depois de arquivar: o título da tela, nas contas, e o título "Cartões de crédito", nos cartões;
+  - o link "Pular para o conteúdo" leva ao `main`;
+  - a conferência tem uma região `status` só para leitores de tela, sempre montada, e a linha visível fica `aria-hidden`.
+- **O gráfico do início sai da árvore de acessibilidade por completo** (`accessibilityLayer={false}`): o axe apontou um elemento focável dentro da área escondida. A tabela "Ver os números" é a alternativa.
+- **Um defeito real achado pelos testes instáveis:** na busca de estabelecimentos, o que se digitava antes de a página hidratar (num celular lento) ficava no campo, mas a busca não rodava. Agora o componente adota o texto ao montar.
+- **Os testes instáveis, e a causa de cada um:**
+  - **O "Olá" duplicado:** por um quadro, o Next 16 mantém a rota anterior viva (Activity) e há duas home no DOM. As esperas aceitam a primeira.
+  - **`page.goto` interrompido:** o Next recarrega "/" depois de salvar, e isso interrompe a navegação. O helper `visit` passou para `e2e/helpers.ts`, e o `offline` o usa.
+  - **Um clique durante a hidratação:** o teste repete o clique até a navegação acontecer.
+  - **O teste aleatório do ciclo de fatura** estourava os 5 s com a suíte inteira em paralelo. Ganhou um limite explícito.
+  - **O axe esperava `networkidle`,** que o WebKit nunca alcança. Agora espera o título e nenhum "Carregando…".
+  - **Resultado:** duas rodadas completas seguidas, com `--retries=0`, 134 de 134, sem falha. Os 2 pulados são o teclado, sem Tab no iPhone, e a instalação, só no Chromium.
+
+### Desempenho (Lighthouse 13.5, mobile, build local, mediana de 3 rodadas)
+
+| Tela        | Antes | Depois | Acessibilidade | LCP   | TBT    | JS (transferido) |
+| ----------- | ----- | ------ | -------------- | ----- | ------ | ---------------- |
+| Início      | 61    | 68     | 100            | 3,7 s | 829 ms | 252 KB           |
+| Registro    | 66    | 70     | 100            | 3,8 s | 764 ms | 306 KB           |
+| Lançamentos | 71    | 74     | 100            | 3,6 s | 667 ms | 274 KB           |
+| Faturas     | 73    | 76     | 100            | 3,5 s | 584 ms | 257 KB           |
+| Contas      | 89    | 81     | 100            | 2,3 s | 681 ms | 264 KB           |
+
+- **O "antes" é uma rodada só.** As notas variam de uma rodada para outra: o início foi de 61 a 78 numa mesma série, e contas de 82 a 89.
+- **O que mudou:**
+  - o gráfico do início só carrega perto da tela (o Recharts pesava ~600 ms de CPU na abertura);
+  - o zod saiu do JavaScript de quatro telas. As constantes dos filtros foram para `src/lib/transaction-filter-params.ts`, sem zod;
+  - a fonte mono, sem uso, não é mais baixada;
+  - o início não se desloca mais quando os blocos chegam.
+- **O que pesa:** a base que toda tela paga, o React e o roteador do Next, com cerca de 200 KB e 1–3 s de CPU no celular simulado (4× mais lento). Além disso, o conteúdo chega por streaming depois desse JavaScript, o que puxa o LCP para 3,5 s no 4G lento simulado.
+  - Subir a 90 pede uma mudança de estrutura: menos componentes de cliente por tela, a fila offline (Dexie) carregada sob demanda, o conteúdo principal no HTML estático. É trabalho de uma task própria, com o risco de mexer no offline.
+- **A acessibilidade fica em 100** nas cinco telas.
 
 ## Decisões
 
