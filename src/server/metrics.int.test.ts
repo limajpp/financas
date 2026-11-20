@@ -246,6 +246,7 @@ describe("dashboardMetrics", () => {
       variableToDateCents: 46_000,
       dailyPaceCents: 3_067,
       remainingDays: 15,
+      projectedVariableCents: 46_000,
       upcomingFixedCents: 19_900,
       projectedExpenseCents: 365_890,
       projectedLeftoverCents: 439_110,
@@ -254,13 +255,13 @@ describe("dashboardMetrics", () => {
     expect(m.commitments.months.map((c) => c.totalCents)).toEqual(Array(6).fill(23_890));
     expect(m.commitments.totalCents).toBe(143_340);
     expect(m.commitments.remainingInstallmentsCents).toBe(80_000);
-    expect(m.categories.map((c) => [c.name, c.totalCents, c.averageCents])).toEqual([
+    expect(m.categories!.map((c) => [c.name, c.totalCents, c.averageCents])).toEqual([
       ["Moradia", 250_000, 250_000],
       ["Alimentação", 42_000, 38_667],
       ["Lazer", 13_990, 3_333],
       ["Sem categoria", 4_000, 0],
     ]);
-    expect(m.evolution.map((e) => [e.month, e.beforeHistory, e.expenseCents])).toEqual([
+    expect(m.evolution!.map((e) => [e.month, e.beforeHistory, e.expenseCents])).toEqual([
       ["2026-06", true, 0],
       ["2026-07", false, 0],
       ["2026-08", false, 274_000],
@@ -299,9 +300,64 @@ describe("dashboardMetrics", () => {
     expect((await dashboardMetrics(s.spaceId, "2026-11"))!.historyStart).toBe("2026-10-30");
   });
 
+  it("um mês futuro só traz o resumo e o comprometido", async () => {
+    const s = await space("ana@example.com");
+    await entry(s, { amountCents: 30_000, date: "2026-10-12", categoryId: s.mercado });
+    await entry(s, {
+      amountCents: 30_000,
+      date: "2026-11-10",
+      method: "CREDIT",
+      categoryId: s.mercado,
+      installments: 3,
+    });
+    on();
+    const m = (await dashboardMetrics(s.spaceId, "2027-01"))!;
+    expect(m.summary.expenseCents).toBe(10_000);
+    expect(m.projection).toBeNull();
+    expect(m.categories).toBeNull();
+    expect(m.evolution).toBeNull();
+    expect(m.commitments.remainingInstallmentsCents).toBe(20_000);
+  });
+
+  it("as assinaturas de outro espaço não entram na projeção nem no comprometido", async () => {
+    const s = await space("ana@example.com");
+    const other = await space("bia@example.com");
+    await createSubscriptionRule(other.spaceId, other.userId, {
+      counterparty: "Academia",
+      amountCents: 9_900,
+      dayOfMonth: 20,
+      method: "PIX",
+      accountId: other.accountId,
+      cardId: null,
+      categoryId: null,
+      description: null,
+    });
+    on();
+    const m = (await dashboardMetrics(s.spaceId, "2026-11"))!;
+    expect(m.projection?.upcomingFixedCents).toBe(0);
+    expect(m.commitments.totalCents).toBe(0);
+  });
+
+  it("o início do histórico é o dia em São Paulo, não em UTC", async () => {
+    const s = await space("ana@example.com");
+    await db.account.updateMany({
+      where: { spaceId: s.spaceId },
+      data: { initialBalanceDate: new Date("2026-11-01T00:00:00Z") },
+    });
+    // 01h UTC on 31/10 is still 30/10 in São Paulo.
+    await db.space.update({
+      where: { id: s.spaceId },
+      data: { createdAt: new Date("2026-10-31T01:00:00Z") },
+    });
+    expect((await dashboardMetrics(s.spaceId, "2026-11"))!.historyStart).toBe("2026-10-30");
+  });
+
   it("um mês mal formado é recusado", async () => {
     const s = await space("ana@example.com");
     expect(await dashboardMetrics(s.spaceId, "2026-13")).toBeNull();
     expect(await dashboardMetrics(s.spaceId, "novembro")).toBeNull();
+    // Valid in form, but its evolution would leave the calendar.
+    expect(await dashboardMetrics(s.spaceId, "0050-01")).toBeNull();
+    expect(await dashboardMetrics(s.spaceId, "9999-12")).toBeNull();
   });
 });

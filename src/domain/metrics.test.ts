@@ -185,6 +185,7 @@ describe("monthProjection", () => {
       variableToDateCents: 46_000,
       dailyPaceCents: 3_067,
       remainingDays: 15,
+      projectedVariableCents: 46_000,
       upcomingFixedCents: 19_900,
       projectedExpenseCents: 365_890,
       projectedLeftoverCents: 439_110,
@@ -214,10 +215,14 @@ describe("monthProjection", () => {
   });
 
   it("arredonda o ritmo × os dias para o centavo", () => {
-    // 10,00 in 3 days, 27 left in a 30-day month: 1000 × 27 / 3 = 9.000 cents exactly; with 7 days
-    // elapsed: 1000 × 23 / 7 = 3.285,71… → 3.286 cents.
+    // 10,00 in 7 days, 23 left: 1000 × 23 / 7 = 3.285,71… → 3.286 cents. The pace shown is
+    // 1000 / 7 = 142,86… → 143; 143 × 23 would be 3.289: the projection uses the exact pace.
     const projection = monthProjection([expense("2026-11-01", 1_000)], [], "2026-11", "2026-11-07");
-    expect(projection?.projectedExpenseCents).toBe(1_000 + 3_286);
+    expect(projection).toMatchObject({
+      dailyPaceCents: 143,
+      projectedVariableCents: 3_286,
+      projectedExpenseCents: 1_000 + 3_286,
+    });
   });
 
   it("CA6: um mês passado ou futuro não tem projeção", () => {
@@ -337,6 +342,20 @@ describe("categoryBreakdown", () => {
     expect(rows[0]).toMatchObject({ id: "lazer", totalCents: 10_000 });
   });
 
+  it("o gasto na própria categoria principal vira uma linha quando há subcategorias", () => {
+    const own = expense("2026-11-04", 5_000, { category: { ...alimentacao, parent: null } });
+    const rows = categoryBreakdown([...entries, own], "2026-11", HISTORY);
+    // Alimentação: 300 (Mercado) + 120 (Restaurante) + 50 on Alimentação itself = 470.
+    expect(rows.find((r) => r.id === "alimentacao")).toMatchObject({
+      totalCents: 47_000,
+      children: [
+        { id: "mercado", totalCents: 30_000 },
+        { id: "restaurante", totalCents: 12_000 },
+        { id: "alimentacao", name: "Alimentação", totalCents: 5_000 },
+      ],
+    });
+  });
+
   it("CA5: ajustes e receitas não entram", () => {
     expect(categoryBreakdown(entries, "2026-11", HISTORY).some((r) => r.id === "salario")).toBe(
       false,
@@ -390,7 +409,21 @@ describe("monthlyEvolution", () => {
 describe("isMonth", () => {
   it("aceita YYYY-MM de um mês real", () => {
     expect(isMonth("2026-11")).toBe(true);
-    for (const v of ["2026-13", "2026-00", "2026-1", "26-11", "2026-11-01", ""]) {
+    expect(isMonth("2000-01")).toBe(true);
+    expect(isMonth("2999-12")).toBe(true);
+    // Outside 2000–2999 the evolution's months would stop being valid dates.
+    for (const v of [
+      "2026-13",
+      "2026-00",
+      "2026-1",
+      "26-11",
+      "2026-11-01",
+      "",
+      "1999-12",
+      "0050-01",
+      "3000-01",
+      "9999-12",
+    ]) {
       expect(isMonth(v)).toBe(false);
     }
   });

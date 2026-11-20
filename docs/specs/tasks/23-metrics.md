@@ -44,7 +44,7 @@ Só para o mês atual. Um mês passado não tem projeção: o real já é o valo
   - as parcelas já registradas com data depois de hoje;
   - as cobranças das assinaturas ativas que ainda não saíram neste mês. São as de cursor (`nextMonth`) até este mês e dia de cobrança depois de hoje.
 - **Despesa projetada** = as despesas até hoje + o ritmo × os dias que faltam + os fixos que ainda vão cair.
-  - O ritmo × os dias é arredondado para o centavo mais próximo.
+  - O ritmo × os dias é arredondado para o centavo mais próximo e vem à parte (`projectedVariableCents`), para a tela mostrar as parcelas exatas da soma. O ritmo diário exibido também é arredondado, mas a projeção usa o ritmo exato.
   - No último dia do mês, não faltam dias e a projeção é a despesa real.
 - **Sobra projetada** = as receitas do mês − a despesa projetada.
   - As receitas são só as já registradas: a v1 não tem receita recorrente (fora do escopo da task 22).
@@ -63,7 +63,7 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
 
 - **O total das despesas do mês por categoria principal:** uma subcategoria soma na mãe. Por exemplo, Mercado e Restaurante somam em Alimentação.
   - "Sem categoria" é uma linha à parte.
-  - Cada linha também tem as subcategorias, para o detalhe.
+  - Cada linha também tem as subcategorias, para o detalhe. Quando há subcategorias, o que foi lançado na própria categoria principal vira mais uma linha, com o nome dela, e as linhas somam o total.
 - **A média dos 3 meses anteriores** de cada categoria: a soma dos 3 meses ÷ 3, arredondada para o centavo. Um mês sem gasto na categoria conta como zero.
 - **Uma categoria sem gasto no mês** aparece quando a média dela não é zero: é o "este mês você não gastou com isso".
 - **A ordem:** o maior total primeiro, depois a maior média, depois o nome.
@@ -101,23 +101,24 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
   - carrega numa só consulta os lançamentos do 1º mês da evolução até o último mês do comprometido (a média de 3 meses cabe nesse intervalo);
   - carrega as assinaturas ativas e o início do histórico;
   - devolve todas as métricas.
-  - **Tudo restrito ao espaço.** O mês vem validado (`YYYY-MM`). Para um mês futuro, só o resumo do que já está registrado e o comprometido.
+  - **Tudo restrito ao espaço.** O mês vem validado (`YYYY-MM`, de 2000 a 2999); fora disso, `null`.
+  - **Para um mês futuro,** só o resumo do que já está registrado e o comprometido: as categorias e a evolução vêm `null`, porque a média usaria meses que ainda não aconteceram.
 
 ## Critérios de aceite
 
-- [ ] CA1 — Unitário:
+- [x] CA1 — Unitário:
   - cada métrica tem um teste com o mesmo conjunto fixo de dados inventados;
   - o resultado esperado de cada uma está calculado à mão no comentário do teste.
-- [ ] CA2 — Unitário: uma compra no crédito de 28/11, com fatura que vence em janeiro, conta em novembro. As parcelas contam uma por mês.
-- [ ] CA3 — Unitário: num mês sem receita, a taxa de poupança é `null`, sem divisão por zero.
-- [ ] CA4 — Unitário: sem 3 meses completos de histórico, a média é `null`. Com eles, a média sai, inclusive quando é zero.
-- [ ] CA5 — Unitário: transferências, pagamentos de fatura, ajustes de conferência e saldos anteriores de fatura não entram em nenhuma métrica.
-- [ ] CA6 — Unitário, a projeção:
+- [x] CA2 — Unitário: uma compra no crédito de 28/11, com fatura que vence em janeiro, conta em novembro. As parcelas contam uma por mês.
+- [x] CA3 — Unitário: num mês sem receita, a taxa de poupança é `null`, sem divisão por zero.
+- [x] CA4 — Unitário: sem 3 meses completos de histórico, a média é `null`. Com eles, a média sai, inclusive quando é zero.
+- [x] CA5 — Unitário: transferências, pagamentos de fatura, ajustes de conferência e saldos anteriores de fatura não entram em nenhuma métrica.
+- [x] CA6 — Unitário, a projeção:
   - no 1º dia, no meio e no último dia do mês;
   - com uma assinatura que ainda vai cair e uma que já caiu;
   - um mês passado não tem projeção.
-- [ ] CA7 — Integração: `dashboardMetrics` com dados no banco dá os mesmos números do conjunto fixo e não vê outro espaço.
-- [ ] CA8 — Lint, format, test, build e CI verdes.
+- [x] CA7 — Integração: `dashboardMetrics` com dados no banco dá os mesmos números do conjunto fixo e não vê outro espaço.
+- [x] CA8 — Lint, format, test, build e CI verdes.
 
 ## Casos de borda
 
@@ -136,6 +137,27 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
 - **A média é por categoria principal.** O dashboard compara Alimentação, e não cada subcategoria. O detalhe ainda traz as subcategorias.
 - **O histórico começa no uso do app,** e não no lançamento mais antigo. Um gasto antigo registrado depois não deve liberar médias de meses que não foram acompanhados.
 - **Funções puras sobre dados carregados uma vez.** Os testes ficam diretos, e o servidor faz uma consulta só, em vez de uma por métrica.
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits. Ele refez à mão todos os números dos testes, e todos batem. Corrigido:
+
+- **Um mês futuro trazia categorias e evolução,** com médias de meses que ainda não aconteceram e toda categoria como "nada gasto". Agora vêm `null`, como a spec pedia. Há teste.
+- **Um mês como `0050-01` ou `9999-12`** passava pela validação e quebrava a conta de datas (erro 500, quando o mês vier da URL na task 25). Agora o mês vai de 2000 a 2999.
+- **O ritmo diário arredondado × os dias** não fechava com a projeção. A projeção agora traz a parte dos variáveis à parte (`projectedVariableCents`).
+- **O gasto na própria categoria principal** não aparecia entre as subcategorias, e elas não somavam o total. Agora aparece como mais uma linha.
+- **Testes novos:**
+  - um mês futuro;
+  - as assinaturas de outro espaço;
+  - o início do histórico perto da meia-noite UTC;
+  - os meses fora do intervalo.
+
+Para o João decidir (anotado aqui, nada mudou):
+
+- **A projeção nos primeiros dias do mês oscila muito:** uma compra variável de R$ 500 no dia 1 projeta R$ 15.000. Dá para esconder ou marcar como "estimativa" nos primeiros dias, na tela (task 25).
+- **O primeiro mês de uso, parcial,** aparece na evolução como um mês normal e baixo. A tela pode desenhá-lo diferente.
+- **O início do histórico usa o saldo inicial mais antigo de qualquer conta.** Uma conta cadastrada depois com um saldo de um ano atrás libera médias de meses que não foram acompanhados. A alternativa é usar só a criação do espaço.
+- **No mês atual, a despesa conta as parcelas com data mais adiante no mês,** porque elas já estão registradas, mas não as assinaturas que ainda vão cair. A tela deve dizer "até agora".
 
 ## Fora do escopo
 

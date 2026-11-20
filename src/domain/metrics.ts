@@ -119,6 +119,8 @@ export type MonthProjection = {
   /** The variable expenses per day so far, rounded to the cent (for display). */
   dailyPaceCents: number;
   remainingDays: number;
+  /** The variable expenses still expected: the pace × the days left, rounded to the cent. */
+  projectedVariableCents: number;
   /** Installments dated after today and subscription charges still to come, this month. */
   upcomingFixedCents: number;
   projectedExpenseCents: number;
@@ -149,15 +151,15 @@ export function monthProjection(
   const laterCents = sum(of.filter((e) => isExpense(e) && e.date > today));
   const upcomingFixedCents =
     laterCents + upcomingCharges(rules, month, today).reduce((s, r) => s + r.amountCents, 0);
-  const projectedExpenseCents =
-    expenseToDateCents +
-    Math.round((variableToDateCents * remainingDays) / elapsedDays) +
-    upcomingFixedCents;
+  // From the exact pace, not the rounded one shown: rounded once, at the end.
+  const projectedVariableCents = Math.round((variableToDateCents * remainingDays) / elapsedDays);
+  const projectedExpenseCents = expenseToDateCents + projectedVariableCents + upcomingFixedCents;
   return {
     expenseToDateCents,
     variableToDateCents,
     dailyPaceCents: Math.round(variableToDateCents / elapsedDays),
     remainingDays,
+    projectedVariableCents,
     upcomingFixedCents,
     projectedExpenseCents,
     projectedLeftoverCents: sum(of.filter(isIncome)) - projectedExpenseCents,
@@ -228,7 +230,11 @@ export type CategoryTotal = {
   totalCents: number;
   /** The average of the 3 previous months; null without enough history. */
   averageCents: number | null;
-  /** The subcategories' totals in the month, largest first. */
+  /**
+   * The subcategories' totals in the month, largest first. When there are any, the expenses
+   * booked on the main category itself are a row too (with its id and name): they add up to the
+   * total.
+   */
   children: { id: string; name: string; totalCents: number }[];
 };
 
@@ -249,6 +255,7 @@ export function categoryBreakdown(
     Array.from({ length: AVERAGE_MONTHS }, (_, i) => addMonthsToMonth(month, -(i + 1))),
   );
   type Row = CategoryTotal & {
+    directCents: number;
     previousCents: number;
     childMap: Map<string, CategoryTotal["children"][number]>;
   };
@@ -268,6 +275,7 @@ export function categoryBreakdown(
         totalCents: 0,
         averageCents: null,
         children: [],
+        directCents: 0,
         previousCents: 0,
         childMap: new Map(),
       };
@@ -286,16 +294,24 @@ export function categoryBreakdown(
       };
       child.totalCents += entry.amountCents;
       row.childMap.set(child.id, child);
+    } else if (top) {
+      row.directCents += entry.amountCents;
     }
   }
   return [...rows.values()]
-    .map(({ previousCents, childMap, ...row }) => ({
-      ...row,
-      averageCents: withAverage ? Math.round(previousCents / AVERAGE_MONTHS) : null,
-      children: [...childMap.values()].sort(
-        (a, b) => b.totalCents - a.totalCents || a.name.localeCompare(b.name, "pt-BR"),
-      ),
-    }))
+    .map(({ previousCents, directCents, childMap, ...row }) => {
+      const children = [...childMap.values()];
+      if (children.length > 0 && directCents > 0 && row.id !== null) {
+        children.push({ id: row.id, name: row.name, totalCents: directCents });
+      }
+      return {
+        ...row,
+        averageCents: withAverage ? Math.round(previousCents / AVERAGE_MONTHS) : null,
+        children: children.sort(
+          (a, b) => b.totalCents - a.totalCents || a.name.localeCompare(b.name, "pt-BR"),
+        ),
+      };
+    })
     .filter((row) => row.totalCents > 0 || (row.averageCents ?? 0) > 0)
     .sort(
       (a, b) =>
@@ -326,8 +342,13 @@ export function monthlyEvolution(
   });
 }
 
-/** True for a real month in "YYYY-MM" form. */
+/**
+ * True for a real month in "YYYY-MM" form, from 2000 (the oldest entry date) to 2999: the
+ * evolution's months before it and the one after it stay valid calendar dates.
+ */
 export function isMonth(value: string): value is Month {
   const match = /^(\d{4})-(\d{2})$/.exec(value);
-  return match !== null && Number(match[2]) >= 1 && Number(match[2]) <= 12;
+  if (!match) return false;
+  const [year, month] = [Number(match[1]), Number(match[2])];
+  return year >= 2000 && year <= 2999 && month >= 1 && month <= 12;
 }

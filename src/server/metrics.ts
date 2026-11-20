@@ -43,6 +43,7 @@ export async function dashboardMetrics(spaceId: string, month: string) {
   // Subscription charges due up to today first (task 13).
   await generateRecurringSafely(spaceId);
   const today = todayInSaoPaulo();
+  const future = month > monthOf(today);
   const first: Month = addMonthsToMonth(month, -(EVOLUTION_MONTHS - 1));
   const afterToday = addMonthsToMonth(monthOf(today), 1);
   const [rows, rules, start] = await Promise.all([
@@ -93,8 +94,10 @@ export async function dashboardMetrics(spaceId: string, month: string) {
     summary: monthSummary(entries, month),
     projection: monthProjection(entries, rules, month, today),
     commitments: futureCommitments(entries, rules, today),
-    categories: categoryBreakdown(entries, month, start),
-    evolution: monthlyEvolution(entries, month, start),
+    // A month not started yet has no categories or evolution: its "average" would take months
+    // that haven't happened, and every category would read as "nothing spent".
+    categories: future ? null : categoryBreakdown(entries, month, start),
+    evolution: future ? null : monthlyEvolution(entries, month, start),
   };
 }
 
