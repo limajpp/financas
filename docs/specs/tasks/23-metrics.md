@@ -56,15 +56,17 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
 - **Mês a mês:**
   - as parcelas com data naquele mês (pelo mês da parcela, e não pela fatura);
   - mais o valor das assinaturas ativas. Uma assinatura pausada ou cancelada não entra.
-- **O total dos 6 meses** e o total de parcelas restantes, mesmo depois dos 6 meses ("faltam R$ 1.200 em parcelas").
+- **O total dos 6 meses** e o total das parcelas a partir do mês seguinte, mesmo depois dos 6 meses ("faltam R$ 1.200 em parcelas").
 - **Os saldos anteriores de fatura** (task 22) ficam de fora. São compras de antes do app, e não um gasto futuro.
 
 ### Categorias e a média dos 3 meses anteriores
 
-- **O total do mês por categoria principal:** uma subcategoria soma na mãe. Por exemplo, Mercado e Restaurante somam em Alimentação.
+- **O total das despesas do mês por categoria principal:** uma subcategoria soma na mãe. Por exemplo, Mercado e Restaurante somam em Alimentação.
   - "Sem categoria" é uma linha à parte.
   - Cada linha também tem as subcategorias, para o detalhe.
-- **A média dos 3 meses anteriores** de cada categoria: a soma dos 3 meses ÷ 3. Um mês sem gasto na categoria conta como zero.
+- **A média dos 3 meses anteriores** de cada categoria: a soma dos 3 meses ÷ 3, arredondada para o centavo. Um mês sem gasto na categoria conta como zero.
+- **Uma categoria sem gasto no mês** aparece quando a média dela não é zero: é o "este mês você não gastou com isso".
+- **A ordem:** o maior total primeiro, depois a maior média, depois o nome.
 - **A média só existe com histórico suficiente:**
   - é preciso que o app estivesse em uso desde o começo do 1º desses 3 meses, ou antes;
   - "em uso" quer dizer a data de criação do espaço, ou do saldo inicial mais antigo, se for antes;
