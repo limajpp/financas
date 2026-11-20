@@ -19,13 +19,13 @@ De cima para baixo:
    - gasto de hoje;
    - gasto do mês até agora;
    - sobra do mês até agora.
-3. **Botão grande "Registrar"** (com "+"), para `/registrar`.
+3. **Botão grande "Registrar um lançamento"** (com "+"), para `/registrar`. O nome não é só "Registrar" para não se confundir com o item da barra de baixo.
 4. **A fatura atual de cada cartão ativo:**
    - o nome, o total da fatura aberta e "vence em 10/12";
    - cada uma leva a `/faturas?cartao=…`.
    - Sem cartões, o bloco não aparece.
 5. **Os últimos 5 lançamentos,** como na lista (task 14), e o link "Ver todos" para `/lancamentos`.
-6. **Os insights** (até 3) e o link "Ver o resumo do mês", que desce para o resumo (os KPIs, as categorias e a evolução), mais abaixo na mesma tela.
+6. **O resumo do mês,** na mesma ordem do computador: o seletor, os KPIs, os insights, as categorias, a evolução e os atalhos.
 
 O convite do onboarding (task 22) e a dica de instalação (task 15) continuam onde estão hoje, logo abaixo da saudação.
 
@@ -111,7 +111,7 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 ## Estados vazios
 
 - **Nenhum lançamento ainda** (o primeiro uso):
-  - o resumo vira um convite: "Registre seu primeiro gasto para ver o resumo do mês", com o botão "Registrar";
+  - o resumo vira um convite: "Registre seu primeiro gasto para ver o resumo do mês", com o botão "Registrar o primeiro gasto";
   - os KPIs aparecem zerados, sem a projeção;
   - a evolução não aparece.
 - **Sem receitas no mês:** a taxa de poupança diz "—" (acima).
@@ -133,13 +133,14 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 ## Critérios de aceite
 
 - [ ] CA1 — E2E (Chromium e iPhone/WebKit), com dados inventados e fixos registrados pela própria tela: os 4 KPIs exibidos batem com o `dashboardMetrics` dos mesmos dados. Os valores esperados são calculados à mão no teste.
-- [ ] CA2 — E2E: o seletor de mês troca o resumo. Num mês passado, a projeção vira "Despesa do mês". O "próximo" não aparece no mês atual. Um `?mes=` inválido abre o mês atual.
-- [ ] CA3 — E2E: no celular, o início mostra o gasto de hoje, o do mês, a sobra, a fatura atual de um cartão e os últimos lançamentos, e o botão "Registrar" leva ao registro.
+- [ ] CA2 — E2E: no primeiro mês, nenhuma seta leva a outro mês, e um `?mes=` inválido, futuro ou anterior ao histórico abre o mês atual. Unitário: num mês passado, a projeção vira "Despesa do mês", e o seletor tem "anterior" até o início do histórico.
+  - Uma conta criada pelo e2e começa hoje, e o e2e não mexe no banco: um mês passado com dados só aparece nas screenshots (CA8), feitas com uma conta semeada à parte.
+- [ ] CA3 — E2E: no celular, o início mostra o gasto de hoje, o do mês, a sobra, a fatura atual de um cartão e os últimos lançamentos, e o botão "Registrar um lançamento" leva ao registro.
 - [ ] CA4 — E2E: os estados vazios. Uma conta nova mostra o convite para registrar, e os insights dizem "Nada fora do comum neste mês."
 - [ ] CA5 — E2E: um insight e uma linha de categoria levam à lista de lançamentos filtrada.
 - [ ] CA6 — Unitário: a formatação dos KPIs (porcentagem, "—" sem receita, o selo "estimativa" antes do dia 5) e o nome do mês do seletor.
 - [ ] CA7 — Integração: `homeSummary` dá o gasto de hoje, a fatura aberta de cada cartão e os últimos 5 lançamentos, só do espaço. `leftoverToDateCents` e `savingsRateToDate` batem com o conjunto fixo da task 23.
-- [ ] CA8 — Os gráficos e a lista de categorias legíveis em claro e escuro, no celular e no computador (screenshots no PR).
+- [ ] CA8 — Os gráficos e a lista de categorias legíveis em claro e escuro, no celular e no computador (screenshots mandadas ao João no chat, com dados inventados; o repositório não guarda imagens).
 - [ ] CA9 — Lint, format, test, build e CI verdes.
 - [ ] CA10 — Manual, no iPhone, depois do merge na `develop`: o início abre rápido no app instalado. Vai junto da verificação das tasks 15 e 17.
 

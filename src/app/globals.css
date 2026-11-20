@@ -23,6 +23,10 @@
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
+  --color-chart-income: var(--chart-income);
+  --color-chart-expense: var(--chart-expense);
+  --color-chart-leftover: var(--chart-leftover);
+  --color-chart-grid: var(--chart-grid);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -72,6 +76,12 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  /* The dashboard's series (task 25): the dataviz reference palette's first three slots, in
+     fixed order, validated for color blindness on this surface. Income, expense, leftover. */
+  --chart-income: #2a78d6;
+  --chart-expense: #eb6834;
+  --chart-leftover: #1baf7a;
+  --chart-grid: #e1e0d9;
   --radius: 0.625rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
@@ -107,6 +117,11 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
+  /* The same hues stepped for the dark surface (not an automatic flip). */
+  --chart-income: #3987e5;
+  --chart-expense: #d95926;
+  --chart-leftover: #199e70;
+  --chart-grid: #2c2c2a;
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);

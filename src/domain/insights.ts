@@ -75,6 +75,18 @@ export function periodText(month: Month, today: CalendarDate): string {
 const isExpense = (e: MetricsEntry) => e.type === "EXPENSE" && !e.adjustment;
 
 /**
+ * Whether a total is far enough over its average to be an alert (rule 1): more than 25% and at
+ * least R$ 50,00 over it; over a zero average, from R$ 50,00. Without an average, never. The
+ * dashboard's category list colors its variation by it too (task 25).
+ */
+export function isAboveAverage(totalCents: number, averageCents: number | null): boolean {
+  if (averageCents === null) return false;
+  const excess = totalCents - averageCents;
+  if (excess < MIN_IMPACT_CENTS) return false;
+  return averageCents === 0 || excess > averageCents * CATEGORY_ABOVE_AVERAGE_RATIO;
+}
+
+/**
  * Rule 1: a main category whose total in the month is more than 25% and at least R$ 50,00 over
  * its 3-month average. A zero average has no percentage: it fires from R$ 50,00. Without history
  * (a null average) and for the uncategorized expenses, never.
@@ -83,8 +95,8 @@ export function categoryInsights(categories: readonly CategoryTotal[], period: s
   const insights: Insight[] = [];
   for (const c of categories) {
     if (c.id === null || c.averageCents === null) continue;
+    if (!isAboveAverage(c.totalCents, c.averageCents)) continue;
     const excess = c.totalCents - c.averageCents;
-    if (excess < MIN_IMPACT_CENTS) continue;
     if (c.averageCents === 0) {
       insights.push({
         kind: "CATEGORY_ABOVE_AVERAGE",
@@ -95,7 +107,6 @@ export function categoryInsights(categories: readonly CategoryTotal[], period: s
       });
       continue;
     }
-    if (excess <= c.averageCents * CATEGORY_ABOVE_AVERAGE_RATIO) continue;
     // A tiny average makes a percentage absurd ("5906%"): from 3× on, "N vezes", rounded down.
     const times = Math.floor(c.totalCents / c.averageCents);
     const comparison =
