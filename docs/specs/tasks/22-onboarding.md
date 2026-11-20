@@ -50,6 +50,8 @@ Quem começa a usar o app já tem saldo nas contas, faturas abertas, compras par
   - todas no mesmo grupo, com o total 10 e os números 3 a 10, como um parcelamento cujas primeiras parcelas foram apagadas (task 12);
   - a data da parcela _k_ é a da compra mais _k_ − 1 meses, com a data da compra estimada em hoje menos (atual − 1) meses. Assim, cada parcela conta no mês dela, como manda o design.
 - **A parcela atual já está no valor da fatura aberta informado no passo 2.** Para não contar duas vezes, o valor dela sai do saldo anterior daquela fatura, que nunca fica negativo. A tela avisa: "A parcela 3 (R$ 150,00) já fazia parte da fatura aberta informada."
+- **A ordem não importa:** informar a fatura aberta depois do parcelamento, ou de novo, também tira dela as parcelas do onboarding que caem nela. O saldo anterior é sempre o valor informado menos essas parcelas.
+- **"O que foi"** é o estabelecimento, achado ou criado como no registro (task 10).
 - **"1 de 1",** a atual igual ao total, ou um valor zero são recusados.
 
 #### Passo 4 — Assinaturas ativas
@@ -63,12 +65,15 @@ Quem começa a usar o app já tem saldo nas contas, faturas abertas, compras par
   - a categoria (opcional, de despesa).
 - **Cria só a regra, sem cobrança agora.** A cobrança deste mês, se já aconteceu, já está no saldo informado ou na fatura aberta. A primeira cobrança gerada pelo app é a primeira depois de hoje. Por exemplo, dia 8 com hoje em 15/11 começa em 08/12, e dia 20 começa em 20/11.
 - A assinatura aparece em `/assinaturas` (task 19) como qualquer outra.
+- **A mesma assinatura ativa duas vezes** (o mesmo estabelecimento, valor, dia e forma) é recusada: "Essa assinatura já está cadastrada." Isso evita a duplicata de um toque duplo.
 
 ### O saldo anterior da fatura
 
 - **No modelo, é um ajuste no crédito:** `type: EXPENSE`, `method: CREDIT`, `adjustment: true`, com o cartão e a fatura, sem conta, sem categoria e sem estabelecimento. A observação é "Saldo anterior da fatura".
 - **A migration** amplia o `CHECK` dos ajustes (task 21): além do ajuste numa conta, aceita uma despesa no crédito, com cartão.
 - **Um por cartão e por fatura:** o `clientId` é `opening:<cartão>:<vencimento>`. Gravar de novo substitui o valor, e zero apaga.
+- **A data é a de hoje.** A fatura é escolhida (`invoiceOverridden`): uma mudança nos dias do cartão não a move.
+- **As parcelas do onboarding** têm o `clientId` com o prefixo `onboarding:`. É assim que o saldo anterior sabe quais tirar.
 - **Fica fora dos indicadores,** como todo ajuste (task 21). Entra no total da fatura e no "Pagar fatura".
 - **No detalhe da fatura e na lista,** aparece como "Saldo anterior da fatura", na linha "Cartão Roxo · Antes do app". Não se edita, só se exclui, como os outros ajustes.
 
@@ -80,6 +85,7 @@ Quem começa a usar o app já tem saldo nas contas, faturas abertas, compras par
   - `openingInvoices(ciclos, hoje)`: a fatura aberta e, se ainda não venceu, a fechada anterior.
 - **`setOpeningBalance(spaceId, userId, cartão, vencimento, valor)`** grava ou substitui o saldo anterior. A fatura precisa ser uma das de `openingInvoices`.
 - **`createOngoingInstallments`** cria as parcelas restantes de uma vez e desconta a atual do saldo anterior, numa transação do banco. É idempotente pelo `clientId`, como a compra parcelada (task 12).
+- **Os dois travam o cartão** (`FOR UPDATE`) antes de ler e gravar o saldo anterior: um parcelamento e um valor de fatura gravados ao mesmo tempo não se perdem.
 - **`createSubscriptionRule`** cria a regra sem cobrança, com `firstMonth` e `nextMonth` no mês da primeira cobrança. Valida como a edição de assinatura (task 19), e o estabelecimento é achado ou criado como no registro (task 10).
 - **`finishOnboarding(spaceId)`** grava `Space.onboardedAt`.
 - **Server Actions com Zod** para cada um. Tudo restrito ao espaço.
@@ -109,7 +115,7 @@ Quem começa a usar o app já tem saldo nas contas, faturas abertas, compras par
 - **O app foi aberto em outro aparelho** com o onboarding pela metade: `/comecar` mostra o que já existe.
 - **Um parcelamento num cartão sem saldo anterior informado:** as parcelas são criadas normalmente, e não há o que descontar.
 - **A parcela atual maior que o saldo anterior:** o saldo anterior vai a zero e é apagado. O total da fatura passa a ser a parcela.
-- **Um cartão criado com dias errados e corrigido depois** (task 7, no mesmo dia): o recálculo das compras reprograma as parcelas. O saldo anterior fica na fatura em que foi gravado, porque é uma fatura escolhida, e não calculada.
+- **Um cartão criado com dias errados e corrigido depois** (task 7, no mesmo dia): o saldo anterior e a parcela atual ficam na fatura em que foram gravados, porque ela foi escolhida, e não calculada. As parcelas seguintes são reprogramadas a partir dela. Para acertar tudo, exclua o parcelamento e informe a fatura e o parcelamento de novo.
 - **Excluir um parcelamento do onboarding** não devolve o valor ao saldo anterior. Para corrigir, informe a fatura aberta de novo no passo 2.
 
 ## Decisões

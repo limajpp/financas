@@ -87,6 +87,24 @@ describe("describeItem", () => {
     );
   });
 
+  it("an invoice's opening balance (task 22) says so, on the card", () => {
+    expect(
+      describeItem({
+        ...base,
+        method: "CREDIT",
+        adjustment: true,
+        account: null,
+        card: { id: "c", name: "Cartão Roxo" },
+      }),
+    ).toMatchObject({
+      title: "Saldo anterior da fatura",
+      line: "Cartão Roxo · Antes do app",
+      place: "Cartão Roxo",
+      method: "Ajuste",
+      amount: `−${formatBRL(10_000)}`,
+    });
+  });
+
   it("a refund on the card (task 18) says so and is money coming in", () => {
     expect(
       describeItem({

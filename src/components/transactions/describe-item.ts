@@ -13,15 +13,21 @@ export const TYPE_LABELS = {
 
 /** What a row says: its title, the line under it and the signed amount. */
 export function describeItem(item: ListItemView) {
-  const title = item.adjustment
-    ? "Ajuste de saldo"
-    : (item.counterparty?.name ??
-      item.description ??
-      (item.type === "TRANSFER" || item.type === "CARD_PAYMENT"
-        ? TYPE_LABELS[item.type]
-        : (item.category?.name ?? TYPE_LABELS[item.type])));
+  // An adjustment on a card is an invoice's amount from before the app (task 22).
+  const openingBalance = item.adjustment && item.card !== null;
+  const title = openingBalance
+    ? "Saldo anterior da fatura"
+    : item.adjustment
+      ? "Ajuste de saldo"
+      : (item.counterparty?.name ??
+        item.description ??
+        (item.type === "TRANSFER" || item.type === "CARD_PAYMENT"
+          ? TYPE_LABELS[item.type]
+          : (item.category?.name ?? TYPE_LABELS[item.type])));
   let line: string;
-  if (item.adjustment) {
+  if (openingBalance) {
+    line = `${item.card?.name} · Antes do app`;
+  } else if (item.adjustment) {
     line = `${item.account?.name} · Conferência`;
   } else if (item.type === "TRANSFER") {
     line = `${item.account?.name} → ${item.toAccount?.name}`;

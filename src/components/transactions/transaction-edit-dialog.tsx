@@ -81,8 +81,12 @@ export function TransactionEditDialog({
   );
 }
 
-/** A balance adjustment (task 21): not edited, only deleted (then reconcile again). */
+/**
+ * An adjustment: a balance one (task 21), or an invoice's amount from before the app (task 22).
+ * Not edited, only deleted (then reconcile, or inform the invoice, again).
+ */
 function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => void }) {
+  const opening = item.card !== null;
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -96,7 +100,7 @@ function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => vo
       } catch {
         return setError("Não foi possível excluir. Verifique a conexão e tente de novo.");
       }
-      toast("Ajuste excluído");
+      toast(opening ? "Saldo anterior excluído" : "Ajuste excluído");
       onDone();
     });
   }
@@ -104,15 +108,17 @@ function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => vo
   return (
     <div className="grid gap-4">
       <DialogHeader>
-        <DialogTitle>Ajuste de saldo</DialogTitle>
+        <DialogTitle>{opening ? "Saldo anterior da fatura" : "Ajuste de saldo"}</DialogTitle>
         <DialogDescription>
-          Criado na conferência de saldo. Não se edita: para mudar, exclua e confira de novo.
+          {opening
+            ? "O que já havia na fatura antes do app. Não se edita: para mudar, informe a fatura de novo em “Começar”."
+            : "Criado na conferência de saldo. Não se edita: para mudar, exclua e confira de novo."}
         </DialogDescription>
       </DialogHeader>
       <dl className="grid gap-2 text-sm">
         <div className="flex gap-2">
-          <dt className="w-20 text-muted-foreground">Conta</dt>
-          <dd>{item.account?.name}</dd>
+          <dt className="w-20 text-muted-foreground">{opening ? "Cartão" : "Conta"}</dt>
+          <dd>{opening ? item.card?.name : item.account?.name}</dd>
         </div>
         <div className="flex gap-2">
           <dt className="w-20 text-muted-foreground">Data</dt>
@@ -134,7 +140,9 @@ function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => vo
       <ResponsiveDialogFooter className="gap-2">
         {confirming ? (
           <>
-            <p className="self-center text-sm">Excluir este ajuste?</p>
+            <p className="self-center text-sm">
+              {opening ? "Excluir este saldo anterior?" : "Excluir este ajuste?"}
+            </p>
             <Button variant="ghost" className="h-10" onClick={() => setConfirming(false)}>
               Cancelar
             </Button>
