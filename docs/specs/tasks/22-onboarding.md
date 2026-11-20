@@ -93,23 +93,23 @@ Quem começa a usar o app já tem saldo nas contas, faturas abertas, compras par
 
 ## Critérios de aceite
 
-- [ ] CA1 — Unitário e integração: "3 de 10, R$ 150" gera 8 parcelas, números 3 a 10, de R$ 150. A 3ª fica na fatura aberta e as seguintes, uma por fatura. As datas vão mês a mês.
-- [ ] CA2 — Integração:
+- [x] CA1 — Unitário e integração: "3 de 10, R$ 150" gera 8 parcelas, números 3 a 10, de R$ 150. A 3ª fica na fatura aberta e as seguintes, uma por fatura. As datas vão mês a mês.
+- [x] CA2 — Integração:
   - o valor da fatura aberta aparece no total da fatura atual e no "Pagar fatura";
   - gravar de novo substitui;
   - o valor fica fora de `spendingByCategory`;
   - com um parcelamento, a parcela atual sai do saldo anterior, e o total da fatura continua o informado.
-- [ ] CA3 — Unitário e integração: a assinatura cadastrada no onboarding não gera cobrança hoje, e a primeira cobrança sai na primeira data depois de hoje.
-- [ ] CA4 — Integração:
+- [x] CA3 — Unitário e integração: a assinatura cadastrada no onboarding não gera cobrança hoje, e a primeira cobrança sai na primeira data depois de hoje.
+- [x] CA4 — Integração:
   - outro espaço não usa cartão, conta ou categoria alheia;
   - fatura fora das permitidas, "1 de 1" e valor zero são recusados;
   - repetir o mesmo `clientId` não duplica.
-- [ ] CA5 — E2E (Chromium e iPhone/WebKit):
+- [x] CA5 — E2E (Chromium e iPhone/WebKit):
   - o cadastro leva a `/comecar`;
   - "Pular por agora" leva ao início, com o cartão "Termine de configurar o app", e o app funciona (registrar uma despesa);
   - "Não mostrar mais" tira o cartão.
-- [ ] CA6 — E2E: um onboarding completo (conta, cartão com fatura aberta, um parcelamento e uma assinatura) termina no início, e `/faturas` mostra a fatura aberta e as próximas certas.
-- [ ] CA7 — Lint, format, test, build, `test:e2e:docker` e CI verdes. Telas conferidas no desktop e no viewport do iPhone.
+- [x] CA6 — E2E: um onboarding completo (conta, cartão com fatura aberta, um parcelamento e uma assinatura) termina no início, e `/faturas` mostra a fatura aberta e as próximas certas.
+- [x] CA7 — Lint, format, test, build, `test:e2e:docker` e CI verdes. Telas conferidas no desktop e no viewport do iPhone.
 
 ## Casos de borda
 
@@ -141,6 +141,8 @@ O revisor (Opus, effort high) aprovou com nits. Corrigido:
 - **Fatura que mudou com a tela aberta:** mensagem própria.
 - **Os botões "Salvar"** dizem, para o leitor de tela, de qual fatura e cartão são.
 - **Testes novos:** cartão arquivado e a correção dos dias.
+- **Segunda rodada: aprovado.** O nit aplicado: o e2e do CA6 digita o valor da fatura e toca em "Próximo" sem "Salvar", volta e confere que ficou.
+- **O e2e:** o cadastro agora passa pelo onboarding antes do início. O limite de cada teste subiu de 30 para 45 s, porque alguns testes longos ficavam no limite com a suíte toda em paralelo.
 
 Aceito:
 

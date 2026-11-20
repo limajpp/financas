@@ -84,9 +84,13 @@ test("CA6: um onboarding completo termina no início, com as faturas certas", as
   await dialog.getByRole("button", { name: "Salvar" }).click();
   await expect(dialog).toBeHidden();
   const card = page.getByRole("list", { name: "Cartões cadastrados" }).getByRole("listitem");
+  // Leaving the field saves it: "Próximo" without "Salvar" keeps the amount.
   await card.getByLabel(/^Quanto já tem na fatura aberta/).fill("800,00");
-  await card.getByRole("button", { name: "Salvar" }).first().click();
+  await page.getByRole("link", { name: "Próximo" }).click();
   await expect(page.getByText(/do Cartão Roxo: R\$\s800,00$/)).toBeVisible();
+  await expect(page.getByText("Passo 3 de 4")).toBeVisible();
+  await page.getByRole("link", { name: "Voltar" }).click();
+  await expect(card.getByLabel(/^Quanto já tem na fatura aberta/)).toHaveValue("800,00");
   await page.getByRole("link", { name: "Próximo" }).click();
 
   // 3. An ongoing purchase: its current installment comes off the open invoice's amount.
