@@ -123,18 +123,18 @@ Todas são de um mês (`YYYY-MM`), com hoje no fuso de São Paulo. "Este mês" n
 
 ## Critérios de aceite
 
-- [ ] CA1 — Unitário: cada regra tem um teste que dispara e um que não dispara logo abaixo do limite:
+- [x] CA1 — Unitário: cada regra tem um teste que dispara e um que não dispara logo abaixo do limite:
   - categoria: 25% + 1 centavo dispara e 25% exatos não; R$ 50,00 de excesso dispara e R$ 49,99 não;
   - gastos pequenos: 5 compras dispara e 4 não; R$ 30,00 é pequena e R$ 30,01 não; somando R$ 49,99 não dispara;
   - assinatura: subiu há 90 dias dispara e há 91 não; uma baixa não dispara;
   - onde mais gastou: 20% + 1 centavo dispara e 20% exatos não.
-- [ ] CA2 — Unitário: sem histórico suficiente, a regra de categoria não dispara, mesmo com um total muito acima.
-- [ ] CA3 — Unitário: os textos saem em pt-BR, com os valores em R$ pelo `formatBRL`. "Este mês" no atual, "em outubro" num passado e "em dezembro de 2025" num de outro ano.
-- [ ] CA4 — Unitário: a ordem. Os alertas por impacto, depois os informativos, e só os 3 primeiros. Um mês futuro não tem insights.
-- [ ] CA5 — Unitário: uma compra pequena não conta em dois insights, e parcelas, cobranças de assinatura, transferências e ajustes não contam como compras pequenas.
-- [ ] CA6 — Integração: o `dashboardMetrics` com dados no banco traz os insights esperados e não vê outro espaço.
-- [ ] CA7 — Os limites estão todos em `src/domain/insight-limits.ts`.
-- [ ] CA8 — Lint, format, test, build e CI verdes.
+- [x] CA2 — Unitário: sem histórico suficiente, a regra de categoria não dispara, mesmo com um total muito acima.
+- [x] CA3 — Unitário: os textos saem em pt-BR, com os valores em R$ pelo `formatBRL`. "Este mês" no atual, "em outubro" num passado e "em dezembro de 2025" num de outro ano.
+- [x] CA4 — Unitário: a ordem. Os alertas por impacto, depois os informativos, e só os 3 primeiros. Um mês futuro não tem insights.
+- [x] CA5 — Unitário: uma compra pequena não conta em dois insights, e parcelas, cobranças de assinatura, transferências e ajustes não contam como compras pequenas.
+- [x] CA6 — Integração: o `dashboardMetrics` com dados no banco traz os insights esperados e não vê outro espaço.
+- [x] CA7 — Os limites estão todos em `src/domain/insight-limits.ts`.
+- [x] CA8 — Lint, format, test, build e CI verdes.
 
 ## Casos de borda
 
@@ -168,6 +168,8 @@ O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Ele conferiu toda
 - **O teste do mês passado não provava** que a regra das assinaturas no ano fica de fora. Ganhou um caso com vaga sobrando.
 - **O aluguel cadastrado como assinatura** viraria "onde você mais gastou" todo mês. As cobranças de assinatura não escolhem mais o lugar.
 - **O assunto do total das assinaturas** (`{ type: "subscriptions" }`) entrou na spec.
+
+**Segunda rodada: aprovado,** sem bloqueios nem nits a corrigir.
 
 Anotado, sem mudança:
 
