@@ -9,6 +9,7 @@ import { entrySchema, transferSchema } from "@/lib/validation/transactions";
 import { createAccount } from "@/server/accounts";
 import { createCard } from "@/server/cards";
 import { homeSummary } from "@/server/home";
+import { dashboardMetrics } from "@/server/metrics";
 import { createSubscriptionRule } from "@/server/onboarding";
 import { ensurePersonalSpace } from "@/server/spaces";
 import { createTransaction, createTransfer } from "@/server/transactions";
@@ -80,7 +81,7 @@ async function entry(s: Space, input: Record<string, unknown>) {
 }
 
 describe("homeSummary", () => {
-  it("CA7: o gasto de hoje, a fatura aberta de cada cartão e os últimos lançamentos, só do espaço", async () => {
+  it("CA7: a fatura aberta de cada cartão, os últimos lançamentos e o gasto de hoje, só do espaço", async () => {
     const s = await space("ana@example.com");
     const roxo = await card(s);
     const verde = await card(s, "Cartão Verde");
@@ -146,8 +147,6 @@ describe("homeSummary", () => {
     on();
     const home = await homeSummary(s.spaceId);
     expect(home.today).toBe("2026-11-15");
-    // 45,00 + 30,00 + the subscription's 39,90.
-    expect(home.todayExpenseCents).toBe(11_490);
     // The open invoice (due 10/12): 30,00 + the 1st installment of 100,00. The green card: zero.
     expect(home.cards).toEqual([
       { id: roxo, name: "Cartão Roxo", dueDate: "2026-12-10", totalCents: 13_000 },
@@ -159,12 +158,20 @@ describe("homeSummary", () => {
     expect(home.recent.every((i) => i.date === "2026-11-15")).toBe(true);
     expect(home.recent.map((i) => i.amountCents)).toEqual([3_990, 7_000, 50_000, 100_000, 3_000]);
     expect(home.subscriptions).toEqual({ monthlyCents: 3_990, yearlyCents: 47_880, count: 1 });
-    expect(home.topCounterparty).toEqual({
+
+    expect(home.hasEntries).toBe(true);
+
+    // With the metrics (task 25): today's expense, 45,00 + 30,00 + the subscription's 39,90; the
+    // month's top counterparty, the market (Streamflix's 39,90 is less).
+    const metrics = (await dashboardMetrics(s.spaceId, "2026-11"))!;
+    expect(metrics.todayExpenseCents).toBe(11_490);
+    expect(metrics.topCounterparty).toEqual({
       id: expect.any(String),
       name: "Mercado Bom Preço",
       totalCents: 4_500,
     });
-    expect(home.hasEntries).toBe(true);
+    // A past month has no "today".
+    expect((await dashboardMetrics(s.spaceId, "2026-10"))!.todayExpenseCents).toBeNull();
   });
 
   it("os últimos lançamentos não trazem parcelas com data depois de hoje", async () => {
@@ -201,12 +208,13 @@ describe("homeSummary", () => {
     on();
     const home = await homeSummary(s.spaceId);
     expect(home).toMatchObject({
-      todayExpenseCents: 0,
       cards: [],
       subscriptions: { monthlyCents: 0, yearlyCents: 0, count: 0 },
-      topCounterparty: null,
       hasEntries: false,
     });
+    const metrics = (await dashboardMetrics(s.spaceId, "2026-11"))!;
+    expect(metrics.todayExpenseCents).toBe(0);
+    expect(metrics.topCounterparty).toBeNull();
     expect(home.recent).toHaveLength(1);
   });
 });

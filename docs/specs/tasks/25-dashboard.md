@@ -38,7 +38,7 @@ Na ordem do design:
 3. **Os insights** (até 3).
 4. **Categorias × média** e **evolução de 6 meses,** lado a lado a partir de `lg`, empilhados abaixo disso.
 5. **Atalhos:** Estabelecimentos, Faturas e Assinaturas, cada um com uma linha de contexto:
-   - Estabelecimentos: o lugar com o maior total no mês.
+   - Estabelecimentos: o lugar com o maior total no mês escolhido.
    - Faturas: o total das faturas abertas.
    - Assinaturas: o total por mês.
 
@@ -69,7 +69,7 @@ Cada um é um número grande, um rótulo e uma linha de contexto. O valor exibid
   - O `dashboardMetrics` passa a devolver a sobra e a taxa até agora, para a tela não fazer conta. São campos novos da `projection`: `leftoverToDateCents` e `savingsRateToDate`.
 - **A "projeção" a partir do dia 5** (decisão 1). Antes, o valor aparece, mas com o selo e sem destaque de cor.
 - **No celular, o início** usa os mesmos números: "Gasto do mês" é a despesa até hoje, e "Sobra" é a sobra até agora.
-- **O dinheiro** sai pelo `formatBRL`, e a porcentagem é inteira ("25%"), arredondada para baixo, como nos insights. Um valor negativo aparece com o sinal e a cor de alerta (`destructive`).
+- **O dinheiro** sai pelo `formatBRL`, e a porcentagem é inteira ("25%"), cortada em direção ao zero ("62%", "−12%"): nunca anuncia mais do que houve, para os dois lados. Um valor negativo aparece com o sinal e a cor de alerta (`destructive`).
 
 ## Os insights
 
@@ -103,7 +103,7 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 - **Os meses antes do histórico** (`beforeHistory`) aparecem vazios, com "sem dados" no eixo, e não como zero.
 - **O primeiro mês de uso, parcial,** fica mais claro e com a nota "parcial" no rótulo (decisão 2). É o mês do início do histórico, quando não começou no dia 1º.
 - **O mês escolhido** fica destacado no eixo.
-- **Uma tabela escondida** (`sr-only`) traz os mesmos números para leitores de tela.
+- **Uma tabela visível sob demanda** ("Ver os números", um `<details>`) traz os mesmos números. Ela serve aos leitores de tela, e também a quem não distingue o verde da sobra, que fica abaixo de 3:1 de contraste no tema claro.
 - **As cores vêm dos tokens do tema,** e o gráfico é conferido em claro e escuro: as receitas, as despesas e a sobra, com contraste nos dois.
 - **O tooltip** mostra os três valores do mês em R$.
 - **O componente é de cliente,** carregado sem bloquear o resto da tela.
@@ -122,13 +122,16 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 
 - **`dashboardMetrics`** ganha:
   - `projection.leftoverToDateCents` e `projection.savingsRateToDate` (acima);
-  - os nomes, ícones e cores das categorias, para as linhas. O `categoryBreakdown` já traz o id e o nome; o ícone e a cor vêm junto da consulta.
+  - os nomes, ícones e cores das categorias, para as linhas. O `categoryBreakdown` já traz o id e o nome; o ícone e a cor vêm junto da consulta;
+  - o gasto de hoje (`todayExpenseCents`, as despesas de hoje que contam pela regra da task 23; `null` fora do mês atual);
+  - o lugar com o maior total do mês (`topCounterparty`), como o ranking por valor da task 20.
+  - Os dois saem dos lançamentos já carregados, por funções puras em `src/domain/dashboard.ts`.
 - **`homeSummary(spaceId)`** (nova, em `src/server/home.ts`):
-  - o gasto de hoje (as despesas de hoje que contam, pela regra da task 23);
   - a fatura aberta de cada cartão ativo, pelo `cardsInvoices` que a tela de faturas já usa;
-  - os últimos 5 lançamentos, pelo `listTransactions` da task 14.
+  - os últimos 5 lançamentos até hoje (`recentItems`, ao lado do `listTransactions` da task 14, com as mesmas linhas);
+  - as assinaturas por mês, e se já há algum lançamento.
   - Tudo restrito ao espaço.
-- **Os atalhos** usam o que já existe: o ranking da task 20 (o maior do mês), as faturas abertas acima e o `subscriptionTotals` da task 19.
+- **A geração das assinaturas e o início do histórico** rodam uma vez por request (o `cache` do React), mesmo com vários blocos pedindo.
 
 ## Critérios de aceite
 
@@ -161,6 +164,28 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 - **A evolução em barras agrupadas com a linha da sobra:** é a comparação de dois valores por mês com o resultado deles.
 - **A sobra e a taxa "até agora" no mês atual** usam a despesa até hoje (decisão 4 da task 23). O resumo do mês fechado usa o total.
 - **O "próximo mês" não existe.** O comprometido no futuro já responde "quanto já devo nos próximos meses".
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Corrigido:
+
+- **A linha "(direto)" de uma categoria levava à categoria inteira,** com as subcategorias, e o total não batia com a lista. Agora ela não é link, e "Ver os lançamentos de X", logo abaixo, mostra todos.
+- **O atalho "Estabelecimentos" ficava no mês atual** mesmo com outro mês escolhido. Agora é o maior do mês escolhido ("Maior em outubro: …"), tirado dos lançamentos já carregados. De quebra, saíram as 3 consultas do ranking.
+- **O início do celular esperava tudo junto.** Agora os três números, o botão e as listas carregam cada um no seu bloco, e o botão não espera nada. O gasto de hoje veio para as métricas.
+- **A geração das assinaturas rodava até 4 vezes por request,** e o início do histórico 2 vezes. Agora rodam uma vez.
+- **À meia-noite do dia 1º,** o mês podia virar entre o bloco e as métricas, e a página quebrava. Agora os números simplesmente não aparecem nesse instante.
+- **A variação de uma categoria acima do normal** se distinguia só pela cor. Agora tem o ícone de alerta dos destaques, e o texto para leitores de tela diz "acima do normal".
+- **Os três números do início** podiam estourar a coluna num iPhone de 375px. A fonte é menor abaixo de 400px.
+- **Duas mudanças na implementação entraram na spec:**
+  - a tabela do gráfico é visível sob demanda, e não só para leitores de tela;
+  - os últimos lançamentos vêm de uma consulta própria.
+- **A frase da porcentagem** diz agora "cortada em direção ao zero".
+
+Anotado, sem mudança:
+
+- **No computador, o início do celular** (escondido por CSS) também calcula as métricas do mês atual quando outro mês está escolhido. São as mesmas consultas do resumo do mês atual, e só nesse caso.
+- **Um mês "sem dados" no gráfico** não tem tooltip, porque o Recharts não o mostra sem valores. O eixo e a tabela dizem "sem dados".
+- **Os testes que esperam o "Olá" depois de salvar** às vezes acham dois por um instante, durante a navegação do Next. Eles passam na nova tentativa. Fica para a task 26, com os outros testes instáveis.
 
 ## Fora do escopo
 

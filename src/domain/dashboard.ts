@@ -4,11 +4,12 @@
  * Spec: docs/specs/tasks/25-dashboard.md.
  */
 import type { CalendarDate } from "./dates";
-import { isAboveAverage } from "./insights";
+import { type InsightEntry, isAboveAverage } from "./insights";
 import {
   AVERAGE_MONTHS,
   COMMITMENT_MONTHS,
   type FutureCommitments,
+  type MetricsEntry,
   type MonthProjection,
   type MonthSummary,
   isMonth,
@@ -203,6 +204,40 @@ export function firstAverageMonth(historyStart: CalendarDate): Month {
     ? monthOf(historyStart)
     : addMonthsToMonth(monthOf(historyStart), 1);
   return addMonthsToMonth(firstWhole, AVERAGE_MONTHS);
+}
+
+/** A day's expense: the expenses that count in the indicators (task 23), adjustments out. */
+export function dayExpense(entries: readonly MetricsEntry[], day: CalendarDate): number {
+  return entries
+    .filter((e) => e.type === "EXPENSE" && !e.adjustment && e.date === day)
+    .reduce((sum, e) => sum + e.amountCents, 0);
+}
+
+const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });
+
+/**
+ * The counterparty with the most expenses in the month, like the counterparties ranking by value
+ * (task 20): each installment in its month, subscription charges included. A tie goes by name.
+ * Null without any expense at a counterparty.
+ */
+export function topCounterparty(
+  entries: readonly InsightEntry[],
+  month: Month,
+): { id: string; name: string; totalCents: number } | null {
+  const totals = new Map<string, { id: string; name: string; totalCents: number }>();
+  for (const e of entries) {
+    if (e.type !== "EXPENSE" || e.adjustment || !e.counterparty || monthOf(e.date) !== month) {
+      continue;
+    }
+    const row = totals.get(e.counterparty.id) ?? { ...e.counterparty, totalCents: 0 };
+    row.totalCents += e.amountCents;
+    totals.set(row.id, row);
+  }
+  return (
+    [...totals.values()].sort(
+      (a, b) => b.totalCents - a.totalCents || collator.compare(a.name, b.name),
+    )[0] ?? null
+  );
 }
 
 /** The history's first month when it didn't start on the 1st: the evolution draws it as partial. */

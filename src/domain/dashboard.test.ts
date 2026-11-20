@@ -4,6 +4,7 @@ import {
   type KpiInput,
   categoryVariation,
   dashboardKpis,
+  dayExpense,
   firstAverageMonth,
   formatRate,
   isPartialFirstMonth,
@@ -11,7 +12,9 @@ import {
   monthLabel,
   monthNav,
   resolveMonth,
+  topCounterparty,
 } from "./dashboard";
+import type { InsightEntry } from "./insights";
 import {
   type FutureCommitments,
   type MonthProjection,
@@ -234,5 +237,71 @@ describe("firstAverageMonth", () => {
     // From 01/08: Aug–Oct too.
     expect(firstAverageMonth("2026-08-01")).toBe("2026-11");
     expect(firstAverageMonth("2026-12-31")).toBe("2027-04");
+  });
+});
+
+const entry = (date: string, amountCents: number, extra: Partial<InsightEntry> = {}) =>
+  ({
+    type: "EXPENSE",
+    date,
+    amountCents,
+    adjustment: false,
+    installment: false,
+    subscription: false,
+    category: null,
+    counterparty: null,
+    ...extra,
+  }) as InsightEntry;
+
+describe("dayExpense", () => {
+  it("as despesas do dia que contam: sem receitas, transferências nem ajustes", () => {
+    expect(
+      dayExpense(
+        [
+          entry(TODAY, 4_500),
+          entry(TODAY, 3_990, { subscription: true }),
+          entry(TODAY, 100_000, { type: "INCOME" }),
+          entry(TODAY, 50_000, { type: "TRANSFER" }),
+          entry(TODAY, 7_000, { adjustment: true }),
+          entry("2026-11-14", 2_000),
+        ],
+        TODAY,
+      ),
+    ).toBe(8_490);
+  });
+});
+
+describe("topCounterparty", () => {
+  const mercado = { id: "mercado", name: "Mercado Bom Preço" };
+  const cafe = { id: "cafe", name: "Café da Esquina" };
+
+  it("o lugar com o maior total no mês, com assinaturas e parcelas do mês", () => {
+    expect(
+      topCounterparty(
+        [
+          entry("2026-11-03", 30_000, { counterparty: mercado }),
+          entry("2026-11-04", 20_000, { counterparty: cafe }),
+          entry("2026-11-05", 15_000, { counterparty: cafe, subscription: true }),
+          // Another month, an income and an adjustment don't count.
+          entry("2026-10-03", 99_000, { counterparty: cafe }),
+          entry("2026-11-03", 99_000, { counterparty: cafe, type: "INCOME" }),
+          entry("2026-11-03", 99_000, { counterparty: cafe, adjustment: true }),
+        ],
+        "2026-11",
+      ),
+    ).toEqual({ id: "cafe", name: "Café da Esquina", totalCents: 35_000 });
+  });
+
+  it("um empate vai pelo nome; sem lugar, null", () => {
+    expect(
+      topCounterparty(
+        [
+          entry("2026-11-03", 10_000, { counterparty: mercado }),
+          entry("2026-11-03", 10_000, { counterparty: cafe }),
+        ],
+        "2026-11",
+      )?.name,
+    ).toBe("Café da Esquina");
+    expect(topCounterparty([entry("2026-11-03", 10_000)], "2026-11")).toBeNull();
   });
 });

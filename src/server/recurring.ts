@@ -1,5 +1,7 @@
 import "server-only";
 
+import { cache } from "react";
+
 import { addDays, calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { cycleOn, invoiceFor } from "@/domain/invoice-cycle";
 import {
@@ -98,6 +100,12 @@ export async function generateRecurringSafely(spaceId: string) {
     console.error("generateRecurring failed", error);
   }
 }
+
+/**
+ * generateRecurringSafely once per request (React's cache): the dashboard's blocks each need the
+ * charges up to today, and one run is enough for all of them.
+ */
+export const generateRecurringOnce = cache(generateRecurringSafely);
 
 async function findRule(spaceId: string, id: string) {
   return db.recurringRule.findFirst({

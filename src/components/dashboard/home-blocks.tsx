@@ -30,7 +30,8 @@ export function TodayNumbers({
           <span className="text-xs text-muted-foreground">{item.label}</span>
           <span
             className={cn(
-              "text-base font-semibold tracking-tight",
+              // About 100px a column on a 375px phone: a smaller size there keeps "−R$ 12.345,67" in.
+              "text-sm font-semibold tracking-tight min-[400px]:text-base",
               item.cents < 0 && "text-destructive",
             )}
           >
@@ -153,17 +154,28 @@ export function RecentEntries({
   );
 }
 
-/** Where the rest is (design): counterparties, invoices, subscriptions, each with a line of context. */
-export function Shortcuts({ home }: { home: HomeSummary }) {
+/**
+ * Where the rest is (design): counterparties, invoices, subscriptions, each with a line of
+ * context. The top counterparty is the chosen month's (`period`: "este mês", "em outubro").
+ */
+export function Shortcuts({
+  home,
+  top,
+  period,
+}: {
+  home: HomeSummary;
+  top: { name: string; totalCents: number } | null;
+  period: string;
+}) {
   const openInvoices = home.cards.reduce((sum, c) => sum + c.totalCents, 0);
   const items = [
     {
       href: "/estabelecimentos",
       label: "Estabelecimentos",
       icon: Store,
-      context: home.topCounterparty
-        ? `Maior do mês: ${home.topCounterparty.name}, ${formatBRL(home.topCounterparty.totalCents)}`
-        : "Nenhuma compra no mês",
+      context: top
+        ? `Maior ${period}: ${top.name}, ${formatBRL(top.totalCents)}`
+        : `Nenhuma compra ${period}`,
     },
     {
       href: "/faturas",

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Tag } from "lucide-react";
+import { ChevronDown, Tag, TriangleAlert } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
@@ -96,12 +96,16 @@ function Row({ row, month, scale }: { row: CategoryRow; month: Month; scale: num
           {variation && (
             <span
               className={cn(
-                "text-xs tabular-nums",
+                "inline-flex items-center gap-1 text-xs tabular-nums",
                 variation.alert ? "font-medium text-destructive" : "text-muted-foreground",
               )}
             >
+              {/* Not the color alone: the insights' alert icon, and its name for screen readers. */}
+              {variation.alert && <TriangleAlert aria-hidden className="size-3" />}
               {variation.text}
-              <span className="sr-only"> em relação à média</span>
+              <span className="sr-only">
+                {variation.alert ? " em relação à média, acima do normal" : " em relação à média"}
+              </span>
             </span>
           )}
         </div>
@@ -134,13 +138,22 @@ function Row({ row, month, scale }: { row: CategoryRow; month: Month; scale: num
       <ul className="mt-2 grid gap-1 pl-11">
         {row.children.map((child) => (
           <li key={`${child.id}:${child.direct ? "direct" : "child"}`}>
-            <Link
-              href={categoryEntriesHref(child.id, month)}
-              className="flex justify-between gap-3 rounded-md py-1 text-sm hover:underline"
-            >
-              <span>{child.direct ? `${child.name} (direto)` : child.name}</span>
-              <span className="tabular-nums">{formatBRL(child.totalCents)}</span>
-            </Link>
+            {child.direct ? (
+              // The list's filter on a main category includes its children: no link would show
+              // only what was booked on it directly. "Ver os lançamentos" below has them all.
+              <span className="flex justify-between gap-3 py-1 text-sm">
+                <span>{child.name} (direto)</span>
+                <span className="tabular-nums">{formatBRL(child.totalCents)}</span>
+              </span>
+            ) : (
+              <Link
+                href={categoryEntriesHref(child.id, month)}
+                className="flex justify-between gap-3 rounded-md py-1 text-sm hover:underline"
+              >
+                <span>{child.name}</span>
+                <span className="tabular-nums">{formatBRL(child.totalCents)}</span>
+              </Link>
+            )}
           </li>
         ))}
         <li>

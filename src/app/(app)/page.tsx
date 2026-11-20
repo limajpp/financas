@@ -23,12 +23,13 @@ import {
   resolveMonth,
 } from "@/domain/dashboard";
 import { todayInSaoPaulo } from "@/domain/dates";
+import { periodText } from "@/domain/insights";
 import { hasAverageHistory } from "@/domain/metrics";
 import { monthOf } from "@/domain/recurring";
 import { homeSummary } from "@/server/home";
 import { dashboardMetrics, spaceHistoryStart } from "@/server/metrics";
 import { needsOnboarding } from "@/server/onboarding";
-import { generateRecurringSafely } from "@/server/recurring";
+import { generateRecurringOnce } from "@/server/recurring";
 import { getCurrentSpace, getCurrentUser } from "@/server/session";
 
 type Params = Record<string, string | string[] | undefined>;
@@ -52,9 +53,14 @@ export default function HomePage({ searchParams }: { searchParams: Promise<Param
         <Invite />
       </Suspense>
       <InstallHint />
+      {/* Each block streams on its own: the numbers don't wait for the cards, nor the button. */}
       <div className="mt-6 grid gap-6 md:hidden">
-        <Suspense fallback={<Loading>Carregando o início…</Loading>}>
-          <PhoneHome />
+        <Suspense fallback={<Loading>Carregando o mês…</Loading>}>
+          <PhoneNumbers />
+        </Suspense>
+        <RegisterButton />
+        <Suspense fallback={<Loading>Carregando os lançamentos…</Loading>}>
+          <PhoneLists />
         </Suspense>
       </div>
       <Suspense fallback={<Loading className="mt-8">Carregando o resumo do mês…</Loading>}>
@@ -71,7 +77,7 @@ function Loading({ children, className }: { children: string; className?: string
 async function Greeting() {
   const [user, space] = await Promise.all([getCurrentUser(), getCurrentSpace()]);
   // Opening the app charges the subscriptions due up to today (task 13).
-  await generateRecurringSafely(space.id);
+  await generateRecurringOnce(space.id);
   return <h1 className="text-2xl font-semibold tracking-tight">Olá, {user.name}</h1>;
 }
 
@@ -81,24 +87,27 @@ async function Invite() {
   return (await needsOnboarding(space.id)) ? <OnboardingInvite /> : null;
 }
 
-/** The phone's blocks, always of today: the numbers, "Registrar", the cards, the latest entries. */
-async function PhoneHome() {
+/** The phone's numbers of today: today's expense, the month's so far, the leftover so far. */
+async function PhoneNumbers() {
   const space = await getCurrentSpace();
-  const today = todayInSaoPaulo();
-  const [home, metrics] = await Promise.all([
-    homeOf(space.id),
-    metricsOf(space.id, monthOf(today)),
-  ]);
-  // Today's month always has a projection: it carries the "so far" numbers.
-  const projection = metrics!.projection!;
+  const metrics = await metricsOf(space.id, monthOf(todayInSaoPaulo()));
+  // At midnight on the 1st, "today" may turn between here and the metrics: no numbers then.
+  if (!metrics?.projection || metrics.todayExpenseCents === null) return null;
+  return (
+    <TodayNumbers
+      todayCents={metrics.todayExpenseCents}
+      monthCents={metrics.projection.expenseToDateCents}
+      leftoverCents={metrics.projection.leftoverToDateCents}
+    />
+  );
+}
+
+/** The phone's lists, of today: the open invoices and the latest entries. */
+async function PhoneLists() {
+  const space = await getCurrentSpace();
+  const home = await homeOf(space.id);
   return (
     <>
-      <TodayNumbers
-        todayCents={home.todayExpenseCents}
-        monthCents={projection.expenseToDateCents}
-        leftoverCents={projection.leftoverToDateCents}
-      />
-      <RegisterButton />
       <CardInvoices cards={home.cards} />
       <RecentEntries items={home.recent} today={home.today} />
     </>
@@ -158,7 +167,7 @@ async function Summary({ searchParams }: { searchParams: Promise<Params> }) {
           <Evolution evolution={m.evolution} month={month} historyStart={start} />
         )}
       </div>
-      <Shortcuts home={home} />
+      <Shortcuts home={home} top={m.topCounterparty} period={periodText(month, today)} />
     </section>
   );
 }
