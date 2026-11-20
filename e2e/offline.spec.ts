@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signIn, signUp } from "./helpers";
+import { signIn, signUp, visit, expectHome } from "./helpers";
 
 // Task 16: docs/specs/tasks/16-offline-queue.md. These don't need the service worker: the register
 // screen is opened with the network on, and only then the browser goes offline.
@@ -75,7 +75,7 @@ function queued(page: Page) {
 /** Signs up with two accounts and leaves the register screen open, ready to go offline. */
 async function setup(page: Page) {
   const user = await signUp(page);
-  await page.goto("/contas");
+  await visit(page, "/contas");
   await createAccount(page, "Banco Azul", "1.000,00");
   await createAccount(page, "Banco Verde", "500,00");
   await open(page, "Registrar");
@@ -191,7 +191,7 @@ test("a transferência e a compra parcelada feitas offline sincronizam (CA10)", 
 }) => {
   test.slow();
   await signUp(page);
-  await page.goto("/contas");
+  await visit(page, "/contas");
   await createAccount(page, "Banco Azul", "1.000,00");
   await createAccount(page, "Banco Verde", "500,00");
   const dialog = page.getByRole("dialog");
@@ -270,7 +270,7 @@ test.describe("com o envio retido", () => {
     // was paid from is archived.
     await page.route("**/api/sync", (route) => route.abort());
     await context.setOffline(false);
-    await page.goto("/contas");
+    await visit(page, "/contas");
     await page.getByRole("button", { name: "Arquivar Banco Azul" }).click();
     await expect(accountRow(page, "Banco Azul")).toBeHidden();
     await expect(indicator(page, "1 lançamento aguardando sincronização")).toBeVisible();
@@ -295,11 +295,11 @@ test.describe("com o envio retido", () => {
     );
     await save(page).click();
     await expect(page.getByText("Despesa de R$ 47,90 salva", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expectHome(page);
     await expect(indicator(page, /com erro|aguardando sincronização/)).toBeHidden();
     expect(await queued(page)).toBe(0);
 
-    await page.goto("/lancamentos");
+    await visit(page, "/lancamentos");
     await expect(row(page, isMobile, "Padaria Offline")).toHaveCount(1);
   });
 
@@ -315,7 +315,7 @@ test.describe("com o envio retido", () => {
     await registerOffline(page, "Padaria Offline", "4790");
     await context.setOffline(false);
 
-    if (isMobile) await page.goto("/configuracoes");
+    if (isMobile) await visit(page, "/configuracoes");
     await expect(indicator(page, "1 lançamento aguardando sincronização")).toBeVisible();
     const dialog = page.getByRole("dialog");
     await page.getByRole("button", { name: "Sair", exact: true }).click();
@@ -335,9 +335,9 @@ test.describe("com o envio retido", () => {
     // Back in, nothing waits and nothing was created.
     await page.unroute("**/api/sync");
     await signIn(page, email);
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expectHome(page);
     await expect(indicator(page, /aguardando sincronização/)).toBeHidden();
-    await page.goto("/lancamentos");
+    await visit(page, "/lancamentos");
     await expect(page.getByText("Padaria Offline")).toHaveCount(0);
   });
 

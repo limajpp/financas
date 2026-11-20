@@ -8,15 +8,19 @@ import { formatBRL } from "@/domain/money";
 import { cn } from "@/lib/utils";
 import type { HomeSummary } from "@/server/home";
 
-/** The phone's three numbers (task 25): today's expense, the month's so far, the leftover so far. */
+/**
+ * The phone's three numbers (task 25): today's expense, the month's so far, the leftover so far.
+ * Without them yet (null), the same card with "…": what streams in later doesn't push the screen
+ * down (task 26, Lighthouse's layout shift).
+ */
 export function TodayNumbers({
   todayCents,
   monthCents,
   leftoverCents,
 }: {
-  todayCents: number;
-  monthCents: number;
-  leftoverCents: number;
+  todayCents: number | null;
+  monthCents: number | null;
+  leftoverCents: number | null;
 }) {
   const items = [
     { label: "Gasto hoje", cents: todayCents },
@@ -32,10 +36,10 @@ export function TodayNumbers({
             className={cn(
               // About 100px a column on a 375px phone: a smaller size there keeps "−R$ 12.345,67" in.
               "text-sm font-semibold tracking-tight min-[400px]:text-base",
-              item.cents < 0 && "text-destructive",
+              item.cents !== null && item.cents < 0 && "text-destructive",
             )}
           >
-            {formatBRL(item.cents)}
+            {item.cents === null ? "…" : formatBRL(item.cents)}
           </span>
         </div>
       ))}

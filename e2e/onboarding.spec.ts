@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 /**
  * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
@@ -45,7 +45,7 @@ test("CA5: o cadastro leva ao onboarding; pular deixa o convite no início, e o 
     await keypad.getByRole("button", { name: digit, exact: true }).click();
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Despesa de R$ 25,00 salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
 
   // "Continuar" goes back to it.
   await invite(page).getByRole("link", { name: "Continuar" }).click();
@@ -57,7 +57,7 @@ test("CA5: o cadastro leva ao onboarding; pular deixa o convite no início, e o 
   await invite(page).getByRole("button", { name: "Não mostrar mais" }).click();
   await expect(invite(page)).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
   await expect(invite(page)).toBeHidden();
 });
 
@@ -123,7 +123,7 @@ test("CA6: um onboarding completo termina no início, com as faturas certas", as
   );
 
   await page.getByRole("button", { name: "Concluir" }).click();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
   await expect(invite(page)).toBeHidden();
 
   // The open invoice is what the bank showed; the 7 installments left follow, one per invoice.

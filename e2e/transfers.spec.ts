@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 async function createAccount(page: Page, name: string, balance: string) {
   const dialog = page.getByRole("dialog");
@@ -60,7 +60,7 @@ test("transfere entre contas pelo registro", async ({ page }) => {
 
   await save.click();
   await expect(page.getByText("Transferência de R$ 500,00 salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
 
   await open(page, "Contas");
   await expect(accountRow(page, "Banco Azul")).toContainText("Saldo atual R$ 500,00");
@@ -87,7 +87,7 @@ test("paga a fatura com o total já preenchido", async ({ page }) => {
   await dialog.getByRole("button", { name: "Cartão Roxo" }).click();
   await typeAmount(page, "30000");
   await page.getByRole("button", { name: /^Salvar/ }).click();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
 
   await open(page, "Contas");
   await expect(accountRow(page, "Banco Azul")).toContainText("Saldo atual R$ 1.000,00");

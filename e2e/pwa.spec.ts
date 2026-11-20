@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { signOut, signUp } from "./helpers";
+import { signOut, signUp, expectHome } from "./helpers";
 
 // The service worker only exists in production builds (in `next dev` it would serve stale code):
 // CI runs the e2e against `npm run start`; locally, `npm run build` and then CI=1.
@@ -114,7 +114,7 @@ test("o cartão de instalação aparece só no Safari do iPhone e some com Agora
   await signUp(page);
   const card = page.getByRole("region", { name: "Instale o app" });
   if (browserName !== "webkit") {
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expectHome(page);
     await expect(card).toBeHidden();
     return;
   }
@@ -122,6 +122,6 @@ test("o cartão de instalação aparece só no Safari do iPhone e some com Agora
   await card.getByRole("button", { name: "Agora não" }).click();
   await expect(card).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
   await expect(card).toBeHidden();
 });

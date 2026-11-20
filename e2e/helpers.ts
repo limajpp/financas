@@ -59,3 +59,29 @@ export async function signOut(page: Page, isMobile: boolean) {
 export function formAlert(page: Page) {
   return page.getByRole("main").getByRole("alert");
 }
+
+/**
+ * page.goto that survives Next's fallback: a page shows before its data request ends, a goto then
+ * aborts that request, and Next answers with a full load of "/" that interrupts the goto (WebKit).
+ */
+export async function visit(page: Page, url: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await page.goto(url);
+      return;
+    } catch (error) {
+      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
+    }
+  }
+}
+
+/**
+ * Home is on screen, once. For a frame the Next router keeps the previous route alive and two
+ * home headings can coexist (task 26): the first one is waited for, then exactly one must remain,
+ * so a duplicate that stays on screen still fails.
+ */
+export async function expectHome(page: Page) {
+  const heading = page.getByRole("heading", { name: /^Olá/ });
+  await expect(heading.first()).toBeVisible();
+  await expect(heading).toHaveCount(1);
+}

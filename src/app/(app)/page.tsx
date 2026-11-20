@@ -49,16 +49,21 @@ export default function HomePage({ searchParams }: { searchParams: Promise<Param
       <Suspense fallback={<h1 className="text-2xl font-semibold tracking-tight">Olá</h1>}>
         <Greeting />
       </Suspense>
+      {/* Each block streams on its own: the numbers don't wait for the cards, nor the button. */}
+      <div className="mt-6 grid gap-6 md:hidden">
+        <Suspense
+          fallback={<TodayNumbers todayCents={null} monthCents={null} leftoverCents={null} />}
+        >
+          <PhoneNumbers />
+        </Suspense>
+        <RegisterButton />
+      </div>
+      {/* The invitations stream in late: below today's numbers, they don't push them down. */}
       <Suspense>
         <Invite />
       </Suspense>
       <InstallHint />
-      {/* Each block streams on its own: the numbers don't wait for the cards, nor the button. */}
       <div className="mt-6 grid gap-6 md:hidden">
-        <Suspense fallback={<Loading>Carregando o mês…</Loading>}>
-          <PhoneNumbers />
-        </Suspense>
-        <RegisterButton />
         <Suspense fallback={<Loading>Carregando os lançamentos…</Loading>}>
           <PhoneLists />
         </Suspense>

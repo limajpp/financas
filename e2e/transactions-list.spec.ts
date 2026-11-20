@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 async function createAccount(page: Page, name: string) {
   const dialog = page.getByRole("dialog");
@@ -58,7 +58,7 @@ async function register(
   }
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(/salva$/).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
 }
 
 /** The first day of last month, "YYYY-MM-DD", in São Paulo. */

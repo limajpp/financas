@@ -4,6 +4,8 @@ import { useId } from "react";
 import { PALETTE_COLORS, type PaletteColor } from "@/domain/palette";
 import { cn } from "@/lib/utils";
 
+import { radioKeys } from "./radio-keys";
+
 /** Tint (background) and ink (icon) for each palette key, readable in light and dark. */
 export const COLOR_CLASSES: Record<PaletteColor, { tint: string; ink: string; swatch: string }> = {
   red: { tint: "bg-red-500/15", ink: "text-red-700 dark:text-red-300", swatch: "bg-red-500" },
@@ -62,6 +64,7 @@ export function ColorPicker({
   onChange: (color: PaletteColor) => void;
 }) {
   const labelId = useId();
+  const radioProps = radioKeys(PALETTE_COLORS, value, onChange);
   return (
     <fieldset className="grid gap-2">
       <legend className="mb-2 text-sm font-medium" id={labelId}>
@@ -78,6 +81,7 @@ export function ColorPicker({
               aria-checked={selected}
               aria-label={COLOR_LABELS[key]}
               onClick={() => onChange(key)}
+              {...radioProps(key)}
               className={cn(
                 "flex size-8 items-center justify-center rounded-full text-white ring-offset-2 ring-offset-popover outline-none focus-visible:ring-3 focus-visible:ring-ring",
                 COLOR_CLASSES[key].swatch,

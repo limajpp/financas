@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { addDays, formatCalendarDate, todayInSaoPaulo } from "../src/domain/dates";
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 /**
  * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
@@ -67,7 +67,7 @@ async function register(
   }
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(saved)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expectHome(page);
   await expect(page).toHaveURL(/:\d+\/$/);
 }
 

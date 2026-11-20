@@ -33,6 +33,9 @@ export default function EvolutionChart({ points }: { points: EvolutionPoint[] })
   return (
     <ComposedChart
       responsive
+      // Hidden from assistive technology, with the table as its equivalent (task 26): Recharts'
+      // keyboard layer would put a focusable element inside that hidden area.
+      accessibilityLayer={false}
       data={points}
       margin={{ top: 8, right: 4, bottom: 0, left: 0 }}
       barGap={2}
