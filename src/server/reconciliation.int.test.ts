@@ -284,7 +284,7 @@ describe("conferir saldo", () => {
     expect(await db.transaction.count()).toBe(0);
   });
 
-  it("CA3: o banco recusa um ajuste com categoria, no crédito ou numa transferência", async () => {
+  it("CA3: o banco recusa um ajuste com categoria, um estorno de ajuste ou uma transferência", async () => {
     const s = await setup();
     const card = await createCard(
       s.spaceId,
@@ -314,11 +314,14 @@ describe("conferir saldo", () => {
         db.transaction.create({ data: { ...base, clientId: randomUUID(), ...data } as never }),
       ).rejects.toThrow(/Transaction_adjustment_check/);
     await refused({ method: "PIX", accountId: s.accountId, categoryId: s.mercado.id });
-    await refused({
+    // On credit, only an expense with no category: an invoice's opening balance (task 22).
+    const credit = {
       method: "CREDIT",
       cardId: card.card.id,
       invoiceDueDate: new Date("2026-12-10T00:00:00Z"),
-    });
+    };
+    await refused({ ...credit, type: "INCOME" });
+    await refused({ ...credit, categoryId: s.mercado.id });
     await refused({
       type: "TRANSFER",
       method: "PIX",
