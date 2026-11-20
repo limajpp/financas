@@ -222,8 +222,10 @@ function CardsStep({ data }: { data: OnboardingData }) {
         </ul>
       )}
       <p className="text-sm text-muted-foreground">
-        Use o valor que o app do banco mostra hoje, já com as parcelas. Ele entra como “saldo
-        anterior da fatura”: conta no total e no pagamento, mas não como gasto do mês.
+        Use o valor que o app do banco mostra hoje, com tudo: as parcelas e o que você já registrou
+        aqui. O app desconta o que já tem na fatura, e o resto entra como “saldo anterior da
+        fatura”: conta no total e no pagamento, mas não como gasto do mês. Ao sair do campo, o valor
+        é salvo.
       </p>
       <AddButton onClick={() => setDialog({ mode: "create" })}>Adicionar cartão</AddButton>
       <CardDialog state={dialog} accounts={payers} onClose={() => setDialog(null)} />
@@ -249,15 +251,22 @@ function InvoiceAmount({
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // The amount last sent (0: nothing informed; NaN after a failure): leaving the field saves a new
+  // one, so a typed amount isn't lost on "Próximo", and "Salvar" right after doesn't send it twice.
+  const sent = useRef(invoice.informedCents ?? 0);
+  const due = formatCalendarDate(invoice.dueDate).slice(0, 5);
 
-  function save(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  function save(event?: React.FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
     const cents = value.trim() === "" ? 0 : parseBRL(value);
     if (cents === null || cents < 0) {
       setError("Valor inválido. Use o formato 1.234,56.");
       return;
     }
     setError(null);
+    // Already sent (leaving the field to tap "Salvar" saves on the way).
+    if (cents === sent.current) return;
+    sent.current = cents;
     startTransition(async () => {
       try {
         const result = await setOpeningBalanceAction({
@@ -265,14 +274,18 @@ function InvoiceAmount({
           dueDate: invoice.dueDate,
           amountCents: cents,
         });
-        if (!result.ok) return setError(result.error);
+        if (!result.ok) {
+          sent.current = Number.NaN;
+          return setError(result.error);
+        }
       } catch {
+        sent.current = Number.NaN;
         return setError(NETWORK_ERROR);
       }
       toast(
         cents === 0
-          ? `Fatura de ${formatCalendarDate(invoice.dueDate).slice(0, 5)} do ${cardName} sem saldo anterior`
-          : `Fatura de ${formatCalendarDate(invoice.dueDate).slice(0, 5)} do ${cardName}: ${formatBRL(cents)}`,
+          ? `Fatura de ${due} do ${cardName} sem saldo anterior`
+          : `Fatura de ${due} do ${cardName}: ${formatBRL(cents)}`,
       );
     });
   }
@@ -290,10 +303,15 @@ function InvoiceAmount({
           onValueChange={setValue}
           placeholder="0,00"
           className="flex-1"
+          onBlur={() => save()}
           {...(error ? { "aria-invalid": true, "aria-describedby": `${id}-error` } : {})}
         />
         <Button type="submit" variant="secondary" className="h-10" disabled={pending}>
           {pending ? "Salvando…" : "Salvar"}
+          <span className="sr-only">
+            {" "}
+            fatura de {due} do {cardName}
+          </span>
         </Button>
       </div>
       {error && (

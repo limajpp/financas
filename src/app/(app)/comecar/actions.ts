@@ -38,7 +38,13 @@ export async function setOpeningBalanceAction(input: unknown): Promise<ActionRes
   if (!parsed.success) return invalid(parsed.error);
   const { cardId, dueDate, amountCents } = parsed.data;
   const result = await setOpeningBalance(space.id, user.id, cardId, dueDate, amountCents);
-  if (!result.ok) return { ok: false, error: message(result.error) };
+  if (!result.ok) {
+    // The screen was open across the invoice's closing or due day.
+    if (result.error === "INVALID_INVOICE") {
+      return { ok: false, error: "Essa fatura mudou (fechou ou venceu). Atualize a página." };
+    }
+    return { ok: false, error: message(result.error) };
+  }
   refresh();
   return { ok: true };
 }

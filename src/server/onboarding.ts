@@ -29,7 +29,7 @@ import { db } from "@/lib/db";
 import { listAccounts } from "@/server/accounts";
 import { listCards } from "@/server/cards";
 import { selectableCategories } from "@/server/categories";
-import { accountBalances, counterpartyIdFor, refsFor } from "@/server/transactions";
+import { accountBalances, cardsInvoices, counterpartyIdFor, refsFor } from "@/server/transactions";
 
 type Tx = Prisma.TransactionClient;
 
@@ -53,19 +53,33 @@ async function activeCard(spaceId: string, cardId: string) {
   );
 }
 
-/** What the onboarding's installments add up to on one invoice of a card. */
-async function ongoingOnInvoice(tx: Tx, spaceId: string, cardId: string, dueDate: CalendarDate) {
-  const sum = await tx.transaction.aggregate({
+/**
+ * What the app already has on one invoice of a card, besides its opening balance: credit purchases
+ * (the onboarding's installments, entries registered since, subscription charges) minus refunds.
+ * The amount the bank shows already includes all of them.
+ */
+async function entriesOnInvoice(
+  client: Tx | typeof db,
+  spaceId: string,
+  cardId: string,
+  dueDate: CalendarDate,
+) {
+  const groups = await client.transaction.groupBy({
+    by: ["type"],
     where: {
       spaceId,
       cardId,
-      type: "EXPENSE",
+      method: "CREDIT",
+      type: { in: ["EXPENSE", "INCOME"] },
+      adjustment: false,
       invoiceDueDate: calendarDateToDb(dueDate),
-      clientId: { startsWith: ONGOING_CLIENT_ID_PREFIX },
     },
     _sum: { amountCents: true },
   });
-  return sum._sum.amountCents ?? 0;
+  return groups.reduce(
+    (net, g) => net + (g.type === "INCOME" ? -1 : 1) * (g._sum.amountCents ?? 0),
+    0,
+  );
 }
 
 /**
@@ -111,12 +125,15 @@ async function writeOpeningBalance(
 }
 
 const lockCard = (tx: Tx, cardId: string) =>
-  tx.$queryRaw`SELECT "id" FROM "Card" WHERE "id" = ${cardId} FOR UPDATE`;
+  // NO KEY UPDATE: it serializes the two writers but, unlike FOR UPDATE, doesn't conflict with
+  // the key-share lock a new row referencing the card takes (no deadlock with other inserts).
+  tx.$queryRaw`SELECT "id" FROM "Card" WHERE "id" = ${cardId} FOR NO KEY UPDATE`;
 
 /**
  * Records what the bank shows on one of a card's invoices today (the open one, or the closed one
- * not due yet). What stays as the opening balance is that amount minus the installments the
- * onboarding already created on it: they are part of it. Saving again replaces it; zero deletes.
+ * not due yet). What stays as the opening balance is that amount minus what the app already has on
+ * that invoice (the onboarding's installments, entries registered since, subscription charges):
+ * the bank's amount includes them. Saving again replaces it; zero deletes.
  */
 export async function setOpeningBalance(
   spaceId: string,
@@ -137,7 +154,7 @@ export async function setOpeningBalance(
     await lockCard(tx, cardId);
     const cents = openingBalanceCents(
       informedCents,
-      await ongoingOnInvoice(tx, spaceId, cardId, dueDate),
+      await entriesOnInvoice(tx, spaceId, cardId, dueDate),
     );
     await writeOpeningBalance(tx, spaceId, userId, cardId, dueDate, cents);
     return cents;
@@ -297,7 +314,8 @@ export async function createSubscriptionRule(
 
   return db.$transaction(async (tx) => {
     // Two taps at once: the space row serializes them, and the second finds the first.
-    await tx.$queryRaw`SELECT "id" FROM "Space" WHERE "id" = ${spaceId} FOR UPDATE`;
+    // NO KEY UPDATE: doesn't block the inserts of the space, which only take a key-share lock.
+    await tx.$queryRaw`SELECT "id" FROM "Space" WHERE "id" = ${spaceId} FOR NO KEY UPDATE`;
     const twin = await tx.recurringRule.findFirst({
       where: { spaceId, status: "ACTIVE", ...rule },
       select: { id: true },
@@ -339,7 +357,7 @@ export async function needsOnboarding(spaceId: string) {
 /**
  * What the onboarding screen shows (task 22): what each step already has, and what its forms
  * offer. Active accounts and cards only; each card with the invoices it asks about and what was
- * informed for them (the opening balance plus the onboarding's installments on it).
+ * informed for them.
  */
 export async function onboardingData(spaceId: string) {
   const today = todayInSaoPaulo();
@@ -385,14 +403,22 @@ export async function onboardingData(spaceId: string) {
     }),
   ]);
 
+  const invoices = await cardsInvoices(
+    spaceId,
+    cards.map((card) => ({ id: card.id, accountId: card.account.id, cycles: card.cycles })),
+  );
+  // What was informed: with an opening balance, the invoice's total (the opening balance plus what
+  // the app has on it, which is what came off the informed amount).
   const informed = (cardId: string, dueDate: CalendarDate) => {
-    const on = ongoingRows.filter(
+    const hasOpening = ongoingRows.some(
       (r) =>
-        r.cardId === cardId && r.invoiceDueDate && dbToCalendarDate(r.invoiceDueDate) === dueDate,
+        r.adjustment &&
+        r.cardId === cardId &&
+        r.invoiceDueDate &&
+        dbToCalendarDate(r.invoiceDueDate) === dueDate,
     );
-    const opening = on.find((r) => r.adjustment);
-    if (!opening) return null;
-    return on.reduce((sum, r) => sum + r.amountCents, 0);
+    if (!hasOpening) return null;
+    return invoices.get(cardId)?.invoices.find((i) => i.dueDate === dueDate)?.totalCents ?? null;
   };
 
   // One entry per purchase: its first installment left.

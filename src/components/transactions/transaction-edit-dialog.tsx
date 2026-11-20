@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -110,9 +111,22 @@ function AdjustmentView({ item, onDone }: { item: ListItemView; onDone: () => vo
       <DialogHeader>
         <DialogTitle>{opening ? "Saldo anterior da fatura" : "Ajuste de saldo"}</DialogTitle>
         <DialogDescription>
-          {opening
-            ? "O que já havia na fatura antes do app. Não se edita: para mudar, informe a fatura de novo em “Começar”."
-            : "Criado na conferência de saldo. Não se edita: para mudar, exclua e confira de novo."}
+          {opening ? (
+            <>
+              O que já havia na fatura antes do app. Não se edita: enquanto a fatura estiver aberta,
+              informe o valor de novo em{" "}
+              <Link
+                href="/comecar?passo=2"
+                className="underline underline-offset-4"
+                onClick={onDone}
+              >
+                Começar
+              </Link>
+              . Depois, exclua e registre a diferença como uma compra.
+            </>
+          ) : (
+            "Criado na conferência de saldo. Não se edita: para mudar, exclua e confira de novo."
+          )}
         </DialogDescription>
       </DialogHeader>
       <dl className="grid gap-2 text-sm">
