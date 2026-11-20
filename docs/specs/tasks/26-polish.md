@@ -110,6 +110,7 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
 - [x] CA4 — Há o link "Pular para o conteúdo" e o foco visível. A conferência de saldo anuncia o resultado, os seletores de ícone e cor andam pelas setas, e arquivar deixa o foco no título da lista. Cada um tem teste.
 - [x] CA5 — O axe no e2e, sobre as telas principais nos dois temas, sem violação séria nem crítica.
 - [ ] CA6 — O Lighthouse mobile dá pelo menos 90 em desempenho e acessibilidade nas 5 telas principais. Os números ficam na spec.
+  - **Não atingido; aceito pelo João para fechar a v1.** Os números estão em "Desempenho", acima. A reestruturação fica na issue #59, depois do release, com a medida na produção e a conferência no iPhone.
 - [x] CA7 — Duas rodadas completas do e2e seguidas, com `--retries=0`, sem falha.
 - [x] CA8 — `docs/verificacao-v1.md` está escrito e a parte do computador foi executada e registrada. A parte do iPhone fica com o João, depois do release.
 - [x] CA9 — O README diz "v1 concluída" e descreve o app de hoje.
