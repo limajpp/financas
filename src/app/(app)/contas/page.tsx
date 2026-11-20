@@ -1,9 +1,64 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
-import { PagePlaceholder } from "@/components/page-placeholder";
+import { AccountManager } from "@/components/accounts/account-manager";
+import { listAccounts } from "@/server/accounts";
+import { listCards } from "@/server/cards";
+import { generateRecurringSafely } from "@/server/recurring";
+import { getCurrentSpace } from "@/server/session";
+import { accountBalances, cardsInvoices } from "@/server/transactions";
 
 export const metadata: Metadata = { title: "Contas · Finanças" };
 
 export default function ContasPage() {
-  return <PagePlaceholder title="Contas" />;
+  return (
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-8 md:py-10">
+      <h1 id="accounts-heading" className="text-2xl font-semibold tracking-tight">
+        Contas
+      </h1>
+      <p className="mt-2 text-muted-foreground">
+        Suas contas e os cartões de crédito que elas pagam.
+      </p>
+      <Suspense fallback={<p className="mt-6 text-muted-foreground">Carregando contas…</p>}>
+        <Accounts />
+      </Suspense>
+    </div>
+  );
+}
+
+async function Accounts() {
+  const space = await getCurrentSpace();
+  // Subscriptions charged up to today first, so the balances include them (task 13).
+  await generateRecurringSafely(space.id);
+  const [accounts, cards, balances] = await Promise.all([
+    listAccounts(space.id, { includeArchived: true }),
+    listCards(space.id, { includeArchived: true }),
+    accountBalances(space.id),
+  ]);
+  const payments = await cardsInvoices(
+    space.id,
+    cards.map((card) => ({ id: card.id, accountId: card.account.id, cycles: card.cycles })),
+  );
+  return (
+    <AccountManager
+      accounts={accounts.map(({ archivedAt, ...account }) => ({
+        ...account,
+        currentBalanceCents: balances.get(account.id) ?? account.initialBalanceCents,
+        archived: archivedAt !== null,
+      }))}
+      cards={cards.map((card) => ({
+        id: card.id,
+        name: card.name,
+        limitCents: card.limitCents,
+        archived: card.archivedAt !== null,
+        accountId: card.account.id,
+        accountName: card.account.name,
+        createdToday: card.createdToday,
+        closingDay: card.closingDay,
+        dueDay: card.dueDay,
+        openInvoice: card.openInvoice,
+        payment: payments.get(card.id)!,
+      }))}
+    />
+  );
 }

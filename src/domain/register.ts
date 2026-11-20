@@ -1,0 +1,136 @@
+/**
+ * Defaults of the register screen: the category buttons and the payment that comes selected.
+ * Pure functions only. Spec: docs/specs/tasks/09-register.md.
+ */
+import { MAX_AMOUNT_CENTS } from "./money";
+import { normalizeName } from "./names";
+import {
+  type EntryType,
+  METHODS_BY_TYPE,
+  type PaymentMethod,
+  TRANSFER_METHODS,
+} from "./transactions";
+
+export const TOP_CATEGORIES = 5;
+/** How far back the category usage goes, so the buttons follow changes in habits. */
+export const USAGE_WINDOW_DAYS = 90;
+
+export type CategoryUsage = { categoryId: string; count: number; lastUsedAt: Date };
+
+const collator = new Intl.Collator("pt-BR", { sensitivity: "base" });
+
+/**
+ * The `n` category buttons: the most used selectable categories (ties: most recent), filled with
+ * the parents in the default list's order (then alphabetically) when there isn't enough usage.
+ * `categories` are the selectable ones of one type; usage of anything else is ignored.
+ */
+export function topCategories<T extends { id: string; parentId: string | null; name: string }>(
+  usage: readonly CategoryUsage[],
+  categories: readonly T[],
+  defaultOrder: readonly string[],
+  n = TOP_CATEGORIES,
+): T[] {
+  const byId = new Map(categories.map((c) => [c.id, c]));
+  const used = usage
+    .filter((u) => byId.has(u.categoryId) && u.count > 0)
+    .sort((a, b) => b.count - a.count || b.lastUsedAt.getTime() - a.lastUsedAt.getTime())
+    .map((u) => byId.get(u.categoryId)!);
+
+  const position = new Map(defaultOrder.map((name, i) => [normalizeName(name), i]));
+  const rank = (c: T) => position.get(normalizeName(c.name)) ?? Infinity;
+  const fill = categories
+    .filter((c) => c.parentId === null && !used.includes(c))
+    .sort((a, b) => rank(a) - rank(b) || collator.compare(a.name, b.name));
+
+  return [...used, ...fill].slice(0, n);
+}
+
+/**
+ * What the last entries of a type used: the method of the last one, the last account used
+ * without credit and the last card.
+ */
+export type PaymentMemory = {
+  method: PaymentMethod | null;
+  accountId: string | null;
+  cardId: string | null;
+};
+
+export type PaymentChoice = { method: PaymentMethod; accountId: string; cardId: string | null };
+
+/**
+ * The payment the screen starts with: the remembered one while its account and card are still
+ * active, else the first active ones (sorted by the caller); Pix when the remembered method
+ * doesn't fit. Null when there's no active account.
+ */
+export function defaultPayment(
+  type: EntryType,
+  memory: PaymentMemory,
+  accounts: readonly { id: string }[],
+  cards: readonly { id: string }[],
+): PaymentChoice | null {
+  const account = accounts.find((a) => a.id === memory.accountId) ?? accounts[0];
+  if (!account) return null;
+  const card = cards.find((c) => c.id === memory.cardId) ?? cards[0];
+  // A refund (an income on credit, task 18) is rare: the next income doesn't start on it.
+  const fits =
+    memory.method !== null &&
+    METHODS_BY_TYPE[type].includes(memory.method) &&
+    (memory.method !== "CREDIT" || (card !== undefined && type === "EXPENSE"));
+  return {
+    method: fits ? memory.method! : "PIX",
+    accountId: account.id,
+    cardId: card?.id ?? null,
+  };
+}
+
+export type TransferMemory = {
+  accountId: string | null;
+  toAccountId: string | null;
+  method: PaymentMethod | null;
+};
+
+export type TransferChoice = {
+  accountId: string;
+  toAccountId: string;
+  method: (typeof TRANSFER_METHODS)[number];
+};
+
+/**
+ * The transfer the screen starts with: the last origin and destination while active (and
+ * different), else the first active accounts (sorted by the caller); Pix unless the last method
+ * was another transfer method. Null with fewer than two active accounts.
+ */
+export function defaultTransfer(
+  memory: TransferMemory,
+  accounts: readonly { id: string }[],
+): TransferChoice | null {
+  if (accounts.length < 2) return null;
+  const active = (id: string | null) => accounts.some((a) => a.id === id);
+  const from = active(memory.accountId) ? memory.accountId! : accounts[0]!.id;
+  const to =
+    active(memory.toAccountId) && memory.toAccountId !== from
+      ? memory.toAccountId!
+      : accounts.find((a) => a.id !== from)!.id;
+  const method = (TRANSFER_METHODS as readonly string[]).includes(memory.method ?? "")
+    ? (memory.method as TransferChoice["method"])
+    : "PIX";
+  return { accountId: from, toAccountId: to, method };
+}
+
+/** What `/registrar?valor=3456&tipo=despesa|receita&conta=<id>` asks (task 21's "Registrar o que falta"). */
+export type RegisterPrefill = { type: EntryType; cents: number; accountId: string };
+
+/**
+ * The register screen's prefill from its URL: a positive amount in cents, the type and an active
+ * account. Anything invalid, or an account that isn't active, means no prefill.
+ */
+export function parsePrefill(
+  params: { valor: string | null; tipo: string | null; conta: string | null },
+  accounts: readonly { id: string }[],
+): RegisterPrefill | null {
+  const type = params.tipo === "despesa" ? "EXPENSE" : params.tipo === "receita" ? "INCOME" : null;
+  const cents = /^\d{1,10}$/.test(params.valor ?? "") ? Number(params.valor) : 0;
+  const account = accounts.find((a) => a.id === params.conta);
+  if (!type || cents <= 0 || cents > MAX_AMOUNT_CENTS || !account) return null;
+  return { type, cents, accountId: account.id };
+}

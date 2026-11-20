@@ -1,10 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { ChevronRight } from "lucide-react";
+
+import { connection } from "next/server";
+import { Suspense } from "react";
 
 import { SignOutButton } from "@/components/nav/sign-out-button";
-import { PagePlaceholder } from "@/components/page-placeholder";
+import { ReminderSettings } from "@/components/push/reminder-settings";
+import { vapidPublicKey } from "@/server/push";
 
 export const metadata: Metadata = { title: "Configurações · Finanças" };
+
+const settingsLinks = [
+  { href: "/contas", label: "Contas" },
+  { href: "/contas#cartoes", label: "Cartões" },
+  { href: "/configuracoes/categorias", label: "Categorias" },
+];
 
 // On mobile the analysis pages aren't in the bottom bar yet, so they're reachable from here.
 const moreLinks = [
@@ -15,7 +26,20 @@ const moreLinks = [
 
 export default function ConfiguracoesPage() {
   return (
-    <PagePlaceholder title="Configurações">
+    <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-8 md:py-10">
+      <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+      <nav aria-label="Ajustes" className="mt-6">
+        <ul className="divide-y rounded-md border">
+          {settingsLinks.map((link) => (
+            <li key={link.href}>
+              <Link href={link.href} className="flex items-center justify-between px-4 py-3">
+                {link.label}
+                <ChevronRight aria-hidden className="size-4 text-muted-foreground" />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </nav>
       <nav aria-label="Mais telas" className="mt-6 md:hidden">
         <ul className="divide-y rounded-md border">
           {moreLinks.map((link) => (
@@ -27,7 +51,30 @@ export default function ConfiguracoesPage() {
           ))}
         </ul>
       </nav>
+      <Suspense fallback={null}>
+        <Reminder />
+      </Suspense>
+      <section aria-labelledby="instalar" className="mt-6 rounded-md border px-4 py-3">
+        <h2 id="instalar" className="font-medium">
+          Instalar no iPhone
+        </h2>
+        <ol className="mt-2 list-decimal space-y-1 pl-5 text-sm text-muted-foreground">
+          <li>Abra o app no Safari.</li>
+          <li>Toque em Compartilhar (o quadrado com a seta para cima).</li>
+          <li>Escolha &quot;Adicionar à Tela de Início&quot; e toque em Adicionar.</li>
+        </ol>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Depois, abra pelo ícone: o app fica em tela cheia e abre as telas já vistas mesmo sem
+          internet.
+        </p>
+      </section>
       <SignOutButton className="mt-6 md:hidden" />
-    </PagePlaceholder>
+    </div>
   );
+}
+
+/** At request time: the VAPID key comes from the server's environment, not from the build. */
+async function Reminder() {
+  await connection();
+  return <ReminderSettings publicKey={vapidPublicKey()} />;
 }

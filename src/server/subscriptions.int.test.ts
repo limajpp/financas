@@ -1,0 +1,706 @@
+import { randomUUID } from "node:crypto";
+
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { db } from "@/lib/db";
+import { accountSchema } from "@/lib/validation/accounts";
+import { cardSchema } from "@/lib/validation/cards";
+import { entrySchema } from "@/lib/validation/transactions";
+import { createAccount } from "@/server/accounts";
+import { createCard } from "@/server/cards";
+import {
+  UNDO_WINDOW_MS,
+  editRecurringRule,
+  generateRecurring,
+  listSubscriptions,
+  setRecurringRuleStatus,
+  undoSubscription,
+  updateRecurringRule,
+} from "@/server/recurring";
+import { categoryUsage, registerData } from "@/server/register";
+import { ensurePersonalSpace } from "@/server/spaces";
+import {
+  accountBalances,
+  createTransaction,
+  deleteTransaction,
+  updateTransaction,
+} from "@/server/transactions";
+import { resetDatabase } from "@/test/db";
+
+beforeEach(resetDatabase);
+afterEach(() => vi.useRealTimers());
+afterAll(() => db.$disconnect());
+
+let minute = 0;
+/** "Now" on `day` in São Paulo; each call moves a minute ahead. */
+function on(day: string) {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  minute += 1;
+  vi.setSystemTime(new Date(`${day}T15:${String(minute % 60).padStart(2, "0")}:00Z`));
+}
+
+async function setup(email = "ana@example.com") {
+  on("2026-09-01");
+  const user = await db.user.create({ data: { name: "Ana Teste", email } });
+  const space = await ensurePersonalSpace(user.id);
+  const account = await createAccount(
+    space.id,
+    accountSchema.parse({
+      name: "Banco Azul",
+      color: "blue",
+      initialBalance: "1.000,00",
+      initialBalanceDate: "2026-08-31",
+    }),
+  );
+  if (!account.ok) throw new Error(account.error);
+  const card = await createCard(
+    space.id,
+    cardSchema.parse({
+      name: "Cartão Roxo",
+      accountId: account.account.id,
+      closingDay: 3,
+      dueDay: 10,
+    }),
+  );
+  if (!card.ok) throw new Error(card.error);
+  const lazer = await db.category.findFirstOrThrow({ where: { spaceId: space.id, name: "Lazer" } });
+  return {
+    userId: user.id,
+    spaceId: space.id,
+    accountId: account.account.id,
+    cardId: card.card.id,
+    lazer,
+  };
+}
+
+type Setup = Awaited<ReturnType<typeof setup>>;
+
+/** A R$ 39,90 subscription by Pix starting on `date`. */
+async function subscribe(
+  s: Setup,
+  date: string,
+  fields: Record<string, unknown> = {},
+  clientId = randomUUID(),
+  today = date,
+) {
+  on(today);
+  const result = await createTransaction(
+    s.spaceId,
+    s.userId,
+    clientId,
+    entrySchema.parse({
+      type: "EXPENSE",
+      amountCents: 3_990,
+      date,
+      method: "PIX",
+      accountId: s.accountId,
+      categoryId: s.lazer.id,
+      counterparty: "Streaming",
+      subscription: true,
+      ...fields,
+    }),
+  );
+  if (!result.ok) throw new Error(result.error);
+  return result.transaction;
+}
+
+const charges = (ruleId: string) =>
+  db.transaction.findMany({
+    where: { recurringRuleId: ruleId },
+    orderBy: { date: "asc" },
+    select: { recurringMonth: true, date: true, amountCents: true, invoiceDueDate: true },
+  });
+
+const day = (d: Date | null) => d?.toISOString().slice(0, 10);
+
+/** The space's rules as generateRecurring reads them, to replay a run with a stale read. */
+const staleRules = (spaceId: string) =>
+  db.recurringRule.findMany({
+    where: { spaceId },
+    include: {
+      card: { select: { cycles: { select: { closingDay: true, dueDay: true, validFrom: true } } } },
+    },
+  });
+
+describe("assinaturas", () => {
+  it("CA5: cria a regra e a 1ª cobrança juntas; o mesmo clientId não duplica nenhuma", async () => {
+    const s = await setup();
+    const clientId = randomUUID();
+    const first = await subscribe(s, "2026-09-08", {}, clientId);
+    expect(first).toMatchObject({ amountCents: 3_990, recurringMonth: "2026-09" });
+    const rule = await db.recurringRule.findUniqueOrThrow({
+      where: { id: first.recurringRuleId! },
+    });
+    expect(rule).toMatchObject({
+      amountCents: 3_990,
+      dayOfMonth: 8,
+      method: "PIX",
+      status: "ACTIVE",
+      firstMonth: "2026-09",
+      nextMonth: "2026-10",
+    });
+
+    await subscribe(s, "2026-09-08", {}, clientId);
+    expect(await db.recurringRule.count()).toBe(1);
+    expect(await db.transaction.count()).toBe(1);
+  });
+
+  it("CA1 e CA5: gera os meses em atraso, cada um na sua data; rodar de novo, ou em paralelo, não duplica", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-11-10");
+    const runs = await Promise.all([generateRecurring(s.spaceId), generateRecurring(s.spaceId)]);
+    expect(runs.reduce((sum, r) => sum + r.charged, 0)).toBe(2);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+
+    expect(
+      (await charges(first.recurringRuleId!)).map((c) => [c.recurringMonth, day(c.date)]),
+    ).toEqual([
+      ["2026-09", "2026-09-08"],
+      ["2026-10", "2026-10-08"],
+      ["2026-11", "2026-11-08"],
+    ]);
+    expect((await accountBalances(s.spaceId)).get(s.accountId)).toBe(100_000 - 3 * 3_990);
+  });
+
+  it("CA1: excluir a cobrança de um mês não a faz voltar", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-10-09");
+    await generateRecurring(s.spaceId);
+    const october = await db.transaction.findFirstOrThrow({
+      where: { recurringRuleId: first.recurringRuleId, recurringMonth: "2026-10" },
+    });
+    await deleteTransaction(s.spaceId, october.id);
+    await generateRecurring(s.spaceId);
+    expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("CA2: dia 31 cobra no último dia dos meses curtos; no crédito cai na fatura certa", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-01-31", {
+      method: "CREDIT",
+      accountId: undefined,
+      cardId: s.cardId,
+    });
+    on("2026-04-30");
+    await generateRecurring(s.spaceId);
+    expect(
+      (await charges(first.recurringRuleId!)).map((c) => [day(c.date), day(c.invoiceDueDate)]),
+    ).toEqual([
+      ["2026-01-31", "2026-02-10"],
+      ["2026-02-28", "2026-03-10"],
+      ["2026-03-31", "2026-04-10"],
+      ["2026-04-30", "2026-05-10"],
+    ]);
+  });
+
+  it("CA3: a mudança de valor fica registrada; as próximas usam o valor novo, as geradas não mudam", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    on("2026-10-20");
+    await generateRecurring(s.spaceId);
+    expect(await updateRecurringRule(s.spaceId, ruleId, { amountCents: 4_490 })).toEqual({
+      ok: true,
+    });
+
+    // "Atualizar a assinatura?" — yes, from the October charge.
+    const october = await db.transaction.findFirstOrThrow({
+      where: { recurringRuleId: ruleId, recurringMonth: "2026-10" },
+    });
+    on("2026-10-21");
+    const edited = await updateTransaction(
+      s.spaceId,
+      october.id,
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 4_990,
+        date: "2026-10-08",
+        method: "PIX",
+        accountId: s.accountId,
+        categoryId: s.lazer.id,
+        counterparty: "Streaming",
+      }),
+      "this",
+      { updateRule: true },
+    );
+    expect(edited).toMatchObject({ ok: true, transaction: { amountCents: 4_990 } });
+
+    const changes = await db.recurringRuleChange.findMany({
+      where: { ruleId },
+      orderBy: { createdAt: "asc" },
+    });
+    expect(changes.map((c) => [c.previousCents, c.amountCents, day(c.changedOn)])).toEqual([
+      [3_990, 4_490, "2026-10-20"],
+      [4_490, 4_990, "2026-10-21"],
+    ]);
+
+    on("2026-11-08");
+    await generateRecurring(s.spaceId);
+    expect((await charges(ruleId)).map((c) => c.amountCents)).toEqual([3_990, 4_990, 4_990]);
+  });
+
+  it("CA3: sem updateRule, só a cobrança muda", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-09-09");
+    await updateTransaction(
+      s.spaceId,
+      first.id,
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 5_000,
+        date: "2026-09-08",
+        method: "PIX",
+        accountId: s.accountId,
+      }),
+    );
+    const rule = await db.recurringRule.findUniqueOrThrow({
+      where: { id: first.recurringRuleId! },
+    });
+    expect(rule.amountCents).toBe(3_990);
+    expect(await db.recurringRuleChange.count()).toBe(0);
+  });
+
+  it("CA4: cancelada não gera mais; pausada pula os meses; retomar não cria as atrasadas", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+
+    on("2026-09-20");
+    await setRecurringRuleStatus(s.spaceId, ruleId, "PAUSED");
+    // The app isn't opened during the pause.
+    on("2026-11-20");
+    await setRecurringRuleStatus(s.spaceId, ruleId, "ACTIVE");
+    await generateRecurring(s.spaceId);
+    expect((await charges(ruleId)).map((c) => c.recurringMonth)).toEqual(["2026-09"]);
+
+    on("2026-12-08");
+    await generateRecurring(s.spaceId);
+    expect((await charges(ruleId)).map((c) => c.recurringMonth)).toEqual(["2026-09", "2026-12"]);
+
+    await setRecurringRuleStatus(s.spaceId, ruleId, "CANCELED");
+    on("2027-02-10");
+    await generateRecurring(s.spaceId);
+    expect((await charges(ruleId)).map((c) => c.recurringMonth)).toEqual(["2026-09", "2026-12"]);
+    expect(await setRecurringRuleStatus(s.spaceId, ruleId, "ACTIVE")).toEqual({
+      ok: false,
+      error: "CANCELED",
+    });
+  });
+
+  it("CA5: outro espaço não vê, não muda nem gera", async () => {
+    const ana = await setup();
+    const bia = await setup("bia@example.com");
+    const first = await subscribe(ana, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    expect(await setRecurringRuleStatus(bia.spaceId, ruleId, "CANCELED")).toEqual({
+      ok: false,
+      error: "NOT_FOUND",
+    });
+    expect(await updateRecurringRule(bia.spaceId, ruleId, { amountCents: 1 })).toEqual({
+      ok: false,
+      error: "NOT_FOUND",
+    });
+    expect(await undoSubscription(bia.spaceId, first.id)).toEqual({
+      ok: false,
+      error: "NOT_FOUND",
+    });
+    on("2026-10-09");
+    await generateRecurring(bia.spaceId);
+    expect(await db.transaction.count({ where: { spaceId: bia.spaceId } })).toBe(0);
+  });
+
+  it("Desfazer na 1ª cobrança desfaz a assinatura inteira, mesmo com data passada", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    expect(await undoSubscription(s.spaceId, first.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(0);
+    expect(await db.transaction.count()).toBe(0);
+
+    // Backdated: registered on 11-08 with the date 10-05; the home render charges November.
+    const backdated = await subscribe(s, "2026-10-05", {}, randomUUID(), "2026-11-08");
+    await generateRecurring(s.spaceId);
+    expect(await db.transaction.count()).toBe(2);
+    expect(await undoSubscription(s.spaceId, backdated.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(0);
+    expect(await db.transaction.count()).toBe(0);
+  });
+
+  it("Desfazer numa cobrança gerada apaga só ela", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-10-09");
+    await generateRecurring(s.spaceId);
+    const october = await db.transaction.findFirstOrThrow({
+      where: { recurringRuleId: first.recurringRuleId, recurringMonth: "2026-10" },
+    });
+    expect(await undoSubscription(s.spaceId, october.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(1);
+    expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("depois de alguns minutos, o Desfazer da 1ª cobrança apaga só ela", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    vi.setSystemTime(Date.now() + UNDO_WINDOW_MS + 1_000);
+    expect(await undoSubscription(s.spaceId, first.id)).toEqual({ ok: true });
+    expect(await db.recurringRule.count()).toBe(1);
+    expect(await db.transaction.count()).toBe(0);
+  });
+
+  it("uma geração com o cursor velho não traz de volta uma cobrança excluída", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    on("2026-10-09");
+    const stale = await staleRules(s.spaceId);
+    await generateRecurring(s.spaceId);
+    const october = await db.transaction.findFirstOrThrow({ where: { recurringMonth: "2026-10" } });
+    await deleteTransaction(s.spaceId, october.id);
+    const spy = vi.spyOn(db.recurringRule, "findMany").mockResolvedValueOnce(stale as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spy.mockRestore();
+    expect((await charges(first.recurringRuleId!)).map((c) => c.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("uma geração com o cursor velho não cobra depois de um cancelamento nem de um Desfazer", async () => {
+    const s = await setup();
+    const canceled = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+    const stale = await staleRules(s.spaceId);
+    await setRecurringRuleStatus(s.spaceId, canceled.recurringRuleId!, "CANCELED");
+    const spy = vi.spyOn(db.recurringRule, "findMany").mockResolvedValueOnce(stale as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spy.mockRestore();
+
+    const undone = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+    const staleAgain = await staleRules(s.spaceId);
+    await undoSubscription(s.spaceId, undone.id);
+    const spyAgain = vi
+      .spyOn(db.recurringRule, "findMany")
+      .mockResolvedValueOnce(staleAgain as never);
+    expect(await generateRecurring(s.spaceId)).toEqual({ charged: 0 });
+    spyAgain.mockRestore();
+    expect(await db.transaction.count({ where: { recurringRuleId: undone.recurringRuleId } })).toBe(
+      0,
+    );
+  });
+
+  it("Desfazer correndo com gerações: sem erro, sem sobra (25 rodadas)", async () => {
+    const s = await setup();
+    const errors: string[] = [];
+    for (let i = 0; i < 25; i++) {
+      const first = await subscribe(s, "2026-08-05", {}, randomUUID(), "2026-11-08");
+      const results = await Promise.allSettled([
+        generateRecurring(s.spaceId),
+        undoSubscription(s.spaceId, first.id),
+        generateRecurring(s.spaceId),
+      ]);
+      for (const r of results) if (r.status === "rejected") errors.push(String(r.reason));
+      expect(await db.recurringRule.count()).toBe(0);
+      expect(await db.transaction.count()).toBe(0);
+    }
+    expect(errors).toEqual([]);
+  });
+
+  it("uma cobrança de assinatura não vira receita", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const salario = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Salário" },
+    });
+    on("2026-09-09");
+    expect(
+      await updateTransaction(
+        s.spaceId,
+        first.id,
+        entrySchema.parse({
+          type: "INCOME",
+          amountCents: 3_990,
+          date: "2026-09-08",
+          method: "PIX",
+          accountId: s.accountId,
+          categoryId: salario.id,
+        }),
+      ),
+    ).toEqual({ ok: false, error: "SUBSCRIPTION_LOCKED" });
+  });
+
+  it("CA4: cancelar ao mesmo tempo que retomar termina cancelada", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    await setRecurringRuleStatus(s.spaceId, ruleId, "PAUSED");
+    const results = await Promise.all([
+      setRecurringRuleStatus(s.spaceId, ruleId, "CANCELED"),
+      setRecurringRuleStatus(s.spaceId, ruleId, "ACTIVE"),
+    ]);
+    expect(results[0]).toEqual({ ok: true });
+    const rule = await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } });
+    expect(rule.status).toBe("CANCELED");
+    expect(rule.canceledAt).not.toBeNull();
+  });
+
+  it("CA4: a geração passa o cursor de uma pausada sem cobrar", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    const ruleId = first.recurringRuleId!;
+    await setRecurringRuleStatus(s.spaceId, ruleId, "PAUSED");
+    on("2026-11-20");
+    await generateRecurring(s.spaceId);
+    const rule = await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } });
+    expect(rule.nextMonth).toBe("2026-12");
+    expect((await charges(ruleId)).map((c) => c.recurringMonth)).toEqual(["2026-09"]);
+  });
+
+  it("CA6: a observação sugerida ignora as cobranças geradas", async () => {
+    const s = await setup();
+    await subscribe(s, "2026-09-08", { description: "Plano básico" });
+    on("2026-09-10");
+    await createTransaction(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 5_990,
+        date: "2026-09-10",
+        method: "PIX",
+        accountId: s.accountId,
+        counterparty: "Streaming",
+        description: "Plano família",
+      }),
+    );
+    on("2026-10-09");
+    await generateRecurring(s.spaceId);
+    const [memory] = (await registerData(s.spaceId)).counterparties;
+    expect(memory?.suggestions.EXPENSE.description).toBe("Plano família");
+  });
+
+  it("CA6: as cobranças geradas não contam nas sugestões nem lembram a forma de pagamento", async () => {
+    const s = await setup();
+    await subscribe(s, "2026-09-08", { method: "CREDIT", accountId: undefined, cardId: s.cardId });
+    on("2026-09-10");
+    await createTransaction(
+      s.spaceId,
+      s.userId,
+      randomUUID(),
+      entrySchema.parse({
+        type: "EXPENSE",
+        amountCents: 100,
+        date: "2026-09-10",
+        method: "DEBIT",
+        accountId: s.accountId,
+      }),
+    );
+    on("2026-11-10");
+    await generateRecurring(s.spaceId);
+
+    expect(await categoryUsage(s.spaceId, "EXPENSE")).toMatchObject([
+      { categoryId: s.lazer.id, count: 1 },
+    ]);
+    const data = await registerData(s.spaceId);
+    expect(data.counterparties).toMatchObject([{ name: "Streaming", useCount: 1 }]);
+    // The last method you chose (debit), not the subscription's monthly credit charge.
+    expect(data.EXPENSE.payment?.method).toBe("DEBIT");
+  });
+
+  it("apagar o usuário apaga as regras e o histórico", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-08");
+    await updateRecurringRule(s.spaceId, first.recurringRuleId!, { amountCents: 4_000 });
+    await db.user.delete({ where: { id: s.userId } });
+    expect(await db.recurringRule.count()).toBe(0);
+    expect(await db.recurringRuleChange.count()).toBe(0);
+  });
+});
+
+describe("tela de assinaturas (task 19)", () => {
+  const edit = (s: Setup, over: Record<string, unknown> = {}) => ({
+    amountCents: 3_990,
+    dayOfMonth: 5,
+    method: "PIX" as const,
+    accountId: s.accountId,
+    cardId: null,
+    categoryId: s.lazer.id,
+    description: null,
+    ...over,
+  });
+
+  it("CA4: editar muda a regra para as próximas; as cobranças feitas ficam; o valor vai ao histórico", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-05");
+    const ruleId = first.recurringRuleId!;
+    on("2026-10-10");
+    await generateRecurring(s.spaceId);
+    const mercado = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Mercado" },
+    });
+
+    on("2026-10-12");
+    expect(
+      await editRecurringRule(
+        s.spaceId,
+        ruleId,
+        edit(s, {
+          amountCents: 4_490,
+          dayOfMonth: 20,
+          method: "CREDIT",
+          accountId: null,
+          cardId: s.cardId,
+          categoryId: mercado.id,
+          description: "Plano família",
+        }),
+      ),
+    ).toEqual({ ok: true });
+    expect(await db.recurringRule.findUniqueOrThrow({ where: { id: ruleId } })).toMatchObject({
+      amountCents: 4_490,
+      dayOfMonth: 20,
+      method: "CREDIT",
+      accountId: null,
+      cardId: s.cardId,
+      categoryId: mercado.id,
+      description: "Plano família",
+    });
+    const history = await db.recurringRuleChange.findMany({ where: { ruleId } });
+    expect(history.map((h) => [h.previousCents, h.amountCents])).toEqual([[3_990, 4_490]]);
+
+    // The charges already made stay; November's comes on the new day, on the card.
+    on("2026-11-20");
+    await generateRecurring(s.spaceId);
+    const rows = await charges(ruleId);
+    expect(
+      rows.map((r) => [r.recurringMonth, r.date.toISOString().slice(0, 10), r.amountCents]),
+    ).toEqual([
+      ["2026-09", "2026-09-05", 3_990],
+      ["2026-10", "2026-10-05", 3_990],
+      ["2026-11", "2026-11-20", 4_490],
+    ]);
+    expect(rows[2]!.invoiceDueDate?.toISOString().slice(0, 10)).toBe("2026-12-10");
+  });
+
+  it("CA4: mudar o dia no mês já cobrado não cobra de novo", async () => {
+    const s = await setup();
+    const first = await subscribe(s, "2026-09-05");
+    on("2026-09-10");
+    expect(
+      await editRecurringRule(s.spaceId, first.recurringRuleId!, edit(s, { dayOfMonth: 25 })),
+    ).toEqual({ ok: true });
+    on("2026-09-28");
+    await generateRecurring(s.spaceId);
+    expect((await charges(first.recurringRuleId!)).map((r) => r.recurringMonth)).toEqual([
+      "2026-09",
+    ]);
+  });
+
+  it("CA4: recusa categoria de receita, conta de outro espaço e regra cancelada", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    const salario = await db.category.findFirstOrThrow({
+      where: { spaceId: s.spaceId, name: "Salário" },
+    });
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { categoryId: salario.id }))).toEqual(
+      {
+        ok: false,
+        error: "CATEGORY_TYPE_MISMATCH",
+      },
+    );
+    expect(
+      await editRecurringRule(s.spaceId, ruleId, edit(s, { accountId: bia.accountId })),
+    ).toEqual({
+      ok: false,
+      error: "ACCOUNT_NOT_FOUND",
+    });
+    expect(await editRecurringRule(bia.spaceId, ruleId, edit(bia))).toEqual({
+      ok: false,
+      error: "NOT_FOUND",
+    });
+    await setRecurringRuleStatus(s.spaceId, ruleId, "CANCELED");
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 1 }))).toEqual({
+      ok: false,
+      error: "CANCELED",
+    });
+    expect(await db.recurringRuleChange.count()).toBe(0);
+  });
+
+  it("CA3: com o mês atual já cobrado, a próxima cobrança é no mês seguinte", async () => {
+    const s = await setup();
+    await subscribe(s, "2026-09-05");
+    on("2026-10-10");
+    const [rule] = await listSubscriptions(s.spaceId);
+    expect(rule!.nextCharge).toBe("2026-11-05");
+  });
+
+  it("CA4: recusa cartão de outro espaço; mantém conta arquivada que a regra já tinha", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    expect(
+      await editRecurringRule(
+        s.spaceId,
+        ruleId,
+        edit(s, { method: "CREDIT", accountId: null, cardId: bia.cardId }),
+      ),
+    ).toEqual({ ok: false, error: "CARD_NOT_FOUND" });
+    await db.account.update({ where: { id: s.accountId }, data: { archivedAt: new Date() } });
+    expect(await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 4_990 }))).toEqual({
+      ok: true,
+    });
+  });
+
+  it("editar com a tela aberta há dias cobra antes o mês vencido nos termos antigos", async () => {
+    const s = await setup();
+    const ruleId = (await subscribe(s, "2026-09-05")).recurringRuleId!;
+    // October's charge (05/10) is due, but nothing generated it yet.
+    on("2026-10-15");
+    expect(
+      await editRecurringRule(s.spaceId, ruleId, edit(s, { amountCents: 4_990, dayOfMonth: 20 })),
+    ).toEqual({ ok: true });
+    const rows = await charges(ruleId);
+    expect(
+      rows.map((r) => [r.recurringMonth, r.date.toISOString().slice(0, 10), r.amountCents]),
+    ).toEqual([
+      ["2026-09", "2026-09-05", 3_990],
+      ["2026-10", "2026-10-05", 3_990],
+    ]);
+  });
+
+  it("a lista traz próxima cobrança, mudança recente, pausa e cancelamento, só do espaço", async () => {
+    const s = await setup();
+    const bia = await setup("bia@example.com");
+    await subscribe(bia, "2026-09-05");
+    const caro = await subscribe(s, "2026-09-05", { amountCents: 9_990, counterparty: "Academia" });
+    const pausada = await subscribe(s, "2026-09-07", { counterparty: "Revista" });
+    const cancelada = await subscribe(s, "2026-09-08", { counterparty: "Jornal" });
+    on("2026-10-01");
+    await updateRecurringRule(s.spaceId, caro.recurringRuleId!, { amountCents: 10_990 });
+    await setRecurringRuleStatus(s.spaceId, pausada.recurringRuleId!, "PAUSED");
+    await setRecurringRuleStatus(s.spaceId, cancelada.recurringRuleId!, "CANCELED");
+
+    on("2026-10-02");
+    const list = await listSubscriptions(s.spaceId);
+    expect(list.map((r) => [r.counterparty?.name, r.status, r.nextCharge])).toEqual([
+      ["Academia", "ACTIVE", "2026-10-05"],
+      ["Revista", "PAUSED", null],
+      ["Jornal", "CANCELED", null],
+    ]);
+    expect(list[0]!.change).toEqual({
+      previousCents: 9_990,
+      direction: "up",
+      changedOn: "2026-10-01",
+    });
+    expect(list[1]).toMatchObject({ pausedOn: "2026-10-01", change: null });
+    expect(list[2]).toMatchObject({ canceledOn: "2026-10-01" });
+
+    // Resuming clears the pause.
+    await setRecurringRuleStatus(s.spaceId, pausada.recurringRuleId!, "ACTIVE");
+    expect((await listSubscriptions(s.spaceId))[1]).toMatchObject({ pausedOn: null });
+  });
+});

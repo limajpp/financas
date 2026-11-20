@@ -1,3 +1,5 @@
+import { ClearPrivateCaches } from "@/components/pwa/clear-private-caches";
+
 export default function AuthLayout({ children }: LayoutProps<"/">) {
   return (
     <main className="flex flex-1 flex-col items-center justify-center px-4 py-10">
@@ -10,6 +12,7 @@ export default function AuthLayout({ children }: LayoutProps<"/">) {
         </div>
         {children}
       </div>
+      <ClearPrivateCaches />
     </main>
   );
 }

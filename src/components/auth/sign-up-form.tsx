@@ -14,11 +14,12 @@ export function SignUpForm() {
     schema: signUpSchema,
     submit: (data) => authClient.signUp.email(data),
     fallbackError: "Não foi possível criar a conta. Tente de novo.",
-    redirectTo: () => "/",
+    // A new account starts with the onboarding (task 22).
+    redirectTo: () => "/comecar",
   });
 
   return (
-    <form onSubmit={onSubmit} noValidate className="grid gap-4">
+    <form method="post" onSubmit={onSubmit} noValidate className="grid gap-4">
       <FormField name="name" label="Nome" autoComplete="name" error={fieldErrors.name} required />
       <FormField
         name="email"
