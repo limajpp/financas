@@ -39,7 +39,9 @@ Os passos 2, 6, 12 e 15 fecham os pendentes das tasks 15 (CA6), 17 (CA7) e 25 (C
 ### Computador (Claude, 2026-11-20)
 
 - **Onde:** o build de produção local, com dados inventados.
-  - O e2e rodou no Docker com `CI=1`, o que faz o Playwright subir o `npm run start` (o build), e não o servidor de desenvolvimento.
+  - O e2e rodou no Docker com `CI=1`, o que faz o Playwright subir o `npm run start` (o build), e não o servidor de desenvolvimento. Depois de um `npm run build`, o comando foi:
+    `docker run --rm --network host --ipc=host --user "$(id -u):$(id -g)" -e HOME=/tmp -e CI=1 -v "$PWD":/work:z -w /work mcr.microsoft.com/playwright:v1.64.1-noble npx playwright test --retries=0`
+  - O `--retries=0` é explícito: com `CI=1`, o padrão do projeto é tentar de novo duas vezes.
   - As capturas da auditoria e o Lighthouse também usaram o build.
 - **Como:** cada passo do computador é um fluxo do e2e no Chromium, que rodou completo e sem novas tentativas. Além disso, todas as telas foram percorridas com uma conta nova e com uma conta com dados, nos temas claro e escuro, com capturas conferidas uma a uma.
   - Passo 1: `e2e/onboarding.spec.ts`.

@@ -139,8 +139,9 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
   - **`page.goto` interrompido:** o Next recarrega "/" depois de salvar, e isso interrompe a navegação. O helper `visit` passou para `e2e/helpers.ts`, e o `offline` o usa.
   - **Um clique durante a hidratação:** o teste repete o clique até a navegação acontecer.
   - **O teste aleatório do ciclo de fatura** estourava os 5 s com a suíte inteira em paralelo. Ganhou um limite explícito.
-  - **O axe esperava `networkidle`,** que o WebKit nunca alcança. Agora espera o título e nenhum "Carregando…".
-  - **Resultado:** duas rodadas completas seguidas, com `--retries=0`, 134 de 134, sem falha. Os 2 pulados são o teclado, sem Tab no iPhone, e a instalação, só no Chromium.
+  - **O axe esperava `networkidle`,** que o WebKit nunca alcança. Agora espera o título e nenhum "Carregando…". E roda um teste por tema: os dois juntos passavam de 135 s no WebKit com a rodada inteira.
+  - **Uma rodada com 15 falhas de uma vez,** todas no WebKit, no fim, na volta ao início depois de salvar (mais de 5 s): a máquina estava com carga de 25–30 durante as rodadas. Isolados, os mesmos testes passaram, e as duas rodadas seguintes também.
+  - **Resultado:** duas rodadas completas seguidas, com `--retries=0`, 138 de 138, sem falha. Os 2 pulados são o teclado, sem Tab no iPhone, e a instalação, só no Chromium.
 
 ### Desempenho (Lighthouse 13.5, mobile, build local, mediana de 3 rodadas)
 

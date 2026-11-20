@@ -69,13 +69,14 @@ const SCREENS = [
   "/estabelecimentos",
 ];
 
-test("CA5: as telas principais não têm violação séria nem crítica, no claro e no escuro", async ({
-  page,
-}) => {
-  test.slow();
-  await setup(page);
-  const found: Record<string, unknown> = {};
-  for (const scheme of ["light", "dark"] as const) {
+// One test per theme: both in one ran past 135 s on WebKit under a full run's load.
+for (const scheme of ["light", "dark"] as const) {
+  test(`CA5: as telas principais não têm violação séria nem crítica (${scheme})`, async ({
+    page,
+  }) => {
+    test.slow();
+    await setup(page);
+    const found: Record<string, unknown> = {};
     await page.emulateMedia({ colorScheme: scheme });
     for (const url of SCREENS) {
       await visit(page, url);
@@ -98,9 +99,9 @@ test("CA5: as telas principais não têm violação séria nem crítica, no clar
     await expect(chart.locator(".recharts-surface").first()).toBeVisible();
     const withChart = await violations(page);
     if (withChart.length > 0) found[`${scheme} / (gráfico)`] = withChart;
-  }
-  expect(found).toEqual({});
-});
+    expect(found).toEqual({});
+  });
+}
 
 test("CA5: a entrada e o cadastro, no claro e no escuro", async ({ page }) => {
   const found: Record<string, unknown> = {};

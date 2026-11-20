@@ -36,5 +36,11 @@ describe("ColorPicker", () => {
     expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Vermelho" }));
     fireEvent.keyDown(document.activeElement!, { key: "Home" });
     expect(document.activeElement).toHaveProperty("ariaChecked", "true");
+
+    // From the focused option, even unchecked (a screen reader can focus one).
+    const teal = screen.getByRole("radio", { name: "Verde-azulado" });
+    teal.focus();
+    fireEvent.keyDown(teal, { key: "ArrowRight" });
+    expect(screen.getByRole("radio", { name: "Céu" })).toHaveProperty("ariaChecked", "true");
   });
 });
