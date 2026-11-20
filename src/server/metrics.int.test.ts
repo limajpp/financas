@@ -10,7 +10,7 @@ import { createAccount } from "@/server/accounts";
 import { createCard } from "@/server/cards";
 import { dashboardMetrics } from "@/server/metrics";
 import { createSubscriptionRule, setOpeningBalance } from "@/server/onboarding";
-import { setRecurringRuleStatus } from "@/server/recurring";
+import { editRecurringRule, setRecurringRuleStatus } from "@/server/recurring";
 import { ensurePersonalSpace } from "@/server/spaces";
 import { createCardPayment, createTransaction, createTransfer } from "@/server/transactions";
 import { resetDatabase } from "@/test/db";
@@ -30,7 +30,11 @@ async function space(email: string) {
   on();
   const user = await db.user.create({ data: { name: "Ana Teste", email } });
   const { id: spaceId } = await ensurePersonalSpace(user.id);
-  // The app in use since 20/07: the earliest initial balance (before the space's creation).
+  // The app in use since 20/07: the space's creation day.
+  await db.space.update({
+    where: { id: spaceId },
+    data: { createdAt: new Date("2026-07-20T15:00:00Z") },
+  });
   const account = await createAccount(
     spaceId,
     accountSchema.parse({
@@ -270,6 +274,17 @@ describe("dashboardMetrics", () => {
       ["2026-11", false, 309_990],
     ]);
 
+    // Task 24: Lazer is 106,57 over its average of 33,33; the year of the two active
+    // subscriptions (39,90 and Academia's 99,00) fills the next slot. No counterparty spent.
+    expect(m.insights).toEqual([
+      expect.objectContaining({
+        kind: "CATEGORY_ABOVE_AVERAGE",
+        impactCents: 10_657,
+        text: "Lazer: R$\u00a0139,90 este mês, 319% acima da média de R$\u00a033,33.",
+      }),
+      expect.objectContaining({ kind: "SUBSCRIPTIONS_YEARLY", impactCents: 166_680 }),
+    ]);
+
     // A past month: no projection, the same commitments (they start after today's month).
     const october = (await dashboardMetrics(s.spaceId, "2026-10"))!;
     expect(october.projection).toBeNull();
@@ -287,12 +302,9 @@ describe("dashboardMetrics", () => {
     expect(m.summary.fixedCents).toBe(3_990);
   });
 
-  it("o início do histórico é a criação do espaço quando o saldo inicial é depois", async () => {
+  it("o saldo inicial de uma conta não antecipa o início do histórico (task 24)", async () => {
+    // Banco Azul's initial balance is on 20/07, before the space's creation on 30/10.
     const s = await space("ana@example.com");
-    await db.account.updateMany({
-      where: { spaceId: s.spaceId },
-      data: { initialBalanceDate: new Date("2026-11-01T00:00:00Z") },
-    });
     await db.space.update({
       where: { id: s.spaceId },
       data: { createdAt: new Date("2026-10-30T15:00:00Z") },
@@ -316,6 +328,7 @@ describe("dashboardMetrics", () => {
     expect(m.projection).toBeNull();
     expect(m.categories).toBeNull();
     expect(m.evolution).toBeNull();
+    expect(m.insights).toBeNull();
     expect(m.commitments.remainingInstallmentsCents).toBe(20_000);
   });
 
@@ -340,16 +353,86 @@ describe("dashboardMetrics", () => {
 
   it("o início do histórico é o dia em São Paulo, não em UTC", async () => {
     const s = await space("ana@example.com");
-    await db.account.updateMany({
-      where: { spaceId: s.spaceId },
-      data: { initialBalanceDate: new Date("2026-11-01T00:00:00Z") },
-    });
     // 01h UTC on 31/10 is still 30/10 in São Paulo.
     await db.space.update({
       where: { id: s.spaceId },
       data: { createdAt: new Date("2026-10-31T01:00:00Z") },
     });
     expect((await dashboardMetrics(s.spaceId, "2026-11"))!.historyStart).toBe("2026-10-30");
+  });
+
+  it("CA6: os insights vêm do banco, com os lugares e o histórico das assinaturas, só do espaço", async () => {
+    const s = await space("ana@example.com");
+    const other = await space("bia@example.com");
+    const lanches = s.restaurante;
+    // 6 small purchases at the bakery (25,00 each) and one big at the market.
+    for (let day = 1; day <= 6; day++) {
+      await entry(s, {
+        amountCents: 2_500,
+        date: `2026-11-0${day}`,
+        counterparty: "Padaria Pão Quente",
+        categoryId: lanches,
+      });
+    }
+    await entry(s, {
+      amountCents: 82_000,
+      date: "2026-11-03",
+      counterparty: "Mercado Bom Preço",
+      categoryId: s.mercado,
+    });
+    // Another space's bakery purchases don't add up here.
+    for (let day = 1; day <= 6; day++) {
+      await entry(other, {
+        amountCents: 2_500,
+        date: `2026-11-0${day}`,
+        counterparty: "Padaria Pão Quente",
+      });
+    }
+    // Streamflix, created in October at 39,90, raised to 44,90 on 01/11.
+    on("2026-10-05");
+    const created = await createSubscriptionRule(s.spaceId, s.userId, {
+      counterparty: "Streamflix",
+      amountCents: 3_990,
+      dayOfMonth: 25,
+      method: "PIX",
+      accountId: s.accountId,
+      cardId: null,
+      categoryId: s.lazer,
+      description: null,
+    });
+    if (!created.ok) throw new Error(created.error);
+    on("2026-11-01");
+    expect(
+      await editRecurringRule(s.spaceId, created.id, {
+        amountCents: 4_490,
+        dayOfMonth: 25,
+        method: "PIX",
+        accountId: s.accountId,
+        cardId: null,
+        categoryId: s.lazer,
+        description: null,
+      }),
+    ).toEqual({ ok: true });
+
+    on();
+    const m = (await dashboardMetrics(s.spaceId, "2026-11"))!;
+    // Alimentação has no expense before November: a zero average, 970,00 over it. Then the
+    // bakery's 150,00, then Streamflix's 60,00 a year; the infos don't fit.
+    expect(m.insights!.map((i) => [i.kind, i.impactCents, i.subject])).toEqual([
+      ["CATEGORY_ABOVE_AVERAGE", 97_000, { type: "category", id: expect.any(String) }],
+      ["SMALL_PURCHASES", 15_000, { type: "counterparty", id: expect.any(String) }],
+      ["SUBSCRIPTION_RAISED", 6_000, { type: "subscription", id: created.id }],
+    ]);
+    expect(m.insights![1]!.text).toBe(
+      "Padaria Pão Quente: 6 compras de até R$\u00a030,00 somaram R$\u00a0150,00 este mês.",
+    );
+    expect(m.insights![2]!.text).toBe(
+      "Streamflix subiu de R$\u00a039,90 para R$\u00a044,90: R$\u00a060,00 a mais por ano.",
+    );
+
+    // October: no subscription rules; Streamflix's October charge (39,90) is the only expense.
+    const october = (await dashboardMetrics(s.spaceId, "2026-10"))!;
+    expect(october.insights).toEqual([]);
   });
 
   it("um mês mal formado é recusado", async () => {

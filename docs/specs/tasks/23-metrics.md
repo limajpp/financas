@@ -69,7 +69,7 @@ O que já está contratado para os próximos 6 meses, a partir do mês seguinte 
 - **A ordem:** o maior total primeiro, depois a maior média, depois o nome.
 - **A média só existe com histórico suficiente:**
   - é preciso que o app estivesse em uso desde o começo do 1º desses 3 meses, ou antes;
-  - "em uso" quer dizer a data de criação do espaço, ou do saldo inicial mais antigo, se for antes;
+  - "em uso" quer dizer a data de criação do espaço (decidido na task 24; antes valia também o saldo inicial mais antigo, se fosse antes);
   - sem isso, a média é `null`, e não zero. É o "médias ocultas até existir histórico" do design.
   - Por exemplo, com o espaço criado em 30/10, a média de janeiro (out–dez) não aparece, porque outubro foi parcial. A de fevereiro (nov–jan) aparece.
 - **O destaque** ("acima de 25% e de R$ 50") é um insight, e fica para a task 24.
@@ -158,6 +158,8 @@ Para o João decidir (anotado aqui, nada mudou):
 - **A projeção nos primeiros dias do mês oscila muito:** uma compra variável de R$ 500 no dia 1 projeta R$ 15.000. Dá para esconder ou marcar como "estimativa" nos primeiros dias, na tela (task 25).
 - **O primeiro mês de uso, parcial,** aparece na evolução como um mês normal e baixo. A tela pode desenhá-lo diferente.
 - **O início do histórico usa o saldo inicial mais antigo de qualquer conta.** Uma conta cadastrada depois com um saldo de um ano atrás libera médias de meses que não foram acompanhados. A alternativa é usar só a criação do espaço.
+  - _Decidido pelo João na task 24:_ só a criação do espaço. Mudou lá, com teste.
+- _As outras três ficam para a tela (task 25), com as recomendações aceitas pelo João:_ a projeção a partir do dia 5 (antes, marcada como estimativa), o primeiro mês desenhado como parcial e a despesa do mês dita "até agora".
 - **No mês atual, a despesa conta as parcelas com data mais adiante no mês,** porque elas já estão registradas, mas não as assinaturas que ainda vão cair. A tela deve dizer "até agora".
 
 ## Fora do escopo
