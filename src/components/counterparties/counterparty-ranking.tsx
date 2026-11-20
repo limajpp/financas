@@ -113,7 +113,14 @@ export function CounterpartyRanking({
       </div>
 
       {ranked.length === 0 ? (
-        <p className="text-muted-foreground">Nenhuma despesa com estabelecimento neste período.</p>
+        <div className="grid justify-items-start gap-2">
+          <p className="text-muted-foreground">
+            Nenhuma despesa com estabelecimento neste período.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            Ao registrar um gasto, diga onde foi em “O que foi?”: o lugar aparece aqui.
+          </p>
+        </div>
       ) : (
         <ol aria-label="Ranking" className="divide-y rounded-lg border">
           {shown.map((row, index) => (

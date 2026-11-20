@@ -42,7 +42,7 @@ async function currentBalance(page: Page, account: string) {
 /** After saving, the screen goes back home with the confirmation. */
 async function savedHome(page: Page, message: string) {
   await expect(page.getByText(message)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
 }
 
 const payment = (page: Page) => page.getByRole("button", { name: /^Forma de pagamento:/ });

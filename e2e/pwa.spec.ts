@@ -114,7 +114,7 @@ test("o cartão de instalação aparece só no Safari do iPhone e some com Agora
   await signUp(page);
   const card = page.getByRole("region", { name: "Instale o app" });
   if (browserName !== "webkit") {
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
     await expect(card).toBeHidden();
     return;
   }
@@ -122,6 +122,6 @@ test("o cartão de instalação aparece só no Safari do iPhone e some com Agora
   await card.getByRole("button", { name: "Agora não" }).click();
   await expect(card).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(card).toBeHidden();
 });

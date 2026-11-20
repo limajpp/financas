@@ -45,7 +45,7 @@ test("CA5: o cadastro leva ao onboarding; pular deixa o convite no início, e o 
     await keypad.getByRole("button", { name: digit, exact: true }).click();
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Despesa de R$ 25,00 salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
 
   // "Continuar" goes back to it.
   await invite(page).getByRole("link", { name: "Continuar" }).click();
@@ -57,7 +57,7 @@ test("CA5: o cadastro leva ao onboarding; pular deixa o convite no início, e o 
   await invite(page).getByRole("button", { name: "Não mostrar mais" }).click();
   await expect(invite(page)).toBeHidden();
   await page.reload();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(invite(page)).toBeHidden();
 });
 
@@ -123,7 +123,7 @@ test("CA6: um onboarding completo termina no início, com as faturas certas", as
   );
 
   await page.getByRole("button", { name: "Concluir" }).click();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(invite(page)).toBeHidden();
 
   // The open invoice is what the bank showed; the 7 installments left follow, one per invoice.

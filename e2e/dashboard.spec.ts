@@ -74,7 +74,7 @@ async function register(
   if (subscription) await page.getByLabel("Assinatura").click();
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(/(Despesa|Receita|Assinatura) de .* salva$/).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(page).toHaveURL(/:\d+\/$/);
 }
 

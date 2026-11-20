@@ -2,7 +2,7 @@
 import { monthDays } from "@/domain/dashboard";
 import type { InsightSubject } from "@/domain/insights";
 import type { Month } from "@/domain/recurring";
-import { FILTER_PARAMS } from "@/lib/validation/transaction-filters";
+import { FILTER_PARAMS } from "@/lib/transaction-filter-params";
 
 /** The month's entries of a category (a main one includes its children); null: uncategorized. */
 export function categoryEntriesHref(categoryId: string | null, month: Month): string {

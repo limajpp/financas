@@ -373,7 +373,8 @@ describe("nextInvoice: cycle changes (review of task 12)", () => {
         invoice = next;
       }
     }
-  });
+    // 72,000 steps: under the full suite's parallel load, the default 5 s ran out (task 26).
+  }, 30_000);
 });
 
 describe("shiftInvoice", () => {

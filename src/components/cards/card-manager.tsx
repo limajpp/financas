@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { formatCalendarDate } from "@/domain/dates";
 import { formatBRL } from "@/domain/money";
 import { cn } from "@/lib/utils";
+import { focusHeading } from "@/components/focus-heading";
 
 import { CardDialog, type CardDialogState } from "./card-dialog";
 import { CardPaymentDialog } from "./card-payment-dialog";
@@ -33,7 +34,9 @@ export function CardManager({
     setError(null);
     startTransition(async () => {
       const result = await setCardArchivedAction(card.id, !card.archived);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) return setError(result.error);
+      // Its row leaves the list (unless archived ones show): the focus goes to the list's title.
+      if (!card.archived && !showArchived) focusHeading(document.getElementById("cards-heading"));
     });
   }
 

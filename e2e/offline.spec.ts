@@ -295,7 +295,7 @@ test.describe("com o envio retido", () => {
     );
     await save(page).click();
     await expect(page.getByText("Despesa de R$ 47,90 salva", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
     await expect(indicator(page, /com erro|aguardando sincronização/)).toBeHidden();
     expect(await queued(page)).toBe(0);
 
@@ -335,7 +335,7 @@ test.describe("com o envio retido", () => {
     // Back in, nothing waits and nothing was created.
     await page.unroute("**/api/sync");
     await signIn(page, email);
-    await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
     await expect(indicator(page, /aguardando sincronização/)).toBeHidden();
     await page.goto("/lancamentos");
     await expect(page.getByText("Padaria Offline")).toHaveCount(0);

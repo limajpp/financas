@@ -67,7 +67,7 @@ async function register(
   }
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(saved)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(page).toHaveURL(/:\d+\/$/);
 }
 

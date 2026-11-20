@@ -27,7 +27,7 @@ import { type CalendarDate, formatCalendarDate } from "@/domain/dates";
 import { formatDocument } from "@/domain/document";
 import { formatBRL } from "@/domain/money";
 import { COUNTERPARTY_NAME_MAX, DESCRIPTION_MAX } from "@/domain/transactions";
-import { FILTER_PARAMS } from "@/lib/validation/transaction-filters";
+import { FILTER_PARAMS } from "@/lib/transaction-filter-params";
 import { cn } from "@/lib/utils";
 import type { CounterpartyDetail } from "@/server/counterparties";
 

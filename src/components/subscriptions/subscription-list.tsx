@@ -27,7 +27,7 @@ import {
   PAYMENT_METHOD_LABELS,
   type PaymentMethod,
 } from "@/domain/transactions";
-import { FILTER_PARAMS } from "@/lib/validation/transaction-filters";
+import { FILTER_PARAMS } from "@/lib/transaction-filter-params";
 import { cn } from "@/lib/utils";
 import type { SubscriptionRow } from "@/server/recurring";
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -26,7 +27,7 @@ import {
   activeFilterCount,
   filtersToParams,
   monthRange,
-} from "@/lib/validation/transaction-filters";
+} from "@/lib/transaction-filter-params";
 import { cn } from "@/lib/utils";
 
 import { TYPE_LABELS, describeItem } from "./describe-item";
@@ -139,9 +140,14 @@ export function TransactionList({
       {items.length === 0 ? (
         <div className="grid justify-items-start gap-3 py-6">
           <p className="text-muted-foreground">Nenhum lançamento neste período.</p>
-          {filtered && (
+          {filtered ? (
             <Button variant="outline" onClick={() => apply({ from: filters.from, to: filters.to })}>
               Limpar filtros
+            </Button>
+          ) : (
+            // Nothing to clear: the next step is registering (task 26).
+            <Button asChild variant="outline">
+              <Link href="/registrar">Registrar um lançamento</Link>
             </Button>
           )}
         </div>

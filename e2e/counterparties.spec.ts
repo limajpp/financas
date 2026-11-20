@@ -23,7 +23,7 @@ async function typeAmount(page: Page, digits: string) {
 async function save(page: Page, message: string) {
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(message)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
 }
 
 async function openRegister(page: Page) {

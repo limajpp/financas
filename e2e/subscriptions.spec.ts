@@ -41,7 +41,7 @@ test("registra uma assinatura e o Desfazer apaga a cobrança e a regra", async (
 
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Assinatura de R$ 39,90 salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
 
   await open(page, "Contas");
   const azul = page

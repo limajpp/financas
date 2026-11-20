@@ -45,7 +45,7 @@ async function buyInInstallments(page: Page) {
   await expect(page.getByText(/^1ª parcela na fatura que vence em/)).toBeVisible();
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Despesa de R$ 300,00 em 3× salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
 }
 
 test("registra uma compra em 3× e cada parcela cai numa fatura", async ({ page }) => {

@@ -15,6 +15,7 @@ import { cn } from "@/lib/utils";
 
 import { CardManager } from "@/components/cards/card-manager";
 import type { CardView } from "@/components/cards/types";
+import { focusHeading } from "@/components/focus-heading";
 
 import { AccountDialog, type AccountDialogState } from "./account-dialog";
 import { ReconcileDialog } from "./reconcile-dialog";
@@ -38,7 +39,11 @@ export function AccountManager({
     setError(null);
     startTransition(async () => {
       const result = await setAccountArchivedAction(account.id, !account.archived);
-      if (!result.ok) setError(result.error);
+      if (!result.ok) return setError(result.error);
+      // Its row leaves the list (unless archived ones show): the focus goes to the page's title.
+      if (!account.archived && !showArchived) {
+        focusHeading(document.querySelector<HTMLElement>("main h1"));
+      }
     });
   }
 

@@ -139,7 +139,19 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
     });
   }
 
-  if (comparison) {
+  // The result is announced by a status region that exists, empty, before it (task 26): some
+  // screen readers don't read a region that is born with its text. The visible line repeats it.
+  const result = comparison && resultText(comparison);
+  return (
+    <>
+      <p role="status" className="sr-only">
+        {result}
+      </p>
+      {comparison ? resultView(comparison, result!) : formView()}
+    </>
+  );
+
+  function resultView(comparison: Comparison, result: string) {
     const gap = formatBRL(Math.abs(comparison.diffCents));
     const register = `/registrar?${new URLSearchParams({
       valor: String(Math.abs(comparison.diffCents)),
@@ -167,7 +179,7 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
         </dl>
 
         <p
-          role="status"
+          aria-hidden
           className={cn(
             "text-sm font-medium",
             comparison.direction === "MATCH"
@@ -175,11 +187,7 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
               : "text-amber-800 dark:text-amber-300",
           )}
         >
-          {comparison.direction === "MATCH"
-            ? "O saldo bate com o banco."
-            : comparison.direction === "MISSING_EXPENSE"
-              ? `Faltam ${gap} em saídas: um gasto que não foi registrado?`
-              : `Faltam ${gap} em entradas: um recebimento que não foi registrado?`}
+          {result}
         </p>
 
         <section aria-labelledby="reconcile-entries" className="grid gap-1.5">
@@ -261,45 +269,56 @@ function ReconcileForm({ account, onDone }: { account: AccountView; onDone: () =
     );
   }
 
-  return (
-    <form onSubmit={compare} className="grid gap-4" noValidate>
-      <DialogHeader>
-        <DialogTitle>Conferir saldo · {account.name}</DialogTitle>
-        <DialogDescription>
-          Abra o app do banco e digite o saldo que ele mostra hoje.
-        </DialogDescription>
-      </DialogHeader>
-      <div className="grid gap-1.5">
-        <Label htmlFor={ids.amount}>
-          Saldo no app do banco hoje<span className="sr-only"> em reais</span>
-        </Label>
-        <MoneyInput
-          id={ids.amount}
-          value={amount}
-          onValueChange={setAmount}
-          placeholder="0,00"
-          autoFocus
-        />
-        <label htmlFor={ids.negative} className="flex items-center gap-2 text-sm">
-          <input
-            id={ids.negative}
-            type="checkbox"
-            checked={negative}
-            onChange={(e) => setNegative(e.target.checked)}
+  function formView() {
+    return (
+      <form onSubmit={compare} className="grid gap-4" noValidate>
+        <DialogHeader>
+          <DialogTitle>Conferir saldo · {account.name}</DialogTitle>
+          <DialogDescription>
+            Abra o app do banco e digite o saldo que ele mostra hoje.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-1.5">
+          <Label htmlFor={ids.amount}>
+            Saldo no app do banco hoje<span className="sr-only"> em reais</span>
+          </Label>
+          <MoneyInput
+            id={ids.amount}
+            value={amount}
+            onValueChange={setAmount}
+            placeholder="0,00"
+            autoFocus
           />
-          Saldo negativo (cheque especial)
-        </label>
-      </div>
-      {error && (
-        <p role="alert" className="text-sm text-destructive">
-          {error}
-        </p>
-      )}
-      <ResponsiveDialogFooter>
-        <Button type="submit" disabled={pending} className="h-10 w-full sm:w-auto">
-          {pending ? "Comparando…" : "Comparar"}
-        </Button>
-      </ResponsiveDialogFooter>
-    </form>
-  );
+          <label htmlFor={ids.negative} className="flex items-center gap-2 text-sm">
+            <input
+              id={ids.negative}
+              type="checkbox"
+              checked={negative}
+              onChange={(e) => setNegative(e.target.checked)}
+            />
+            Saldo negativo (cheque especial)
+          </label>
+        </div>
+        {error && (
+          <p role="alert" className="text-sm text-destructive">
+            {error}
+          </p>
+        )}
+        <ResponsiveDialogFooter>
+          <Button type="submit" disabled={pending} className="h-10 w-full sm:w-auto">
+            {pending ? "Comparando…" : "Comparar"}
+          </Button>
+        </ResponsiveDialogFooter>
+      </form>
+    );
+  }
+}
+
+/** What the comparison says: it matches, or what seems to be missing. */
+function resultText(comparison: Comparison) {
+  const gap = formatBRL(Math.abs(comparison.diffCents));
+  if (comparison.direction === "MATCH") return "O saldo bate com o banco.";
+  return comparison.direction === "MISSING_EXPENSE"
+    ? `Faltam ${gap} em saídas: um gasto que não foi registrado?`
+    : `Faltam ${gap} em entradas: um recebimento que não foi registrado?`;
 }

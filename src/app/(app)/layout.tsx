@@ -12,6 +12,13 @@ import { getCurrentUser } from "@/server/session";
 export default function AppLayout({ children }: LayoutProps<"/">) {
   return (
     <OutboxProvider>
+      {/* Keyboard users skip the navigation (task 26): shown when it gets the focus. */}
+      <a
+        href="#conteudo"
+        className="sr-only rounded-md bg-background px-3 py-2 text-sm font-medium ring-2 ring-ring focus:not-sr-only focus:fixed focus:top-[calc(0.5rem+env(safe-area-inset-top))] focus:left-2 focus:z-50"
+      >
+        Pular para o conteúdo
+      </a>
       <div className="flex min-h-full flex-1">
         <Sidebar
           user={
@@ -20,7 +27,11 @@ export default function AppLayout({ children }: LayoutProps<"/">) {
             </Suspense>
           }
         />
-        <main className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-0">
+        <main
+          id="conteudo"
+          tabIndex={-1}
+          className="flex-1 pb-[calc(4rem+env(safe-area-inset-bottom))] outline-none md:pb-0"
+        >
           <OutboxIndicator />
           {children}
         </main>

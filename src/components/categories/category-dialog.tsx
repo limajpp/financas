@@ -10,6 +10,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { COLOR_CLASSES, ColorPicker } from "@/components/palette";
+import { radioKeys } from "@/components/radio-keys";
 import { ResponsiveDialogContent, ResponsiveDialogFooter } from "@/components/responsive-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -70,6 +71,7 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
   const [color, setColor] = useState<PaletteColor>(
     (editing?.color as PaletteColor) ?? (parent?.color as PaletteColor) ?? "blue",
   );
+  const iconRadio = radioKeys(CATEGORY_ICONS, icon, setIcon);
   const [isFixed, setIsFixed] = useState(editing?.isFixed ?? false);
   const [result, setResult] = useState<CategoryActionResult | null>(null);
   const [pending, startTransition] = useTransition();
@@ -140,6 +142,7 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
                 aria-checked={selected}
                 aria-label={ICON_LABELS[name]}
                 onClick={() => setIcon(name)}
+                {...iconRadio(name)}
                 className={cn(
                   "flex aspect-square items-center justify-center rounded-md border outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
                   selected

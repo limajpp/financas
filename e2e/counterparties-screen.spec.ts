@@ -39,7 +39,7 @@ async function spend(page: Page, what: string, digits: string) {
   await page.getByLabel("O que foi?").press("Escape");
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(/^Despesa de .* salva$/).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
   await expect(page).toHaveURL(/:\d+\/$/);
 }
 
