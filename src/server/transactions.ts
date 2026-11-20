@@ -117,7 +117,7 @@ export async function refsFor(spaceId: string, input: EntryInput): Promise<Entry
  * offline may name one the server doesn't know yet. The alias and CPF/CNPJ typed with the entry
  * are then added to it.
  */
-async function counterpartyIdFor(
+export async function counterpartyIdFor(
   spaceId: string,
   input: Pick<EntryInput, "counterparty" | "counterpartyAlias" | "counterpartyDocument">,
 ) {

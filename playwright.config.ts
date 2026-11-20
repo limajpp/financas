@@ -17,6 +17,9 @@ export default defineConfig({
   reporter: process.env.CI ? [["github"], ["html", { open: "never" }]] : "list",
   // The dev server compiles each page on first visit; the production build (CI) doesn't need the slack.
   expect: { timeout: process.env.CI ? 5_000 : 15_000 },
+  // Every test signs up first, and the sign-up goes through the onboarding (task 22) before home:
+  // under a full parallel run, the default 30 s left the longer tests at the edge.
+  timeout: 45_000,
   use: {
     baseURL,
     locale: "pt-BR",

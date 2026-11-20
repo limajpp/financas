@@ -156,6 +156,8 @@ function EntryRow({ item, onOpen }: { item: ListItemView; onOpen: () => void }) 
   const line = [
     formatCalendarDate(item.date),
     refund ? "Estorno" : null,
+    // An invoice's amount from before the app (task 22).
+    item.adjustment ? "Antes do app" : null,
     item.category?.name ?? null,
     item.installmentNumber ? `${item.installmentNumber}/${item.installmentTotal}` : null,
   ]

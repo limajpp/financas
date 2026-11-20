@@ -1,6 +1,8 @@
 import { Suspense } from "react";
 
+import { OnboardingInvite } from "@/components/onboarding/onboarding-invite";
 import { InstallHint } from "@/components/pwa/install-hint";
+import { needsOnboarding } from "@/server/onboarding";
 import { generateRecurringSafely } from "@/server/recurring";
 import { getCurrentSpace, getCurrentUser } from "@/server/session";
 
@@ -11,6 +13,9 @@ export default function HomePage() {
         <Greeting />
       </Suspense>
       <p className="mt-2 text-muted-foreground">Em breve, o resumo do seu mês aparece aqui.</p>
+      <Suspense>
+        <Invite />
+      </Suspense>
       <InstallHint />
     </div>
   );
@@ -21,4 +26,10 @@ async function Greeting() {
   // Opening the app charges the subscriptions due up to today (task 13).
   await generateRecurringSafely(space.id);
   return <h1 className="text-2xl font-semibold tracking-tight">Olá, {user.name}</h1>;
+}
+
+/** The onboarding's invitation, while it wasn't finished or dismissed (task 22). */
+async function Invite() {
+  const space = await getCurrentSpace();
+  return (await needsOnboarding(space.id)) ? <OnboardingInvite /> : null;
 }

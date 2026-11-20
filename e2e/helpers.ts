@@ -20,7 +20,11 @@ export async function waitForHydratedForm(page: Page) {
   });
 }
 
-export async function signUp(page: Page, { name = "Ana Teste", email = uniqueEmail() } = {}) {
+/** Creates an account; it lands on home, unless `onboarding` keeps it on the onboarding. */
+export async function signUp(
+  page: Page,
+  { name = "Ana Teste", email = uniqueEmail(), onboarding = false } = {},
+) {
   await page.goto("/cadastro");
   await waitForHydratedForm(page);
   await page.getByLabel("Nome").fill(name);
@@ -28,9 +32,12 @@ export async function signUp(page: Page, { name = "Ana Teste", email = uniqueEma
   await page.getByLabel("Senha").fill(PASSWORD);
   await page.getByRole("button", { name: "Criar conta" }).click();
   // Creating the account hashes the password: under a full parallel run it can take a while.
-  await expect(page.getByRole("heading", { name: `Olá, ${name}` })).toBeVisible({
-    timeout: 15_000,
-  });
+  // A new account starts with the onboarding (task 22); the tests skip it.
+  await expect(page.getByRole("heading", { name: "Contas" })).toBeVisible({ timeout: 15_000 });
+  await expect(page).toHaveURL(/\/comecar$/);
+  if (onboarding) return { name, email };
+  await page.getByRole("link", { name: "Pular por agora" }).click();
+  await expect(page.getByRole("heading", { name: `Olá, ${name}` })).toBeVisible();
   return { name, email };
 }
 

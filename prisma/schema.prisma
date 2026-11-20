@@ -96,6 +96,8 @@ model Space {
   updatedAt          DateTime        @updatedAt
   // Set once the default category list was created, so archived defaults never come back.
   categoriesSeededAt DateTime?
+  /// When the first-use onboarding (task 22) was finished or dismissed; null while it's offered.
+  onboardedAt        DateTime?
   members            SpaceMember[]
   categories         Category[]
   accounts           Account[]
@@ -305,8 +307,9 @@ model Transaction {
   recurringRuleId    String?
   recurringRule      RecurringRule?  @relation(fields: [recurringRuleId], references: [id], onDelete: NoAction)
   recurringMonth     String?
-  /// A balance adjustment from reconciling an account with the bank (task 21): an expense or
-  /// income that moves the balance but stays out of the indicators (CHECK in the migration).
+  /// An adjustment (CHECK in the migration): from reconciling an account with the bank (task 21),
+  /// an expense or income that moves the balance; or an invoice's amount from before the app
+  /// (task 22), an expense on credit. Either way it stays out of the indicators.
   adjustment         Boolean         @default(false)
   createdAt          DateTime        @default(now())
   updatedAt          DateTime        @updatedAt
