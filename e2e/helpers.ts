@@ -74,3 +74,14 @@ export async function visit(page: Page, url: string) {
     }
   }
 }
+
+/**
+ * Home is on screen, once. For a frame the Next router keeps the previous route alive and two
+ * home headings can coexist (task 26): the first one is waited for, then exactly one must remain,
+ * so a duplicate that stays on screen still fails.
+ */
+export async function expectHome(page: Page) {
+  const heading = page.getByRole("heading", { name: /^Olá/ });
+  await expect(heading.first()).toBeVisible();
+  await expect(heading).toHaveCount(1);
+}

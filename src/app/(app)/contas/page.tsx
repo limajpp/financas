@@ -13,7 +13,9 @@ export const metadata: Metadata = { title: "Contas · Finanças" };
 export default function ContasPage() {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-6 md:px-8 md:py-10">
-      <h1 className="text-2xl font-semibold tracking-tight">Contas</h1>
+      <h1 id="accounts-heading" className="text-2xl font-semibold tracking-tight">
+        Contas
+      </h1>
       <p className="mt-2 text-muted-foreground">
         Suas contas e os cartões de crédito que elas pagam.
       </p>

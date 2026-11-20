@@ -1,22 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
-
-/**
- * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
- * aborts that request, and Next answers with a full load of "/" that interrupts the goto (WebKit).
- */
-async function visit(page: Page, url: string) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await page.goto(url);
-      return;
-    } catch (error) {
-      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
-    }
-  }
-}
+import { signUp, visit } from "./helpers";
 
 /**
  * The screen as the person sees it: the title shown and nothing still loading. Not "networkidle":
@@ -98,15 +83,30 @@ test("CA5: as telas principais não têm violação séria nem crítica, no clar
       const list = await violations(page);
       if (list.length > 0) found[`${scheme} ${url}`] = list;
     }
+    // Logged in: without a session, the proxy sends an unknown address to the login instead.
+    await visit(page, "/nao-existe");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Página não encontrada" }),
+    ).toBeVisible();
+    const notFound = await violations(page);
+    if (notFound.length > 0) found[`${scheme} /nao-existe`] = notFound;
+    // The home's chart loads near the screen: scrolled to, it's audited too.
+    await visit(page, "/");
+    await settled(page);
+    const chart = page.getByRole("region", { name: "Evolução de 6 meses" });
+    await chart.scrollIntoViewIfNeeded();
+    await expect(chart.locator(".recharts-surface").first()).toBeVisible();
+    const withChart = await violations(page);
+    if (withChart.length > 0) found[`${scheme} / (gráfico)`] = withChart;
   }
   expect(found).toEqual({});
 });
 
-test("CA5: a entrada e a página não encontrada, no claro e no escuro", async ({ page }) => {
+test("CA5: a entrada e o cadastro, no claro e no escuro", async ({ page }) => {
   const found: Record<string, unknown> = {};
   for (const scheme of ["light", "dark"] as const) {
     await page.emulateMedia({ colorScheme: scheme });
-    for (const url of ["/entrar", "/cadastro", "/nao-existe"]) {
+    for (const url of ["/entrar", "/cadastro"]) {
       await visit(page, url);
       await settled(page);
       const list = await violations(page);

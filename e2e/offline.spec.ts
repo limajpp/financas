@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signIn, signUp, visit } from "./helpers";
+import { signIn, signUp, visit, expectHome } from "./helpers";
 
 // Task 16: docs/specs/tasks/16-offline-queue.md. These don't need the service worker: the register
 // screen is opened with the network on, and only then the browser goes offline.
@@ -295,7 +295,7 @@ test.describe("com o envio retido", () => {
     );
     await save(page).click();
     await expect(page.getByText("Despesa de R$ 47,90 salva", { exact: true })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+    await expectHome(page);
     await expect(indicator(page, /com erro|aguardando sincronização/)).toBeHidden();
     expect(await queued(page)).toBe(0);
 
@@ -335,7 +335,7 @@ test.describe("com o envio retido", () => {
     // Back in, nothing waits and nothing was created.
     await page.unroute("**/api/sync");
     await signIn(page, email);
-    await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+    await expectHome(page);
     await expect(indicator(page, /aguardando sincronização/)).toBeHidden();
     await visit(page, "/lancamentos");
     await expect(page.getByText("Padaria Offline")).toHaveCount(0);

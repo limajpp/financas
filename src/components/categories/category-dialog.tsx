@@ -144,7 +144,7 @@ function CategoryForm({ state, onDone }: { state: DialogState; onDone: () => voi
                 onClick={() => setIcon(name)}
                 {...iconRadio(name)}
                 className={cn(
-                  "flex aspect-square items-center justify-center rounded-md border outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  "flex aspect-square items-center justify-center rounded-md border outline-none focus-visible:ring-3 focus-visible:ring-ring",
                   selected
                     ? cn(COLOR_CLASSES[color].tint, COLOR_CLASSES[color].ink, "border-current")
                     : "border-transparent text-muted-foreground hover:bg-muted",

@@ -1,21 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
-
-/**
- * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
- * aborts that request, and Next answers with a full load of "/" that interrupts the goto (WebKit).
- */
-async function visit(page: Page, url: string) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await page.goto(url);
-      return;
-    } catch (error) {
-      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
-    }
-  }
-}
+import { signUp, visit } from "./helpers";
 
 async function createAccount(page: Page, name: string) {
   const dialog = page.getByRole("dialog");

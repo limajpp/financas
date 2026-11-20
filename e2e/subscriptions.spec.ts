@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 async function typeAmount(page: Page, digits: string) {
   const keypad = page.getByRole("group", { name: "Teclado numérico" });
@@ -41,7 +41,7 @@ test("registra uma assinatura e o Desfazer apaga a cobrança e a regra", async (
 
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText("Assinatura de R$ 39,90 salva")).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+  await expectHome(page);
 
   await open(page, "Contas");
   const azul = page

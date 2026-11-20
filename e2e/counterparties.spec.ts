@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 async function createAccount(page: Page) {
   await page.goto("/contas");
@@ -23,7 +23,7 @@ async function typeAmount(page: Page, digits: string) {
 async function save(page: Page, message: string) {
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(message)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+  await expectHome(page);
 }
 
 async function openRegister(page: Page) {

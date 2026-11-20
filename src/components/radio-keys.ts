@@ -11,16 +11,20 @@ const PREVIOUS = new Set(["ArrowLeft", "ArrowUp"]);
 export function radioKeys<T>(options: readonly T[], value: T, onChange: (option: T) => void) {
   const current = Math.max(0, options.indexOf(value));
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
+    const group = event.currentTarget.closest('[role="radiogroup"]');
+    const radios = [...(group?.querySelectorAll<HTMLElement>('[role="radio"]') ?? [])];
+    // From the focused option (a screen reader can focus one that isn't checked).
+    const focused = radios.indexOf(event.currentTarget);
+    const from = focused >= 0 ? focused : current;
     let index: number | null = null;
-    if (NEXT.has(event.key)) index = (current + 1) % options.length;
-    else if (PREVIOUS.has(event.key)) index = (current - 1 + options.length) % options.length;
+    if (NEXT.has(event.key)) index = (from + 1) % options.length;
+    else if (PREVIOUS.has(event.key)) index = (from - 1 + options.length) % options.length;
     else if (event.key === "Home") index = 0;
     else if (event.key === "End") index = options.length - 1;
     if (index === null) return;
     event.preventDefault();
     onChange(options[index]!);
-    const group = event.currentTarget.closest('[role="radiogroup"]');
-    group?.querySelectorAll<HTMLElement>('[role="radio"]')[index]?.focus();
+    radios[index]?.focus();
   }
   return (option: T) => ({
     tabIndex: options.indexOf(option) === current ? 0 : -1,

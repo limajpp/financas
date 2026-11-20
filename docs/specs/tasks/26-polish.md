@@ -123,9 +123,9 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
   - o `themeColor` tem uma cor por tema.
   - A auditoria percorreu todas as telas, com uma conta nova e com dados, nos dois temas, no celular e no computador. As cores já tinham variante escura; nada ficou com cor fixa clara.
 - **O contraste do texto apagado:** o axe achou o `muted-foreground` do shadcn (0,556) a 4,3:1 sobre os fundos cinza dos botões de alternância. Ele passou a 0,52, com pelo menos 5:1 em todo fundo claro. O escuro já tinha 5,8:1.
-- **Estados vazios:** quase todas as telas já tinham. Ganharam o próximo passo:
+- **Estados vazios:** quase todas as telas já tinham. O e2e `empty-states` confere os de lançamentos (com e sem filtro), estabelecimentos, contas e cartões e o registro sem conta; os de faturas, assinaturas e início já tinham e2e. As categorias nunca ficam vazias numa conta nova (vêm as padrão). Ganharam o próximo passo:
   - a lista de lançamentos vazia, sem filtro, com "Registrar um lançamento";
-  - os estabelecimentos vazios, com a dica de dizer o lugar em "O que foi?".
+  - os estabelecimentos vazios, com a dica de dizer o lugar em "O que foi?" e o link "Registrar um gasto".
 - **Erros:** a página não encontrada (`app/not-found.tsx`) cobre os endereços que não existem. A tela de erro (`(app)/error.tsx`, com o `retry` do Next 16) cobre as telas logadas. As telas de detalhe continuam com o "não encontrado" próprio delas, que já existia e diz mais.
 - **Teclado:**
   - `radioKeys` em `src/components/radio-keys.ts`, o padrão de radio do WAI-ARIA, com teste;
@@ -152,7 +152,7 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
 | Faturas     | 73    | 76     | 100            | 3,5 s | 584 ms | 257 KB           |
 | Contas      | 89    | 81     | 100            | 2,3 s | 681 ms | 264 KB           |
 
-- **O "antes" é uma rodada só.** As notas variam de uma rodada para outra: o início foi de 61 a 78 numa mesma série, e contas de 82 a 89.
+- **O "antes" é uma rodada só, e o "depois" a mediana de 3:** a comparação não é confiável tela a tela. As notas variam de uma rodada para outra: o início foi de 61 a 78 numa mesma série, e contas de 81 a 89. Medir de novo na produção, com brotli, HTTP/2 e a CDN da Vercel, dá um número mais realista.
 - **O que mudou:**
   - o gráfico do início só carrega perto da tela (o Recharts pesava ~600 ms de CPU na abertura);
   - o zod saiu do JavaScript de quatro telas. As constantes dos filtros foram para `src/lib/transaction-filter-params.ts`, sem zod;
@@ -161,6 +161,27 @@ As rodadas recentes tiveram de 3 a 4 testes instáveis, que só passam na nova t
 - **O que pesa:** a base que toda tela paga, o React e o roteador do Next, com cerca de 200 KB e 1–3 s de CPU no celular simulado (4× mais lento). Além disso, o conteúdo chega por streaming depois desse JavaScript, o que puxa o LCP para 3,5 s no 4G lento simulado.
   - Subir a 90 pede uma mudança de estrutura: menos componentes de cliente por tela, a fila offline (Dexie) carregada sob demanda, o conteúdo principal no HTML estático. É trabalho de uma task própria, com o risco de mexer no offline.
 - **A acessibilidade fica em 100** nas cinco telas.
+
+## Revisão
+
+O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Ele confirmou a análise do desempenho nos chunks do build. O maior ganho seguinte é o Dexie: cerca de 34 KB, carregados em toda tela pelo layout, e que podem passar a ser sob demanda. Isso fica para a task própria, por causa do risco no offline. Corrigido:
+
+- **O axe não auditava a página não encontrada:** sem login, o proxy manda o endereço para a entrada. Agora ela é auditada logada, e o gráfico do início também, depois de rolar até ele.
+- **O CA3 pedia e2e dos estados vazios que ainda não tinham.** Ganhou o `e2e/empty-states.spec.ts`.
+- **O roteiro dizia mais do que rodou.** Agora diz onde cada coisa rodou, e a cor das barras fica para o iPhone.
+- **As esperas pelo "Olá" aceitavam uma home duplicada que ficasse na tela.** O helper `expectHome` espera a primeira e depois exige uma só.
+- **Nits:**
+  - o clique repetido do dashboard não clica de novo se a navegação já aconteceu;
+  - o `visit` duplicado saiu dos specs novos;
+  - as setas partem da opção focada;
+  - o título das contas tem um id para o foco;
+  - o anel de foco dos ícones ficou com o contraste cheio;
+  - a dica dos estabelecimentos ganhou o link;
+  - o nome do teste de "não encontrado" ficou fiel ao que testa;
+  - o roteiro do iPhone confere a abertura no escuro, porque o manifesto tem o fundo branco fixo.
+- **Anotado:**
+  - um toque durante a hidratação, num celular lento, pode se perder e pedir um segundo toque. É comportamento do framework.
+  - o início do celular agora mostra o convite do onboarding abaixo dos números e do botão Registrar, para a tela não pular. _João, confira._
 
 ## Decisões
 

@@ -128,6 +128,9 @@ export function CounterpartyRanking({
           <p className="text-sm text-muted-foreground">
             Ao registrar um gasto, diga onde foi em “O que foi?”: o lugar aparece aqui.
           </p>
+          <Link href="/registrar" className="text-sm underline underline-offset-4">
+            Registrar um gasto
+          </Link>
         </div>
       ) : (
         <ol aria-label="Ranking" className="divide-y rounded-lg border">

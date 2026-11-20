@@ -2,7 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { formatCalendarDate, todayInSaoPaulo } from "../src/domain/dates";
 import { invoiceFor } from "../src/domain/invoice-cycle";
-import { signUp } from "./helpers";
+import { signUp, expectHome } from "./helpers";
 
 async function createAccount(page: Page, name: string, balance: string) {
   await page.goto("/contas");
@@ -42,7 +42,7 @@ async function currentBalance(page: Page, account: string) {
 /** After saving, the screen goes back home with the confirmation. */
 async function savedHome(page: Page, message: string) {
   await expect(page.getByText(message)).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+  await expectHome(page);
 }
 
 const payment = (page: Page) => page.getByRole("button", { name: /^Forma de pagamento:/ });

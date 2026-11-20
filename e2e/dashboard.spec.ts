@@ -2,22 +2,7 @@ import { expect, type Page, test } from "@playwright/test";
 
 import { todayInSaoPaulo } from "../src/domain/dates";
 import { formatBRL } from "../src/domain/money";
-import { signUp } from "./helpers";
-
-/**
- * page.goto that survives Next's fallback: home shows before its data request ends, a goto then
- * aborts that request, and Next answers with a full load of "/" that interrupts the goto (WebKit).
- */
-async function visit(page: Page, url: string) {
-  for (let attempt = 1; ; attempt++) {
-    try {
-      await page.goto(url);
-      return;
-    } catch (error) {
-      if (attempt >= 3 || !String(error).includes("interrupted by another navigation")) throw error;
-    }
-  }
-}
+import { signUp, expectHome, visit } from "./helpers";
 
 async function createAccount(page: Page) {
   await visit(page, "/contas");
@@ -74,7 +59,7 @@ async function register(
   if (subscription) await page.getByLabel("Assinatura").click();
   await page.getByRole("button", { name: /^Salvar/ }).click();
   await expect(page.getByText(/(Despesa|Receita|Assinatura) de .* salva$/).first()).toBeVisible();
-  await expect(page.getByRole("heading", { name: /^Olá/ }).first()).toBeVisible();
+  await expectHome(page);
   await expect(page).toHaveURL(/:\d+\/$/);
 }
 
@@ -188,8 +173,13 @@ test("CA2, CA4: uma conta nova, o convite e o seletor no primeiro mês", async (
 
   // A click while the page still hydrates may land on a link React then takes over (WebKit):
   // clicking again until the register opens.
+  // A late first click may still navigate: only click again while the register isn't open.
   await expect(async () => {
-    await page.getByRole("link", { name: "Registrar o primeiro gasto" }).click();
+    if (!page.url().endsWith("/registrar")) {
+      await page
+        .getByRole("link", { name: "Registrar o primeiro gasto" })
+        .click({ timeout: 2_000 });
+    }
     await expect(page).toHaveURL(/\/registrar$/, { timeout: 2_000 });
   }).toPass();
 });

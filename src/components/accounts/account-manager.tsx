@@ -42,7 +42,7 @@ export function AccountManager({
       if (!result.ok) return setError(result.error);
       // Its row leaves the list (unless archived ones show): the focus goes to the page's title.
       if (!account.archived && !showArchived) {
-        focusHeading(document.querySelector<HTMLElement>("main h1"));
+        focusHeading(document.getElementById("accounts-heading"));
       }
     });
   }
