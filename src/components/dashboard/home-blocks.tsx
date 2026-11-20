@@ -174,7 +174,7 @@ export function Shortcuts({
       label: "Estabelecimentos",
       icon: Store,
       context: top
-        ? `Maior ${period}: ${top.name}, ${formatBRL(top.totalCents)}`
+        ? `Maior gasto ${period}: ${top.name}, ${formatBRL(top.totalCents)}`
         : `Nenhuma compra ${period}`,
     },
     {

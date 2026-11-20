@@ -135,16 +135,16 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 
 ## Critérios de aceite
 
-- [ ] CA1 — E2E (Chromium e iPhone/WebKit), com dados inventados e fixos registrados pela própria tela: os 4 KPIs exibidos batem com o `dashboardMetrics` dos mesmos dados. Os valores esperados são calculados à mão no teste.
-- [ ] CA2 — E2E: no primeiro mês, nenhuma seta leva a outro mês, e um `?mes=` inválido, futuro ou anterior ao histórico abre o mês atual. Unitário: num mês passado, a projeção vira "Despesa do mês", e o seletor tem "anterior" até o início do histórico.
+- [x] CA1 — E2E (Chromium e iPhone/WebKit), com dados inventados e fixos registrados pela própria tela: os 4 KPIs exibidos batem com o `dashboardMetrics` dos mesmos dados. Os valores esperados são calculados à mão no teste.
+- [x] CA2 — E2E: no primeiro mês, nenhuma seta leva a outro mês, e um `?mes=` inválido, futuro ou anterior ao histórico abre o mês atual. Unitário: num mês passado, a projeção vira "Despesa do mês", e o seletor tem "anterior" até o início do histórico.
   - Uma conta criada pelo e2e começa hoje, e o e2e não mexe no banco: um mês passado com dados só aparece nas screenshots (CA8), feitas com uma conta semeada à parte.
-- [ ] CA3 — E2E: no celular, o início mostra o gasto de hoje, o do mês, a sobra, a fatura atual de um cartão e os últimos lançamentos, e o botão "Registrar um lançamento" leva ao registro.
-- [ ] CA4 — E2E: os estados vazios. Uma conta nova mostra o convite para registrar, e os insights dizem "Nada fora do comum neste mês."
-- [ ] CA5 — E2E: um insight e uma linha de categoria levam à lista de lançamentos filtrada.
-- [ ] CA6 — Unitário: a formatação dos KPIs (porcentagem, "—" sem receita, o selo "estimativa" antes do dia 5) e o nome do mês do seletor.
-- [ ] CA7 — Integração: `homeSummary` dá o gasto de hoje, a fatura aberta de cada cartão e os últimos 5 lançamentos, só do espaço. `leftoverToDateCents` e `savingsRateToDate` batem com o conjunto fixo da task 23.
-- [ ] CA8 — Os gráficos e a lista de categorias legíveis em claro e escuro, no celular e no computador (screenshots mandadas ao João no chat, com dados inventados; o repositório não guarda imagens).
-- [ ] CA9 — Lint, format, test, build e CI verdes.
+- [x] CA3 — E2E: no celular, o início mostra o gasto de hoje, o do mês, a sobra, a fatura atual de um cartão e os últimos lançamentos, e o botão "Registrar um lançamento" leva ao registro.
+- [x] CA4 — E2E: os estados vazios. Uma conta nova mostra o convite para registrar, e os insights dizem "Nada fora do comum neste mês."
+- [x] CA5 — E2E: um insight e uma linha de categoria levam à lista de lançamentos filtrada.
+- [x] CA6 — Unitário: a formatação dos KPIs (porcentagem, "—" sem receita, o selo "estimativa" antes do dia 5) e o nome do mês do seletor.
+- [x] CA7 — Integração: `homeSummary` dá o gasto de hoje, a fatura aberta de cada cartão e os últimos 5 lançamentos, só do espaço. `leftoverToDateCents` e `savingsRateToDate` batem com o conjunto fixo da task 23.
+- [x] CA8 — Os gráficos e a lista de categorias legíveis em claro e escuro, no celular e no computador (screenshots mandadas ao João no chat, com dados inventados; o repositório não guarda imagens).
+- [x] CA9 — Lint, format, test, build e CI verdes.
 - [ ] CA10 — Manual, no iPhone, depois do merge na `develop`: o início abre rápido no app instalado. Vai junto da verificação das tasks 15 e 17.
 
 ## Casos de borda
@@ -170,7 +170,7 @@ Uma lista, e não um gráfico de pizza: o que importa é comparar cada categoria
 O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Corrigido:
 
 - **A linha "(direto)" de uma categoria levava à categoria inteira,** com as subcategorias, e o total não batia com a lista. Agora ela não é link, e "Ver os lançamentos de X", logo abaixo, mostra todos.
-- **O atalho "Estabelecimentos" ficava no mês atual** mesmo com outro mês escolhido. Agora é o maior do mês escolhido ("Maior em outubro: …"), tirado dos lançamentos já carregados. De quebra, saíram as 3 consultas do ranking.
+- **O atalho "Estabelecimentos" ficava no mês atual** mesmo com outro mês escolhido. Agora é o maior do mês escolhido ("Maior gasto em outubro: …"), tirado dos lançamentos já carregados. De quebra, saíram as 3 consultas do ranking.
 - **O início do celular esperava tudo junto.** Agora os três números, o botão e as listas carregam cada um no seu bloco, e o botão não espera nada. O gasto de hoje veio para as métricas.
 - **A geração das assinaturas rodava até 4 vezes por request,** e o início do histórico 2 vezes. Agora rodam uma vez.
 - **À meia-noite do dia 1º,** o mês podia virar entre o bloco e as métricas, e a página quebrava. Agora os números simplesmente não aparecem nesse instante.
@@ -184,6 +184,8 @@ O revisor (Opus, effort high) aprovou com nits, sem bloqueios. Corrigido:
 Anotado, sem mudança:
 
 - **No computador, o início do celular** (escondido por CSS) também calcula as métricas do mês atual quando outro mês está escolhido. São as mesmas consultas do resumo do mês atual, e só nesse caso.
+- **Num empate exato de total,** o atalho desempata pelo nome, e a tela de estabelecimentos antes pelo número de compras. Os lançamentos das métricas não trazem o número da parcela para contar as compras como o ranking conta, e o empate exato em centavos é raro.
+- **Segunda rodada: aprovado.** O nit do texto foi aplicado: "Maior gasto este mês: X".
 - **Um mês "sem dados" no gráfico** não tem tooltip, porque o Recharts não o mostra sem valores. O eixo e a tabela dizem "sem dados".
 - **Os testes que esperam o "Olá" depois de salvar** às vezes acham dois por um instante, durante a navegação do Next. Eles passam na nova tentativa. Fica para a task 26, com os outros testes instáveis.
 
