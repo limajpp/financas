@@ -20,7 +20,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatCalendarDate, todayInSaoPaulo } from "@/domain/dates";
 import { formatBRL, formatBRLInput, parseBRL } from "@/domain/money";
-import { subscriptionTotals } from "@/domain/subscriptions";
+import { subscriptionName, subscriptionTotals } from "@/domain/subscriptions";
 import {
   DESCRIPTION_MAX,
   PAYMENT_METHODS,
@@ -37,11 +37,6 @@ export type SubscriptionOptions = {
   cards: Option[];
   categories: RegisterTypeData["tree"];
 };
-
-/** The counterparty, else the note, else the category. */
-function nameOf(rule: SubscriptionRow) {
-  return rule.counterparty?.name ?? rule.description ?? rule.category?.name ?? "Assinatura";
-}
 
 /** "Cartão Roxo" or "Banco Azul · Pix", with "(arquivado/a)" when it was archived since. */
 function placeOf(rule: SubscriptionRow) {
@@ -150,7 +145,7 @@ function Section({
                   <span aria-hidden className="size-8 shrink-0 rounded-lg bg-muted" />
                 )}
                 <span className="grid min-w-0 flex-1 gap-0.5">
-                  <span className="truncate font-medium">{nameOf(rule)}</span>
+                  <span className="truncate font-medium">{subscriptionName(rule)}</span>
                   <span className="truncate text-xs text-muted-foreground">
                     Todo dia {rule.dayOfMonth} · {placeOf(rule)}
                     {rule.category && ` · ${rule.category.name}`}
@@ -242,7 +237,7 @@ function DialogBody({
   const [mode, setMode] = useState<Mode>("details");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  const name = nameOf(rule);
+  const name = subscriptionName(rule);
 
   function setStatus(status: "ACTIVE" | "PAUSED" | "CANCELED", message: string) {
     setError(null);
@@ -443,7 +438,7 @@ function EditForm({
   return (
     <form onSubmit={save} className="grid gap-4" noValidate>
       <DialogHeader>
-        <DialogTitle>Editar {nameOf(rule)}</DialogTitle>
+        <DialogTitle>Editar {subscriptionName(rule)}</DialogTitle>
         <DialogDescription>
           Vale para as próximas cobranças. As já lançadas não mudam.
         </DialogDescription>

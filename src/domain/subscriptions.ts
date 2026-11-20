@@ -28,7 +28,7 @@ export type RecentChange = {
 };
 
 /**
- * "Era R$ X · subiu em D": the amount before the first change of the last 90 days, compared with
+ * "Era R$ X · subiu em D": the amount before the first change of the last `days` (90), compared with
  * today's, and the day of the last change. Null without a change in the period, or when the
  * amount went back to what it was. `changes` come in the order they were made.
  */
@@ -36,8 +36,9 @@ export function recentChange(
   changes: readonly { changedOn: CalendarDate; previousCents: number; amountCents: number }[],
   currentCents: number,
   today: CalendarDate,
+  days = RECENT_CHANGE_DAYS,
 ): RecentChange | null {
-  const since = addDays(today, -RECENT_CHANGE_DAYS);
+  const since = addDays(today, -days);
   const recent = changes.filter((c) => c.changedOn >= since);
   const first = recent[0];
   if (!first || first.previousCents === currentCents) return null;
@@ -46,6 +47,15 @@ export function recentChange(
     direction: currentCents > first.previousCents ? "up" : "down",
     changedOn: recent.at(-1)!.changedOn,
   };
+}
+
+/** A subscription's name on screen: the counterparty, else the note, else the category. */
+export function subscriptionName(rule: {
+  counterparty: { name: string } | null;
+  description: string | null;
+  category: { name: string } | null;
+}): string {
+  return rule.counterparty?.name ?? rule.description ?? rule.category?.name ?? "Assinatura";
 }
 
 /** The next charge of an active subscription: its day in the first month not charged yet. */

@@ -1,9 +1,9 @@
 import "server-only";
 
 import { calendarDateToDb, dbToCalendarDate, todayInSaoPaulo } from "@/domain/dates";
+import { type InsightEntry, type InsightRule, monthInsights } from "@/domain/insights";
 import {
   EVOLUTION_MONTHS,
-  type MetricsEntry,
   categoryBreakdown,
   futureCommitments,
   isMonth,
@@ -12,23 +12,23 @@ import {
   monthlyEvolution,
 } from "@/domain/metrics";
 import { type Month, addMonthsToMonth, monthOf } from "@/domain/recurring";
+import { subscriptionName } from "@/domain/subscriptions";
 import { db } from "@/lib/db";
 import { generateRecurringSafely } from "@/server/recurring";
 
 const categorySelect = { id: true, name: true, isFixed: true } as const;
 
 /**
- * When the space started using the app: its creation day, or the earliest initial-balance day of
- * its accounts if that's before. Averages and the evolution only trust months from then on.
+ * When the space started using the app: its creation day, in São Paulo. Averages and the
+ * evolution only trust months from then on. An account's initial balance doesn't count (decided
+ * in task 24): one added later with an old balance would unlock months nobody followed.
  */
 async function historyStart(spaceId: string) {
-  const [space, earliest] = await Promise.all([
-    db.space.findUniqueOrThrow({ where: { id: spaceId }, select: { createdAt: true } }),
-    db.account.aggregate({ where: { spaceId }, _min: { initialBalanceDate: true } }),
-  ]);
-  const created = todayInSaoPaulo(space.createdAt);
-  const balance = earliest._min.initialBalanceDate;
-  return balance && dbToCalendarDate(balance) < created ? dbToCalendarDate(balance) : created;
+  const space = await db.space.findUniqueOrThrow({
+    where: { id: spaceId },
+    select: { createdAt: true },
+  });
+  return todayInSaoPaulo(space.createdAt);
 }
 
 /**
@@ -36,7 +36,7 @@ async function historyStart(spaceId: string) {
  * summary, its projection (today's month only), the future commitments, the categories with their
  * 3-month average and the 6-month evolution. One query for the entries: from the evolution's
  * first month to the chosen one, plus everything after today's month (future installments). Null
- * for a malformed month.
+ * for a malformed month. The insights (task 24) come from the same data.
  */
 export async function dashboardMetrics(spaceId: string, month: string) {
   if (!isMonth(month)) return null;
@@ -70,15 +70,30 @@ export async function dashboardMetrics(spaceId: string, month: string) {
         installmentGroupId: true,
         recurringRuleId: true,
         category: { select: { ...categorySelect, parent: { select: categorySelect } } },
+        counterparty: { select: { id: true, name: true } },
       },
     }),
     db.recurringRule.findMany({
       where: { spaceId, status: "ACTIVE" },
-      select: { status: true, amountCents: true, dayOfMonth: true, nextMonth: true },
+      select: {
+        id: true,
+        status: true,
+        amountCents: true,
+        dayOfMonth: true,
+        nextMonth: true,
+        description: true,
+        counterparty: { select: { name: true } },
+        category: { select: { name: true } },
+        // In the order they were made, as recentChange expects (task 19).
+        changes: {
+          select: { changedOn: true, previousCents: true, amountCents: true },
+          orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+        },
+      },
     }),
     historyStart(spaceId),
   ]);
-  const entries: MetricsEntry[] = rows.map((row) => ({
+  const entries: InsightEntry[] = rows.map((row) => ({
     type: row.type,
     amountCents: row.amountCents,
     date: dbToCalendarDate(row.date),
@@ -86,7 +101,16 @@ export async function dashboardMetrics(spaceId: string, month: string) {
     installment: row.installmentGroupId !== null,
     subscription: row.recurringRuleId !== null,
     category: row.category,
+    counterparty: row.counterparty,
   }));
+  const insightRules: InsightRule[] = rules.map((rule) => ({
+    id: rule.id,
+    name: subscriptionName(rule),
+    status: rule.status,
+    amountCents: rule.amountCents,
+    changes: rule.changes.map((c) => ({ ...c, changedOn: dbToCalendarDate(c.changedOn) })),
+  }));
+  const categories = future ? null : categoryBreakdown(entries, month, start);
   return {
     month,
     today,
@@ -96,8 +120,12 @@ export async function dashboardMetrics(spaceId: string, month: string) {
     commitments: futureCommitments(entries, rules, today),
     // A month not started yet has no categories or evolution: its "average" would take months
     // that haven't happened, and every category would read as "nothing spent".
-    categories: future ? null : categoryBreakdown(entries, month, start),
+    categories,
     evolution: future ? null : monthlyEvolution(entries, month, start),
+    // Task 24: the 3 insights, from the data already loaded. Null for a future month too.
+    insights: categories
+      ? monthInsights({ month, today, entries, categories, rules: insightRules })
+      : null,
   };
 }
 
